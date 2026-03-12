@@ -29,6 +29,18 @@ DRY_RUN=false
 INSTALL_GLOBAL=false
 INSTALL_PROJECT=false
 
+# Detect Claude Code config directory at runtime.
+# Priority: $CLAUDE_CONFIG_DIR (set by Claude Code) > ~/.config/claude-code (XDG) > ~/.claude (legacy)
+detect_config_dir() {
+  if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+    echo "$CLAUDE_CONFIG_DIR"
+  elif [ -d "$HOME/.config/claude-code" ]; then
+    echo "$HOME/.config/claude-code"
+  else
+    echo "$HOME/.claude"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Utility functions
 # ---------------------------------------------------------------------------
@@ -65,7 +77,7 @@ interactive_prompt() {
   while true; do
     echo ""
     echo "Which hooks would you like to install?"
-    echo "  g) Global hooks only (~/.claude/hooks/)"
+    echo "  g) Global hooks only ($(detect_config_dir)/hooks/)"
     echo "  p) Project hooks only (.claude/hooks/)"
     echo "  a) Both global and project"
     echo "  q) Quit"
@@ -192,7 +204,9 @@ os.replace(tmp, target_file)
 install_global() {
   echo "[GLOBAL INSTALL]"
 
-  local config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  local config_dir
+  config_dir=$(detect_config_dir)
+  echo "  [info] Config dir: $config_dir"
 
   if [ "$DRY_RUN" = true ]; then
     echo "  [DRY RUN] Would create ${config_dir}/hooks/"
