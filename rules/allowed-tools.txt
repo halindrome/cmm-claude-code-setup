@@ -1,13 +1,15 @@
 # codebase-memory-mcp allowed tools
-# Add these 14 tools to your .claude/settings.local.json under "allowedTools"
+# Add these 14 tools to your .claude/settings.local.json under "permissions.allow"
 #
 # Example JSON structure:
 # {
-#   "allowedTools": [
-#     "mcp__codebase-memory-mcp__index_repository",
-#     "mcp__codebase-memory-mcp__index_status",
-#     ... (add all 14 below)
-#   ]
+#   "permissions": {
+#     "allow": [
+#       "mcp__codebase-memory-mcp__index_repository",
+#       "mcp__codebase-memory-mcp__index_status",
+#       ... (add all 14 below)
+#     ]
+#   }
 # }
 
 mcp__codebase-memory-mcp__index_repository

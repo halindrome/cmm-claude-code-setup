@@ -136,13 +136,13 @@ merge_settings_json() {
     "PreToolUse": [
       {
         "matcher": "Read",
-        "hooks": [{"type": "command", "command": "bash \"$HOME/.claude/hooks/cmm-nudge.sh\""}]
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-nudge.sh\""}]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
-        "hooks": [{"type": "command", "command": "bash \"$HOME/.claude/hooks/reindex-after-edit.sh\""}]
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/reindex-after-edit.sh\""}]
       }
     ]
   }
@@ -192,20 +192,22 @@ os.replace(tmp, target_file)
 install_global() {
   echo "[GLOBAL INSTALL]"
 
+  local config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+
   if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would create ~/.claude/hooks/"
+    echo "  [DRY RUN] Would create ${config_dir}/hooks/"
   else
-    mkdir -p "$HOME/.claude/hooks"
+    mkdir -p "${config_dir}/hooks"
   fi
 
   shopt -s nullglob
   for file in "$SCRIPT_DIR/hooks/global/"*.sh; do
-    copy_file "$file" "$HOME/.claude/hooks/$(basename "$file")"
-    set_executable "$HOME/.claude/hooks/$(basename "$file")"
+    copy_file "$file" "${config_dir}/hooks/$(basename "$file")"
+    set_executable "${config_dir}/hooks/$(basename "$file")"
   done
   shopt -u nullglob
 
-  merge_settings_json "$HOME/.claude/settings.json" "global"
+  merge_settings_json "${config_dir}/settings.json" "global"
 
   echo ""
 }
