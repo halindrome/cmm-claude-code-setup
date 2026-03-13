@@ -1,0 +1,5 @@
+# Task ID: 04
+# Category: dependency-analysis
+# Expected Complexity: low (file-level search)
+
+Which files in this codebase import or require the {SEARCH_TERM} module or package? List each file path and the exact import statement used.

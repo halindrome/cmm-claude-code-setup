@@ -1,0 +1,5 @@
+# Task ID: 05
+# Category: dead-code
+# Expected Complexity: high (requires global call analysis)
+
+Identify any functions or methods in this codebase that appear to be defined but never called from within the codebase (potential dead code). List the function name and file path for each candidate. Exclude test files and entry points.

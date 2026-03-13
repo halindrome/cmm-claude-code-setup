@@ -1,0 +1,5 @@
+# Task ID: 02
+# Category: call-graph
+# Expected Complexity: high (requires traversing multiple levels)
+
+Starting from the main entry point function, show the call graph for the first 3 levels of function calls. List each function name and what it directly calls. Format as a tree structure.

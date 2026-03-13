@@ -1,0 +1,5 @@
+# Task ID: 01
+# Category: caller-analysis
+# Expected Complexity: medium (requires understanding call relationships)
+
+List all functions in this codebase that call {SEARCH_TERM}. For each caller, show the file path and line number where the call occurs. Provide a complete list, not just examples.

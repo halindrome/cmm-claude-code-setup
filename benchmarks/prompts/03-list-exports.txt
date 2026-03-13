@@ -1,0 +1,5 @@
+# Task ID: 03
+# Category: export-analysis
+# Expected Complexity: low (listing exported symbols)
+
+List all publicly exported functions or classes in this codebase related to {SEARCH_TERM}. Show the function name, its signature (parameters and return type if available), and the file where it is defined.
