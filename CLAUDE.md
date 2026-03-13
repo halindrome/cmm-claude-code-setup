@@ -12,9 +12,9 @@ This project uses VBW (Vibe Better with Claude Code) for structured development.
 
 ## Active Context
 
-**Work:** _(no active phase — all work shipped)_
-**Last shipped:** Milestone 01-cmm-claude-code-setup (2026-03-13) — 5 phases, 14 plans, all complete
-**Next action:** Run /vbw:vibe to define new work
+**Work:** Phase 7 (Agent Init Context) — in progress
+**Last action:** Plans 01+02 executed (wave 1 complete); plan 03 executing
+**Next action:** QA, then /vbw:vibe --archive to ship milestone
 
 ## VBW Rules
 
