@@ -1,0 +1,6 @@
+variant,repo,task,run,input_tokens,output_tokens,cache_creation,cache_read,total_tokens
+baseline,expressjs/express,01,1,15000,500,0,0,15500
+baseline,expressjs/express,01,2,15200,480,0,0,15680
+cmm-cold,expressjs/express,01,1,8000,500,12000,0,20500
+cmm-cache,expressjs/express,01,1,3000,500,0,12000,15500
+cmm-cache,expressjs/express,01,2,3100,490,0,11800,15390

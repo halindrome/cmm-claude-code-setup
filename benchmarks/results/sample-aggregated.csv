@@ -1,0 +1,4 @@
+variant,repo,task,n,input_mean,input_stddev,output_mean,output_stddev,cache_creation_mean,cache_creation_stddev,cache_read_mean,cache_read_stddev,total_mean,total_stddev
+baseline,expressjs/express,01,2,15100,100,490,10,0,0,0,0,15590,90
+cmm-cold,expressjs/express,01,1,8000,0,500,0,12000,0,0,0,20500,0
+cmm-cache,expressjs/express,01,2,3050,50,495,5,0,0,11900,100,15445,55
