@@ -1,0 +1,16 @@
+variant,repo,task,n,input_mean,input_stddev,output_mean,output_stddev,cache_creation_mean,cache_creation_stddev,cache_read_mean,cache_read_stddev,total_mean,total_stddev
+baseline,expressjs/express,01,1,62400.00,0.00,520.00,0.00,0.00,0.00,0.00,0.00,62920.00,0.00
+baseline,expressjs/express,02,1,74800.00,0.00,610.00,0.00,0.00,0.00,0.00,0.00,75410.00,0.00
+baseline,expressjs/express,03,1,51200.00,0.00,480.00,0.00,0.00,0.00,0.00,0.00,51680.00,0.00
+baseline,expressjs/express,04,1,48600.00,0.00,440.00,0.00,0.00,0.00,0.00,0.00,49040.00,0.00
+baseline,expressjs/express,05,1,79300.00,0.00,720.00,0.00,0.00,0.00,0.00,0.00,80020.00,0.00
+cmm-cold,expressjs/express,01,1,9800.00,0.00,520.00,0.00,18400.00,0.00,0.00,0.00,28720.00,0.00
+cmm-cold,expressjs/express,02,1,12100.00,0.00,610.00,0.00,22600.00,0.00,0.00,0.00,35310.00,0.00
+cmm-cold,expressjs/express,03,1,7200.00,0.00,480.00,0.00,15800.00,0.00,0.00,0.00,23480.00,0.00
+cmm-cold,expressjs/express,04,1,6800.00,0.00,440.00,0.00,14200.00,0.00,0.00,0.00,21440.00,0.00
+cmm-cold,expressjs/express,05,1,13400.00,0.00,720.00,0.00,24800.00,0.00,0.00,0.00,38920.00,0.00
+cmm-cache,expressjs/express,01,1,4200.00,0.00,520.00,0.00,0.00,0.00,16800.00,0.00,21520.00,0.00
+cmm-cache,expressjs/express,02,1,5100.00,0.00,610.00,0.00,0.00,0.00,20400.00,0.00,26110.00,0.00
+cmm-cache,expressjs/express,03,1,3100.00,0.00,480.00,0.00,0.00,0.00,14200.00,0.00,17780.00,0.00
+cmm-cache,expressjs/express,04,1,2900.00,0.00,440.00,0.00,0.00,0.00,12600.00,0.00,15940.00,0.00
+cmm-cache,expressjs/express,05,1,5800.00,0.00,720.00,0.00,0.00,0.00,22000.00,0.00,28520.00,0.00
