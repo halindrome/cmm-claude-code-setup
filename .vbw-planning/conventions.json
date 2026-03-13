@@ -1,8 +1,0 @@
-{"conventions": [
-  {"rule": "Step-by-step numbered sections in documentation (Step 1, Step 2...)"},
-  {"rule": "Code blocks use triple backticks with language tags (bash, json, markdown)"},
-  {"rule": "Shell scripts use #!/bin/bash with one-line purpose comment"},
-  {"rule": "Early-exit pattern in hooks: [ -z \"$VAR\" ] && exit 0"},
-  {"rule": "JSON config keys use camelCase"},
-  {"rule": "Hooks use array-of-objects format with type discriminator (command|prompt)"}
-]}

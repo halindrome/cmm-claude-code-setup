@@ -10,10 +10,9 @@
 # Register in .claude/settings.json:
 #   "hooks": { "PostToolUse": [{ "matcher": "mcp__codebase-memory-mcp__index_repository", "hooks": [{"type": "command", "command": "bash .claude/hooks/cmm-sentinel-writer.sh"}] }] }
 
-SENTINEL="/tmp/cmm-session-ready-${PPID}"
+SENTINEL="/tmp/cmm-session-ready-$(echo "$PWD" | tr '/' '-')"
 
 # Write sentinel to unblock session gate
 echo "ready" > "$SENTINEL"
 
-echo "CMM index refreshed. Session unblocked — all tools now available."
 exit 0

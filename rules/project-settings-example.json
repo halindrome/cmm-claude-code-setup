@@ -32,7 +32,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__codebase-memory-mcp__index_repository",
+        "matcher": "mcp__codebase-memory-mcp__index_repository|mcp__codebase-memory-mcp__index_status",
         "hooks": [
           {
             "type": "command",
@@ -41,6 +41,7 @@
         ]
       },
       {
+        "matcher": "mcp__codebase-memory-mcp__*",
         "hooks": [
           {
             "type": "command",

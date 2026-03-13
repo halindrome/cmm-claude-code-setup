@@ -180,7 +180,12 @@ if "hooks" not in existing:
 for hook_type, entries in new_data.get("hooks", {}).items():
     if hook_type not in existing["hooks"]:
         existing["hooks"][hook_type] = []
-    existing["hooks"][hook_type].extend(entries)
+    existing_cmds = {json.dumps(h, sort_keys=True) for group in existing["hooks"][hook_type] for h in group.get("hooks", [])}
+    for entry in entries:
+        new_cmds = {json.dumps(h, sort_keys=True) for h in entry.get("hooks", [])}
+        if not new_cmds.issubset(existing_cmds):
+            existing["hooks"][hook_type].append(entry)
+            existing_cmds |= new_cmds
 tmp = target_file + ".tmp"
 with open(tmp, "w") as f:
     json.dump(existing, f, indent=2)
