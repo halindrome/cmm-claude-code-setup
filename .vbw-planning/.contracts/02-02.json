@@ -1,0 +1,28 @@
+{
+  "phase_id": "phase-02",
+  "plan_id": "phase-02-plan-02",
+  "phase": 2,
+  "plan": 2,
+  "objective": "\"Write reindex-after-edit.sh global hook\"",
+  "task_ids": [
+    "02-02-T1",
+    "02-02-T0"
+  ],
+  "task_count": 0,
+  "allowed_paths": [],
+  "forbidden_paths": [],
+  "depends_on": [],
+  "must_haves": [
+    "NON-BLOCKING (always exit 0, advisory only)",
+    "60s debounce via /tmp/cmm-reindex-stamp-$(id -u)",
+    "Cross-platform stat (macOS -f %m / Linux -c %Y)",
+    "Checks FILE_PATH extension against broad CMM language list",
+    "Advisory prompt after debounce passes",
+    "Graceful fallback if jq is missing",
+    "#!/bin/bash shebang"
+  ],
+  "verification_checks": [],
+  "max_token_budget": 50000,
+  "timeout_seconds": 600,
+  "contract_hash": "aa6f1efd29cd329c080ee5f8c7124bb907e2922a94501b8915e68a2303711b7e"
+}

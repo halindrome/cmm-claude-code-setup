@@ -1,0 +1,16 @@
+{"ts":"2026-03-12T20:41:58Z","event":"compile_context","phase":01,"data":{"role":"lead","duration_ms":"0","delta_files":"0","cache":"miss"}}
+{"ts":"2026-03-12T20:47:49Z","event":"compile_context","phase":01,"data":{"role":"dev","duration_ms":"0","delta_files":"0","cache":"miss"}}
+{"ts":"2026-03-12T20:52:21Z","event":"compile_context","phase":01,"data":{"role":"qa","duration_ms":"0","delta_files":"2","cache":"miss"}}
+{"ts":"2026-03-12T21:11:08Z","event":"compile_context","phase":02,"data":{"role":"lead","duration_ms":"0","delta_files":"0","cache":"miss"}}
+{"ts":"2026-03-12T21:14:52Z","event":"compile_context","phase":02,"data":{"role":"dev","duration_ms":"0","delta_files":"0","cache":"miss"}}
+{"ts":"2026-03-12T21:17:14Z","event":"compile_context","phase":02,"data":{"role":"qa","duration_ms":"0","delta_files":"2","cache":"miss"}}
+{"ts":"2026-03-12T21:26:04Z","event":"compile_context","phase":03,"data":{"role":"lead","duration_ms":"0","delta_files":"0","cache":"miss"}}
+{"ts":"2026-03-12T21:29:05Z","event":"compile_context","phase":03,"data":{"role":"dev","duration_ms":"0","delta_files":"0","cache":"miss"}}
+{"ts":"2026-03-12T21:29:05Z","event":"compile_context","phase":03,"data":{"role":"qa","duration_ms":"0","delta_files":"0","cache":"miss"}}
+{"ts":"2026-03-12T21:29:13Z","event":"execute_phase_start","phase":03,"data":{"plan_count":"5","effort":"balanced"}}
+{"ts":"2026-03-12T21:33:20Z","event":"execute_phase_complete","phase":03,"data":{"plans_completed":"5","total_tasks":"5","total_commits":"10","deviations":"0"}}
+{"ts":"2026-03-12T21:36:25Z","event":"compile_context","phase":04,"data":{"role":"lead","duration_ms":"0","delta_files":"5","cache":"miss"}}
+{"ts":"2026-03-12T21:39:41Z","event":"compile_context","phase":04,"data":{"role":"dev","duration_ms":"0","delta_files":"5","cache":"miss"}}
+{"ts":"2026-03-12T21:39:41Z","event":"compile_context","phase":04,"data":{"role":"qa","duration_ms":"0","delta_files":"5","cache":"miss"}}
+{"ts":"2026-03-12T21:56:52Z","event":"compile_context","phase":05,"data":{"role":"dev","duration_ms":"1000","delta_files":"5","cache":"miss"}}
+{"ts":"2026-03-12T21:56:52Z","event":"compile_context","phase":05,"data":{"role":"qa","duration_ms":"0","delta_files":"5","cache":"miss"}}
