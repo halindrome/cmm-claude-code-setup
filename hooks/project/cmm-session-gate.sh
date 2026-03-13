@@ -39,7 +39,7 @@ if [ -f "$SENTINEL" ]; then
 fi
 
 # --- Sentinel missing: block and explain ---
-cat <<'BLOCKED'
+cat >&2 <<'BLOCKED'
 BLOCKED: CMM index not refreshed for this session.
 
 Run one of these first:
