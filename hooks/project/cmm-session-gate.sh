@@ -13,15 +13,26 @@
 INPUT=$(cat)
 TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
 
-# --- Allow-list: tools needed to create the sentinel ---
+# If parsing failed, do not block — fail open to avoid spurious hook errors
+[ -z "$TOOL" ] && exit 0
+
+# --- Allow-list ---
+# Tools allowed through unconditionally, before the sentinel exists:
 case "$TOOL" in
-  mcp__codebase-memory-mcp__index_repository|mcp__codebase-memory-mcp__index_status|ToolSearch)
-    exit 0
-    ;;
+  mcp__codebase-memory-mcp__index_repository)  # creates sentinel via cmm-sentinel-writer.sh
+    exit 0 ;;
+  mcp__codebase-memory-mcp__index_status)      # fast check; sentinel writer fires on success
+    exit 0 ;;
+  mcp__codebase-memory-mcp__delete_project)    # safe pre-index; needed for forced re-index
+    exit 0 ;;
+  ToolSearch)                                   # schema fetch needed to escape the catch-22
+    exit 0 ;;
+  SendMessage)                                  # inter-agent coordination; must never be gated
+    exit 0 ;;
 esac
 
 # --- Sentinel Check ---
-SENTINEL="/tmp/cmm-session-ready-${PPID}"
+SENTINEL="/tmp/cmm-session-ready-$(echo "$PWD" | tr '/' '-')"
 
 if [ -f "$SENTINEL" ]; then
   exit 0
@@ -31,9 +42,11 @@ fi
 cat <<'BLOCKED'
 BLOCKED: CMM index not refreshed for this session.
 
-Run this first:
-  mcp__codebase-memory-mcp__index_repository
+Run one of these first:
+  mcp__codebase-memory-mcp__index_status       (fast check — opens gate if server is up)
+  mcp__codebase-memory-mcp__index_repository   (full reindex)
 
-This refreshes the codebase knowledge graph. Once complete, all tools will be unblocked for this session.
+If the CMM server is unavailable, create the bypass sentinel in your terminal:
+  touch "/tmp/cmm-session-ready-$(echo "$PWD" | tr '/' '-')"
 BLOCKED
 exit 2

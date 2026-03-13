@@ -14,7 +14,8 @@ PROMPT=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); pr
 
 # --- Subagent Type Exemption ---
 case "$SUBAGENT_TYPE" in
-  claude-code-guide)
+  claude-code-guide|vbw:*)
+    echo "CMM note: VBW agent exempted from keyword gate. Use CMM tools for code navigation: search_graph → trace_call_path → get_code_snippet. Find your task in .vbw-planning/STATE.md."
     exit 0
     ;;
 esac
