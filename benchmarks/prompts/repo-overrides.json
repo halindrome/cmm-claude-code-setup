@@ -1,0 +1,37 @@
+{
+  "expressjs/express": {
+    "01": "next",
+    "02": "express",
+    "03": "Router",
+    "04": "http",
+    "05": "deprecated"
+  },
+  "go-chi/chi": {
+    "01": "next",
+    "02": "chi.NewRouter",
+    "03": "Router",
+    "04": "net/http",
+    "05": "deprecated"
+  },
+  "httpie/cli": {
+    "01": "request",
+    "02": "main",
+    "03": "Session",
+    "04": "requests",
+    "05": "deprecated"
+  },
+  "redis/redis": {
+    "01": "get",
+    "02": "processCommand",
+    "03": "redisCommand",
+    "04": "ae.h",
+    "05": "deprecated"
+  },
+  "meilisearch/meilisearch": {
+    "01": "search",
+    "02": "main",
+    "03": "Index",
+    "04": "actix_web",
+    "05": "deprecated"
+  }
+}
