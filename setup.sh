@@ -151,7 +151,7 @@ detect_cmm_binary() {
     echo "Aborting. Install codebase-memory-mcp and re-run setup.sh." >&2
     exit 1
   fi
-  return 1
+  return 0
 }
 
 # ---------------------------------------------------------------------------

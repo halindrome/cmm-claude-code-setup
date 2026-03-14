@@ -75,6 +75,7 @@ esac
 
 # Inter-agent coordination must never be gated:
 case "$TOOL" in
+  Agent)        exit 0 ;;  # subagents run in their own session with their own gate
   SendMessage)  exit 0 ;;
   ToolSearch)   exit 0 ;;
 esac
