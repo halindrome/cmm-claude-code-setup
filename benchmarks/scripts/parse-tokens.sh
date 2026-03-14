@@ -11,7 +11,7 @@ if [ ! -f "$1" ]; then
   exit 1
 fi
 
-jq -s '[.[] | select(.message.usage != null) | .message.usage | {
+jq -r -s '[.[] | select(.message.usage != null) | .message.usage | {
   input: (.input_tokens // 0),
   output: (.output_tokens // 0),
   cache_creation: (.cache_creation_input_tokens // 0),
