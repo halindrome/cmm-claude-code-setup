@@ -26,3 +26,14 @@ mcp__codebase-memory-mcp__trace_call_path
 mcp__codebase-memory-mcp__detect_changes
 mcp__codebase-memory-mcp__manage_adr
 mcp__codebase-memory-mcp__ingest_traces
+
+# Context Mode MCP tools (optional add-on)
+mcp__context-mode__ctx_execute
+mcp__context-mode__ctx_batch_execute
+mcp__context-mode__ctx_execute_file
+mcp__context-mode__ctx_index
+mcp__context-mode__ctx_search
+mcp__context-mode__ctx_fetch_and_index
+mcp__context-mode__ctx_stats
+mcp__context-mode__ctx_doctor
+mcp__context-mode__ctx_upgrade
