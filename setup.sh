@@ -280,6 +280,46 @@ _print_cmm_tools_snippet() {
 }
 
 # ---------------------------------------------------------------------------
+# detect_context_mode
+# ---------------------------------------------------------------------------
+
+# Status variable populated by detect_context_mode(); read by print_preflight_summary()
+CONTEXT_MODE_STATUS="skip"
+
+detect_context_mode() {
+  if [ "$SKIP_MCP_CHECK" = true ]; then
+    CONTEXT_MODE_STATUS="skip"
+    return 0
+  fi
+
+  # Only runs for project installs in interactive (tty) sessions
+  if [ "$INSTALL_PROJECT" != true ] || ! [ -t 0 ]; then
+    CONTEXT_MODE_STATUS="skip"
+    return 0
+  fi
+
+  # Detection: binary or existing db
+  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ]; then
+    CONTEXT_MODE_STATUS="ok"
+    echo "  [ok] context-mode detected"
+    return 0
+  fi
+
+  # Not detected: ask user if they want Context Mode
+  CONTEXT_MODE_STATUS="warn"
+  echo ""
+  printf "  Use Context Mode integration? [y/N]: "
+  read -r choice
+  choice="${choice:-n}"
+  if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
+    echo "  [info] Install Context Mode by running (copy and run):"
+    echo "           npx @mksglu/context-mode install"
+    echo "  [info] Docs: https://github.com/mksglu/context-mode"
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # check_mcp_availability
 # ---------------------------------------------------------------------------
 
@@ -291,6 +331,7 @@ check_mcp_availability() {
   echo "[MCP PRE-FLIGHT CHECKS]"
   detect_cmm_registration
   detect_cmm_tools_allowed
+  detect_context_mode
   echo ""
 }
 
