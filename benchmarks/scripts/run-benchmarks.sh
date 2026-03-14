@@ -1,5 +1,5 @@
 #!/bin/bash
-# Main benchmark orchestrator — runs 3 variants × 5 repos × 5 tasks × n runs, writes raw CSV
+# Main benchmark orchestrator — runs 6 variants × 5 repos × 5 tasks × n runs, writes raw CSV
 
 set -euo pipefail
 
