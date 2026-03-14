@@ -25,6 +25,8 @@ case "$TOOL" in
     exit 0 ;;
   mcp__codebase-memory-mcp__delete_project)    # safe pre-index; needed for forced re-index
     exit 0 ;;
+  Agent)                                        # subagents run in their own session with their own gate
+    exit 0 ;;
   ToolSearch)                                   # schema fetch needed to escape the catch-22
     exit 0 ;;
   SendMessage)                                  # inter-agent coordination; must never be gated
