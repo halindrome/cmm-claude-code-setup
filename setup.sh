@@ -294,8 +294,8 @@ detect_context_mode() {
     return 0
   fi
 
-  # Only runs for project installs in interactive (tty) sessions
-  if [ "$INSTALL_PROJECT" != true ] || ! [ -t 0 ]; then
+  # Only runs for project installs
+  if [ "$INSTALL_PROJECT" != true ]; then
     CONTEXT_MODE_STATUS="skip"
     return 0
   fi
@@ -307,14 +307,21 @@ detect_context_mode() {
     return 0
   fi
 
-  # Not detected: ask user if they want Context Mode
+  # Not detected: prompt interactively when stdin is a tty, otherwise warn non-interactively
   CONTEXT_MODE_STATUS="warn"
   echo ""
-  printf "  Use Context Mode integration? [y/N]: "
-  read -r choice
-  choice="${choice:-n}"
-  if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
-    echo "  [info] Install Context Mode by running (copy and run):"
+  if [ -t 0 ]; then
+    printf "  Use Context Mode integration? [y/N]: "
+    read -r choice
+    choice="${choice:-n}"
+    if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
+      echo "  [info] Install Context Mode by running (copy and run):"
+      echo "           npx @mksglu/context-mode install"
+      echo "  [info] Docs: https://github.com/mksglu/context-mode"
+    fi
+  else
+    echo "  [warn] context-mode not detected."
+    echo "  [info] To enable Context Mode integration, install it by running:"
     echo "           npx @mksglu/context-mode install"
     echo "  [info] Docs: https://github.com/mksglu/context-mode"
   fi
