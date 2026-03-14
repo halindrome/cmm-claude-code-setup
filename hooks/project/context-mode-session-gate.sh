@@ -11,9 +11,32 @@
 # Matcher: PreToolUse:*
 
 # --- Context Mode Presence Check ---
-# No-op gracefully if Context Mode binary is not installed and no DB exists yet.
+# No-op gracefully if context-mode MCP is not registered for this project.
+# Checks project .mcp.json and global Claude Code settings — NOT the global binary,
+# which would falsely trigger after `npm install -g context-mode` in unrelated projects.
 CONTEXT_MODE_INSTALLED=0
-command -v context-mode >/dev/null 2>&1 && CONTEXT_MODE_INSTALLED=1
+if python3 -c "
+import json, os, sys
+checked = []
+# 1. Project .mcp.json
+try:
+    with open('.mcp.json') as f:
+        if 'context-mode' in json.load(f).get('mcpServers', {}):
+            sys.exit(0)
+except Exception: pass
+# 2. Global Claude Code settings
+for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
+    if not d: continue
+    try:
+        with open(os.path.join(d, 'settings.json')) as f:
+            if 'context-mode' in json.load(f).get('mcpServers', {}):
+                sys.exit(0)
+    except Exception: pass
+sys.exit(1)
+" 2>/dev/null; then
+  CONTEXT_MODE_INSTALLED=1
+fi
+# Also activate if a session DB already exists (context-mode was used here before)
 [ -f ".claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
 if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then

@@ -13,9 +13,10 @@ SUBAGENT_TYPE=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.std
 PROMPT=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('prompt',''))" 2>/dev/null || echo "")
 
 # --- Subagent Type Exemption ---
+# Built-in Claude Code skills and non-coding agents are exempt from the keyword gate.
 case "$SUBAGENT_TYPE" in
-  claude-code-guide|vbw:*)
-    echo "CMM note: VBW agent exempted from keyword gate. Use CMM tools for code navigation: search_graph → trace_call_path → get_code_snippet. Find your task in .vbw-planning/STATE.md."
+  claude-code-guide|statusline-setup|vbw:*)
+    echo "CMM note: agent type '$SUBAGENT_TYPE' exempted from keyword gate."
     exit 0
     ;;
 esac
@@ -27,7 +28,7 @@ if echo "$PROMPT" | grep -qiE "$KEYWORDS"; then
 fi
 
 # --- Keywords missing: block and provide full instructions ---
-cat <<'BLOCKED'
+cat >&2 <<'BLOCKED'
 BLOCKED: Agent prompt does not reference codebase-memory-mcp tools.
 
 Agents MUST use the codebase-memory-mcp (CMM) graph tools for code exploration
