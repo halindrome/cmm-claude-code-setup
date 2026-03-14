@@ -224,24 +224,29 @@ All three Context Mode hooks are included in this repo and **gracefully no-op** 
 ### Install
 
 ```bash
-# 1. Install Context Mode MCP
-npx @mksglu/context-mode install
-# (or follow docs at https://github.com/mksglu/context-mode)
+# 1. Install Context Mode
+npm install -g context-mode
 
-# 2. Hooks are already installed by setup.sh — no extra copy step needed
+# 2. Register with Claude Code
+#    Project-scoped (recommended — only activates in this project):
+claude mcp add --scope project context-mode -- npx -y context-mode
+#    Or globally (activates in all projects):
+claude mcp add context-mode -- npx -y context-mode
+
+# 3. Hooks are already installed by setup.sh — no extra copy step needed
 #    If you installed manually, they're in hooks/project/context-mode-*.sh
 
-# 3. The settings example already includes Context Mode hook entries
+# 4. The settings example already includes Context Mode hook entries
 #    IMPORTANT: cmm-session-gate must appear before context-mode-session-gate in PreToolUse
 #    See rules/project-settings-example.json
 
-# 4. Append the Context Mode rules section to ~/.claude/CLAUDE.md
+# 5. Append the Context Mode rules section to ~/.claude/CLAUDE.md
 #    See the bottom of rules/global-claude-md.md
 ```
 
 ### Project-Scoped MCP Registration
 
-Both CMM and Context Mode can be activated for a single project only by adding them to `.mcp.json` in the project root (installed by `setup.sh --project`):
+Both CMM and Context Mode can be activated for a single project only. The `claude mcp add --scope project` command (step 2 above) writes to `.mcp.json` in the project root. You can also edit `.mcp.json` directly:
 
 ```json
 {
@@ -253,7 +258,7 @@ Both CMM and Context Mode can be activated for a single project only by adding t
     },
     "context-mode": {
       "command": "npx",
-      "args": ["@mksglu/context-mode", "start"]
+      "args": ["-y", "context-mode"]
     }
   }
 }

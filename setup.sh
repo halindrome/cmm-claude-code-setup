@@ -315,14 +315,20 @@ detect_context_mode() {
     read -r choice
     choice="${choice:-n}"
     if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
-      echo "  [info] Install Context Mode by running (copy and run):"
-      echo "           npx @mksglu/context-mode install"
+      echo "  [info] Install Context Mode:"
+      echo "           npm install -g context-mode"
+      echo "  [info] Register with Claude Code (project-scoped — recommended):"
+      echo "           claude mcp add --scope project context-mode -- npx -y context-mode"
+      echo "  [info] Or globally (all projects):"
+      echo "           claude mcp add context-mode -- npx -y context-mode"
       echo "  [info] Docs: https://github.com/mksglu/context-mode"
     fi
   else
     echo "  [warn] context-mode not detected."
-    echo "  [info] To enable Context Mode integration, install it by running:"
-    echo "           npx @mksglu/context-mode install"
+    echo "  [info] Install Context Mode:"
+    echo "           npm install -g context-mode"
+    echo "  [info] Register with Claude Code (project-scoped — recommended):"
+    echo "           claude mcp add --scope project context-mode -- npx -y context-mode"
     echo "  [info] Docs: https://github.com/mksglu/context-mode"
   fi
   return 0
