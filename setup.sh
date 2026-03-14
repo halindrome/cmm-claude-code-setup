@@ -593,7 +593,11 @@ parse_args() {
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
       --help|-h)
         cat <<'HELP'
-setup.sh — Installer for codebase-memory-mcp Claude Code hooks
+setup.sh — Installer for codebase-memory-mcp + Context Mode Claude Code hooks
+
+Installs hooks, rules, and settings for two complementary MCP servers:
+  - codebase-memory-mcp (CMM): code knowledge graph, ~99% token reduction on code exploration
+  - Context Mode MCP (optional): execution sandboxing + SQLite session persistence, ~98% context reduction
 
 Usage:
   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check]
@@ -607,6 +611,16 @@ Flags:
   --dry-run         Show what would be done without making changes
   --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
   --help, -h        Show this help message
+
+MCP pre-flight checks (run automatically unless --skip-mcp-check):
+  - CMM binary       detected via PATH and common install locations
+  - CMM registration checked in .mcp.json and global MCP config
+  - Tool allowlist   verified in .claude/settings.local.json (14 CMM tools)
+  - Context Mode     optional; prompts to install if not detected
+
+Context Mode hooks (context-mode-*.sh) are always installed but gracefully
+no-op when Context Mode is not present — you can enable it later without
+re-running setup.
 
 Examples:
   bash setup.sh --project             # Install project hooks into current directory
