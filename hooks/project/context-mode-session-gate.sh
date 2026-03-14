@@ -28,15 +28,18 @@ TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).g
 [ -z "$TOOL" ] && exit 0
 
 # --- Allow-list ---
-# Context Mode tools allowed through unconditionally (they initialize the session):
+# Context Mode tools allowed through unconditionally (they initialize the session).
+# Claude Code passes the full MCP tool name (mcp__context-mode__ctx_stats), not the short name.
+# Match both forms for safety.
 case "$TOOL" in
+  mcp__context-mode__*)  exit 0 ;;
   ctx_execute)           exit 0 ;;
   ctx_search)            exit 0 ;;
   ctx_index)             exit 0 ;;
   ctx_fetch_and_index)   exit 0 ;;
   ctx_batch_execute)     exit 0 ;;
   ctx_execute_file)      exit 0 ;;
-  ctx_stats)             exit 0 ;;  # calling ctx_stats creates/initializes the sentinel
+  ctx_stats)             exit 0 ;;
   ctx_doctor)            exit 0 ;;
   ctx_upgrade)           exit 0 ;;
 esac
