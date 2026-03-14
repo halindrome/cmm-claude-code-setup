@@ -73,8 +73,39 @@ setup_variant() {
       echo "[variant] ctx — Context Mode enabled, CMM disabled"
       ;;
 
+    cmm+ctx-cold)
+      # CMM + Context Mode; purge CMM index for cold run. Template: .mcp.json.cmm+ctx
+      cp "$MCP_JSON" "$MCP_BACKUP" 2>/dev/null || true
+      if [ -f "${MCP_JSON}.cmm+ctx" ]; then
+        cp "${MCP_JSON}.cmm+ctx" "$MCP_JSON"
+      else
+        echo "[warn] .mcp.json.cmm+ctx not found — CMM+Context Mode may not be configured" >&2
+      fi
+
+      # Delete CMM index databases (same logic as cmm-cold)
+      if [ -n "${REPO_PATH:-}" ]; then
+        local sessions_dir="${CLAUDE_SESSIONS_DIR:-$HOME/.config/claude-code/projects}"
+        find "$sessions_dir" -name "*.db" -path "*/databases/*" -delete 2>/dev/null || true
+        echo "[variant] cmm+ctx-cold — CMM+Context Mode enabled, CMM index purged"
+      else
+        echo "[warn] REPO_PATH not set — skipping index purge" >&2
+        echo "[variant] cmm+ctx-cold — CMM+Context Mode enabled (index not purged)"
+      fi
+      ;;
+
+    cmm+ctx-cache)
+      # CMM + Context Mode; retain CMM index (warm cache). Template: .mcp.json.cmm+ctx
+      cp "$MCP_JSON" "$MCP_BACKUP" 2>/dev/null || true
+      if [ -f "${MCP_JSON}.cmm+ctx" ]; then
+        cp "${MCP_JSON}.cmm+ctx" "$MCP_JSON"
+      else
+        echo "[warn] .mcp.json.cmm+ctx not found — CMM+Context Mode may not be configured" >&2
+      fi
+      echo "[variant] cmm+ctx-cache — CMM+Context Mode enabled, CMM index retained"
+      ;;
+
     *)
-      echo "[error] Unknown variant: $variant (expected: baseline, cmm-cold, cmm-cache)" >&2
+      echo "[error] Unknown variant: $variant (expected: baseline, cmm-cold, cmm-cache, ctx, cmm+ctx-cold, cmm+ctx-cache)" >&2
       return 1
       ;;
   esac
