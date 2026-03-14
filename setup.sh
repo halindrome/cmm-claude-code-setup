@@ -4,15 +4,17 @@ set -euo pipefail
 # setup.sh — Automated installer for codebase-memory-mcp Claude Code hooks
 #
 # Usage:
-#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run]
+#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check]
 #
 # Flags:
-#   --global     Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
-#   --project    Install project hooks to .claude/hooks/, rules to .claude/rules/,
-#                create .mcp.json, and merge into .claude/settings.json
-#   --all        Install both global and project hooks
-#   --force      Overwrite existing files (default: skip existing)
-#   --dry-run    Show what would be done without making changes
+#   --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
+#   --project         Install project hooks to .claude/hooks/, rules to .claude/rules/,
+#                     create .mcp.json, and merge into .claude/settings.json
+#   --all             Install both global and project hooks
+#   --force           Overwrite existing files (default: skip existing)
+#   --dry-run         Show what would be done without making changes
+#   --skip-mcp-check  Bypass all MCP availability checks (CMM binary, registration,
+#                     tool allowlist, context-mode). Useful for CI/automation.
 #
 # No flags: interactive prompt asking which to install.
 #
@@ -320,6 +322,62 @@ detect_context_mode() {
 }
 
 # ---------------------------------------------------------------------------
+# print_preflight_summary
+# ---------------------------------------------------------------------------
+
+print_preflight_summary() {
+  local binary_line reg_line tools_line ctx_line
+
+  # CMM binary line
+  case "$CMM_BINARY_STATUS" in
+    ok)
+      if [ -n "$CMM_BINARY_PATH" ]; then
+        binary_line="[ok]   CMM binary found at $CMM_BINARY_PATH"
+      else
+        binary_line="[ok]   CMM binary found on PATH"
+      fi
+      ;;
+    warn)   binary_line="[warn] CMM binary not found on PATH or common install paths" ;;
+    skip)   binary_line="[skip] CMM binary check (--skip-mcp-check)" ;;
+    *)      binary_line="[skip] CMM binary check (not run)" ;;
+  esac
+
+  # CMM registration line
+  case "$CMM_REGISTRATION_STATUS" in
+    ok)   reg_line="[ok]   CMM registered in .mcp.json or global settings.json" ;;
+    warn) reg_line="[warn] CMM not registered in .mcp.json or global settings.json" ;;
+    skip) reg_line="[skip] CMM registration check (--skip-mcp-check)" ;;
+    *)    reg_line="[skip] CMM registration check (not run)" ;;
+  esac
+
+  # CMM tools line
+  case "$CMM_TOOLS_STATUS" in
+    ok)      tools_line="[ok]   All 14 CMM tools allowlisted in .claude/settings.local.json" ;;
+    warn)    tools_line="[warn] ${CMM_TOOLS_COUNT}/14 CMM tools in .claude/settings.local.json" ;;
+    missing) tools_line="[warn] .claude/settings.local.json not found — CMM tools not allowlisted" ;;
+    skip)    tools_line="[skip] CMM tools check (--skip-mcp-check)" ;;
+    *)       tools_line="[skip] CMM tools check (not run)" ;;
+  esac
+
+  # Context-mode line
+  case "$CONTEXT_MODE_STATUS" in
+    ok)   ctx_line="[ok]   context-mode detected" ;;
+    warn) ctx_line="[warn] context-mode not detected" ;;
+    skip) ctx_line="[skip] context-mode check (not applicable)" ;;
+    *)    ctx_line="[skip] context-mode check (not run)" ;;
+  esac
+
+  echo "============================================================"
+  echo "Pre-flight check summary:"
+  echo "  $binary_line"
+  echo "  $reg_line"
+  echo "  $tools_line"
+  echo "  $ctx_line"
+  echo "============================================================"
+  echo ""
+}
+
+# ---------------------------------------------------------------------------
 # check_mcp_availability
 # ---------------------------------------------------------------------------
 
@@ -332,7 +390,7 @@ check_mcp_availability() {
   detect_cmm_registration
   detect_cmm_tools_allowed
   detect_context_mode
-  echo ""
+  print_preflight_summary
 }
 
 # ---------------------------------------------------------------------------
@@ -527,11 +585,12 @@ print_next_steps() {
 parse_args() {
   while [ $# -gt 0 ]; do
     case "$1" in
-      --global)   INSTALL_GLOBAL=true ;;
-      --project)  INSTALL_PROJECT=true ;;
-      --all)      INSTALL_GLOBAL=true; INSTALL_PROJECT=true ;;
-      --force)    FORCE=true ;;
-      --dry-run)  DRY_RUN=true ;;
+      --global)          INSTALL_GLOBAL=true ;;
+      --project)         INSTALL_PROJECT=true ;;
+      --all)             INSTALL_GLOBAL=true; INSTALL_PROJECT=true ;;
+      --force)           FORCE=true ;;
+      --dry-run)         DRY_RUN=true ;;
+      --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
       *)
         echo "Unknown flag: $1" >&2
         exit 1
