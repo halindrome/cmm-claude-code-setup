@@ -591,6 +591,32 @@ parse_args() {
       --force)           FORCE=true ;;
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
+      --help|-h)
+        cat <<'HELP'
+setup.sh — Installer for codebase-memory-mcp Claude Code hooks
+
+Usage:
+  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check]
+
+Flags:
+  --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
+  --project         Install project hooks to .claude/hooks/, rules to .claude/rules/,
+                    create .mcp.json, and merge into .claude/settings.json
+  --all             Install both global and project hooks
+  --force           Overwrite existing files (default: skip existing)
+  --dry-run         Show what would be done without making changes
+  --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
+  --help, -h        Show this help message
+
+Examples:
+  bash setup.sh --project             # Install project hooks into current directory
+  bash setup.sh --global              # Install global hooks for all projects
+  bash setup.sh --all --force         # Install everything, overwriting existing files
+  bash setup.sh --dry-run --project   # Preview project install without making changes
+  bash setup.sh --project --skip-mcp-check  # Install without MCP availability checks
+HELP
+        exit 0
+        ;;
       *)
         echo "Unknown flag: $1" >&2
         exit 1
