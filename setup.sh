@@ -199,7 +199,7 @@ detect_cmm_registration() {
     echo "Aborting. Register CMM and re-run setup.sh." >&2
     exit 1
   fi
-  return 1
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ detect_cmm_tools_allowed() {
     _print_cmm_tools_snippet
     printf "  Acknowledged? [Enter to continue]: "
     read -r _ack
-    return 1
+    return 0
   fi
 
   # Count mcp__codebase-memory-mcp__ entries in permissions.allow
@@ -254,7 +254,7 @@ PYEOF
   _print_cmm_tools_snippet
   printf "  Acknowledged? [Enter to continue]: "
   read -r _ack
-  return 1
+  return 0
 }
 
 _print_cmm_tools_snippet() {
