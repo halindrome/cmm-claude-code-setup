@@ -52,3 +52,36 @@ Use `Read` directly when:
 - Files not yet indexed (new files before `index_repository`)
 - Editing 6+ functions in the same file (batch context is more efficient)
 - Jupyter notebooks, READMEs, documentation files
+
+## Context Mode MCP — Execution Sandboxing (if installed)
+
+[Context Mode MCP](https://github.com/mksglu/context-mode) sandboxes tool outputs to prevent context bloat and persists session events in a local SQLite database. These rules apply **only when Context Mode MCP is installed** — if it is not installed, skip this section entirely.
+
+### When to use `ctx_execute` vs. raw Bash
+
+- Use `ctx_execute` for any Bash command that produces large output: logs, test output, API responses, file listings, or any command where full stdout would exceed ~50 lines. Raw Bash sends full stdout to context; `ctx_execute` captures only the relevant portion.
+- Use raw `Bash` for short commands where full output is needed (< ~50 lines), git commits, interactive operations, or when `ctx_execute` is unavailable.
+
+### When to use `ctx_fetch_and_index` vs. WebFetch
+
+- Use `ctx_fetch_and_index` for any URL that will be referenced more than once in the session (docs, API specs, GitHub issues). It fetches, detects content type, and indexes into SQLite FTS5 for later `ctx_search` queries.
+- Use raw `WebFetch` only for one-off URLs or when Context Mode is not installed.
+
+### When to use `ctx_search` vs. Grep
+
+- Use `ctx_search` to query content previously indexed via `ctx_index` or `ctx_fetch_and_index`. Supports fuzzy matching with BM25 ranking and typo-tolerance.
+- Use Grep for files NOT indexed by Context Mode (source code, config files, unindexed content).
+- Do NOT use `ctx_search` as a replacement for CMM `search_graph` — they serve different purposes.
+
+### Session resume after compaction
+
+- After context compaction, `ctx_search` can query the event history: "what files were edited?"
+- Use `ctx_stats` to check session metrics and indexed content.
+
+### Tool priority order (when Context Mode is installed)
+
+- Code exploration: CMM tools first (`search_graph`, `get_code_snippet`, `trace_call_path`)
+- Bash execution with large output: `ctx_execute` or `ctx_batch_execute`
+- Web content: `ctx_fetch_and_index` → `ctx_search`
+- Indexed doc search: `ctx_search`
+- File search (non-indexed): Grep/Glob
