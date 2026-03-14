@@ -21,6 +21,16 @@
         ]
       },
       {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/context-mode-session-gate.sh",
+            "_comment": "optional: Context Mode MCP gate (no-ops if Context Mode not installed)"
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {
@@ -46,6 +56,27 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/track-cmm-calls.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/context-mode-event-logger.sh",
+            "_comment": "optional: Context Mode MCP event logger (no-ops if Context Mode not installed)"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/context-mode-pre-compact.sh",
+            "_comment": "optional: Context Mode MCP pre-compaction snapshot (no-ops if not installed)"
           }
         ]
       }
