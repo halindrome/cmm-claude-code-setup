@@ -201,6 +201,85 @@ detect_cmm_registration() {
 }
 
 # ---------------------------------------------------------------------------
+# detect_cmm_tools_allowed
+# ---------------------------------------------------------------------------
+
+# Status variable populated by detect_cmm_tools_allowed(); read by print_preflight_summary()
+CMM_TOOLS_STATUS="unknown"
+CMM_TOOLS_COUNT=0
+
+detect_cmm_tools_allowed() {
+  if [ "$SKIP_MCP_CHECK" = true ]; then
+    CMM_TOOLS_STATUS="skip"
+    return 0
+  fi
+
+  local settings_file=".claude/settings.local.json"
+
+  if [ ! -f "$settings_file" ]; then
+    CMM_TOOLS_STATUS="missing"
+    echo ""
+    echo "  [warn] .claude/settings.local.json not found — CMM tools not allowlisted."
+    _print_cmm_tools_snippet
+    printf "  Acknowledged? [Enter to continue]: "
+    read -r _ack
+    return 1
+  fi
+
+  # Count mcp__codebase-memory-mcp__ entries in permissions.allow
+  CMM_TOOLS_COUNT=$(python3 - "$settings_file" <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    allow = data.get("permissions", {}).get("allow", [])
+    count = sum(1 for t in allow if "mcp__codebase-memory-mcp__" in str(t))
+    print(count)
+except Exception:
+    print(0)
+PYEOF
+)
+
+  if [ "$CMM_TOOLS_COUNT" -ge 14 ]; then
+    CMM_TOOLS_STATUS="ok"
+    echo "  [ok] All 14 CMM tools allowlisted in $settings_file"
+    return 0
+  fi
+
+  CMM_TOOLS_STATUS="warn"
+  echo ""
+  echo "  [warn] Only ${CMM_TOOLS_COUNT}/14 CMM tools in $settings_file"
+  _print_cmm_tools_snippet
+  printf "  Acknowledged? [Enter to continue]: "
+  read -r _ack
+  return 1
+}
+
+_print_cmm_tools_snippet() {
+  echo "  [info] Add the following to .claude/settings.local.json under permissions.allow:"
+  echo '  {'
+  echo '    "permissions": {'
+  echo '      "allow": ['
+  echo '        "mcp__codebase-memory-mcp__index_repository",'
+  echo '        "mcp__codebase-memory-mcp__index_status",'
+  echo '        "mcp__codebase-memory-mcp__list_projects",'
+  echo '        "mcp__codebase-memory-mcp__delete_project",'
+  echo '        "mcp__codebase-memory-mcp__get_architecture",'
+  echo '        "mcp__codebase-memory-mcp__get_graph_schema",'
+  echo '        "mcp__codebase-memory-mcp__search_graph",'
+  echo '        "mcp__codebase-memory-mcp__search_code",'
+  echo '        "mcp__codebase-memory-mcp__query_graph",'
+  echo '        "mcp__codebase-memory-mcp__get_code_snippet",'
+  echo '        "mcp__codebase-memory-mcp__trace_call_path",'
+  echo '        "mcp__codebase-memory-mcp__detect_changes",'
+  echo '        "mcp__codebase-memory-mcp__manage_adr",'
+  echo '        "mcp__codebase-memory-mcp__ingest_traces"'
+  echo '      ]'
+  echo '    }'
+  echo '  }'
+}
+
+# ---------------------------------------------------------------------------
 # check_mcp_availability
 # ---------------------------------------------------------------------------
 
@@ -211,6 +290,7 @@ check_mcp_availability() {
 
   echo "[MCP PRE-FLIGHT CHECKS]"
   detect_cmm_registration
+  detect_cmm_tools_allowed
   echo ""
 }
 
