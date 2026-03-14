@@ -28,6 +28,7 @@ FORCE=false
 DRY_RUN=false
 INSTALL_GLOBAL=false
 INSTALL_PROJECT=false
+SKIP_MCP_CHECK=false
 
 # Detect Claude Code config directory at runtime.
 # Priority: $CLAUDE_CONFIG_DIR (set by Claude Code) > ~/.config/claude-code (XDG) > ~/.claude (legacy)
@@ -96,6 +97,62 @@ interactive_prompt() {
 }
 
 # ---------------------------------------------------------------------------
+# detect_cmm_binary
+# ---------------------------------------------------------------------------
+
+# Status variable populated by detect_cmm_binary(); read by print_preflight_summary()
+CMM_BINARY_STATUS="unknown"
+CMM_BINARY_PATH=""
+
+detect_cmm_binary() {
+  if [ "$SKIP_MCP_CHECK" = true ]; then
+    CMM_BINARY_STATUS="skip"
+    return 0
+  fi
+
+  # 1. PATH lookup (fastest, most reliable)
+  if command -v codebase-memory-mcp >/dev/null 2>&1; then
+    CMM_BINARY_PATH="$(command -v codebase-memory-mcp)"
+    CMM_BINARY_STATUS="ok"
+    return 0
+  fi
+
+  # 2-4. Fallback paths
+  local fallback
+  for fallback in \
+    "$HOME/.local/bin/codebase-memory-mcp" \
+    "$HOME/go/bin/codebase-memory-mcp" \
+    "/usr/local/bin/codebase-memory-mcp"
+  do
+    if [ -x "$fallback" ]; then
+      CMM_BINARY_PATH="$fallback"
+      CMM_BINARY_STATUS="ok"
+      echo "  [info] Found codebase-memory-mcp at $fallback (not on PATH)"
+      echo "  [info] Consider adding $(dirname "$fallback") to your PATH."
+      return 0
+    fi
+  done
+
+  # Not found anywhere
+  CMM_BINARY_STATUS="warn"
+  echo ""
+  echo "  [warn] codebase-memory-mcp binary not found on PATH or common install paths."
+  echo "  [info] Install it first:"
+  echo "         Releases: https://github.com/DeusData/codebase-memory-mcp/releases/latest"
+  echo "         One-liner (copy and run):"
+  echo "           curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/scripts/setup.sh | bash"
+  echo ""
+  printf "  Continue without CMM binary? [y/N]: "
+  read -r choice
+  choice="${choice:-n}"
+  if [ "$choice" != "y" ] && [ "$choice" != "Y" ]; then
+    echo "Aborting. Install codebase-memory-mcp and re-run setup.sh." >&2
+    exit 1
+  fi
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # check_prerequisites
 # ---------------------------------------------------------------------------
 
@@ -105,9 +162,7 @@ check_prerequisites() {
     exit 1
   fi
 
-  if ! command -v codebase-memory-mcp >/dev/null 2>&1; then
-    echo "Warning: codebase-memory-mcp not found on PATH. Install it before using hooks." >&2
-  fi
+  detect_cmm_binary
 
   if [ ! -d "$SCRIPT_DIR/hooks" ]; then
     echo "[ERROR] hooks/ directory not found in $SCRIPT_DIR" >&2
