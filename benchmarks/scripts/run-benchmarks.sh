@@ -12,6 +12,7 @@ source "$SCRIPT_DIR/variant-setup.sh"
 DRY_RUN=false
 FILTER_REPO=""
 FILTER_TASK=""
+FILTER_VARIANT=""
 RUN_DELAY=5
 
 while [[ $# -gt 0 ]]; do
@@ -19,6 +20,7 @@ while [[ $# -gt 0 ]]; do
     --dry-run) DRY_RUN=true; shift ;;
     --repo)    FILTER_REPO="$2"; shift 2 ;;
     --task)    FILTER_TASK="$2"; shift 2 ;;
+    --variant) FILTER_VARIANT="$2"; shift 2 ;;
     --runs)    BENCH_RUNS="$2"; shift 2 ;;
     *) echo "Unknown flag: $1" >&2; exit 1 ;;
   esac
@@ -46,6 +48,16 @@ for repo in "${BENCH_REPOS[@]}"; do
   export REPO_PATH
 
   for variant in "${BENCH_VARIANTS[@]}"; do
+    [[ -n "$FILTER_VARIANT" && "$variant" != "$FILTER_VARIANT" ]] && continue
+
+    # Skip ctx and cmm+ctx* variants if context-mode binary is not installed
+    if [[ "$variant" == "ctx" || "$variant" == cmm+ctx* ]]; then
+      if ! command -v context-mode &>/dev/null; then
+        echo "[skip] $variant variant skipped — context-mode not found" >&2
+        continue
+      fi
+    fi
+
     for task_num in 01 02 03 04 05; do
       [[ -n "$FILTER_TASK" && "$task_num" != "$FILTER_TASK" ]] && continue
 

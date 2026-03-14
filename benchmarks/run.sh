@@ -25,6 +25,7 @@ check_prereq jq           required "jq"
 check_prereq claude       required "claude CLI"
 check_prereq git          required "git"
 check_prereq codebase-memory-mcp warn "codebase-memory-mcp"
+check_prereq context-mode         warn "context-mode (ctx/cmm+ctx variants will be skipped if absent)"
 
 # ---------------------------------------------------------------------------
 # Parse flags (pass-through to run-benchmarks.sh)
