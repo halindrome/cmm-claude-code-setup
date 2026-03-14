@@ -15,13 +15,13 @@
 # setup_variant cmm-cold.
 
 MCP_JSON="${MCP_JSON:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.mcp.json}"
-MCP_BACKUP="${MCP_JSON}.active_backup"
 
 # Template directory: where .mcp.json.baseline, .mcp.json.cmm, etc. live (project root)
 BENCH_TEMPLATE_DIR="${BENCH_TEMPLATE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 setup_variant() {
   local variant="$1"
+  local MCP_BACKUP="${MCP_JSON}.active_backup"
 
   case "$variant" in
     baseline)
@@ -115,6 +115,7 @@ setup_variant() {
 }
 
 teardown_variant() {
+  local MCP_BACKUP="${MCP_JSON}.active_backup"
   # Restore .mcp.json from backup saved during setup_variant
   if [ -f "$MCP_BACKUP" ]; then
     mv "$MCP_BACKUP" "$MCP_JSON"
