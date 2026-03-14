@@ -82,13 +82,15 @@ for repo in "${BENCH_REPOS[@]}"; do
           continue
         fi
 
-        setup_variant "$variant"
+        # Run claude --print from the benchmark repo directory (not the project root)
+        # The .mcp.json swap targets the repo dir so claude picks up the right MCP config
+        MCP_JSON="$REPO_PATH/.mcp.json" setup_variant "$variant"
 
         START_TS=$(date +%s)
 
-        if ! claude --print "$PROMPT" > /dev/null 2>&1; then
+        if ! (cd "$REPO_PATH" && claude --print "$PROMPT" > /dev/null 2>&1); then
           echo "[error] claude --print failed for variant=$variant repo=$repo task=$task_num run=$run" >&2
-          teardown_variant "$variant"
+          MCP_JSON="$REPO_PATH/.mcp.json" teardown_variant "$variant"
           FAILED=1
           continue
         fi
@@ -96,7 +98,7 @@ for repo in "${BENCH_REPOS[@]}"; do
         SESSION=$(bash "$SCRIPT_DIR/find-session.sh" --after "$START_TS" 2>/dev/null)
         if [[ -z "$SESSION" ]]; then
           echo "[error] Could not find session JSONL after $START_TS" >&2
-          teardown_variant "$variant"
+          MCP_JSON="$REPO_PATH/.mcp.json" teardown_variant "$variant"
           FAILED=1
           continue
         fi
@@ -104,14 +106,14 @@ for repo in "${BENCH_REPOS[@]}"; do
         TOKENS=$(bash "$SCRIPT_DIR/parse-tokens.sh" "$SESSION" 2>/dev/null)
         if [[ -z "$TOKENS" ]]; then
           echo "[error] parse-tokens.sh returned empty for $SESSION" >&2
-          teardown_variant "$variant"
+          MCP_JSON="$REPO_PATH/.mcp.json" teardown_variant "$variant"
           FAILED=1
           continue
         fi
 
         echo "$variant,$repo,$task_num,$run,$TOKENS" >> "$CSV_FILE"
 
-        teardown_variant "$variant"
+        MCP_JSON="$REPO_PATH/.mcp.json" teardown_variant "$variant"
 
         sleep "$RUN_DELAY"
       done

@@ -17,6 +17,9 @@
 MCP_JSON="${MCP_JSON:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.mcp.json}"
 MCP_BACKUP="${MCP_JSON}.active_backup"
 
+# Template directory: where .mcp.json.baseline, .mcp.json.cmm, etc. live (project root)
+BENCH_TEMPLATE_DIR="${BENCH_TEMPLATE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
 setup_variant() {
   local variant="$1"
 
@@ -31,8 +34,8 @@ setup_variant() {
     cmm-cold)
       # Restore CMM config and purge any existing index for the repo
       cp "$MCP_JSON" "$MCP_BACKUP" 2>/dev/null || true
-      if [ -f "${MCP_JSON}.cmm" ]; then
-        cp "${MCP_JSON}.cmm" "$MCP_JSON"
+      if [ -f "${BENCH_TEMPLATE_DIR}/.mcp.json.cmm" ]; then
+        cp "${BENCH_TEMPLATE_DIR}/.mcp.json.cmm" "$MCP_JSON"
       else
         echo "[warn] .mcp.json.cmm not found — CMM may not be configured" >&2
       fi
@@ -54,8 +57,8 @@ setup_variant() {
     cmm-cache)
       # Restore CMM config; index is expected to already exist (warm cache).
       cp "$MCP_JSON" "$MCP_BACKUP" 2>/dev/null || true
-      if [ -f "${MCP_JSON}.cmm" ]; then
-        cp "${MCP_JSON}.cmm" "$MCP_JSON"
+      if [ -f "${BENCH_TEMPLATE_DIR}/.mcp.json.cmm" ]; then
+        cp "${BENCH_TEMPLATE_DIR}/.mcp.json.cmm" "$MCP_JSON"
       else
         echo "[warn] .mcp.json.cmm not found — CMM may not be configured" >&2
       fi
@@ -65,8 +68,8 @@ setup_variant() {
     ctx)
       # Context Mode only; no CMM index to manage. Template: .mcp.json.ctx
       cp "$MCP_JSON" "$MCP_BACKUP" 2>/dev/null || true
-      if [ -f "${MCP_JSON}.ctx" ]; then
-        cp "${MCP_JSON}.ctx" "$MCP_JSON"
+      if [ -f "${BENCH_TEMPLATE_DIR}/.mcp.json.ctx" ]; then
+        cp "${BENCH_TEMPLATE_DIR}/.mcp.json.ctx" "$MCP_JSON"
       else
         echo "[warn] .mcp.json.ctx not found — Context Mode may not be configured" >&2
       fi
@@ -76,8 +79,8 @@ setup_variant() {
     cmm+ctx-cold)
       # CMM + Context Mode; purge CMM index for cold run. Template: .mcp.json.cmm+ctx
       cp "$MCP_JSON" "$MCP_BACKUP" 2>/dev/null || true
-      if [ -f "${MCP_JSON}.cmm+ctx" ]; then
-        cp "${MCP_JSON}.cmm+ctx" "$MCP_JSON"
+      if [ -f "${BENCH_TEMPLATE_DIR}/.mcp.json.cmm+ctx" ]; then
+        cp "${BENCH_TEMPLATE_DIR}/.mcp.json.cmm+ctx" "$MCP_JSON"
       else
         echo "[warn] .mcp.json.cmm+ctx not found — CMM+Context Mode may not be configured" >&2
       fi
@@ -96,8 +99,8 @@ setup_variant() {
     cmm+ctx-cache)
       # CMM + Context Mode; retain CMM index (warm cache). Template: .mcp.json.cmm+ctx
       cp "$MCP_JSON" "$MCP_BACKUP" 2>/dev/null || true
-      if [ -f "${MCP_JSON}.cmm+ctx" ]; then
-        cp "${MCP_JSON}.cmm+ctx" "$MCP_JSON"
+      if [ -f "${BENCH_TEMPLATE_DIR}/.mcp.json.cmm+ctx" ]; then
+        cp "${BENCH_TEMPLATE_DIR}/.mcp.json.cmm+ctx" "$MCP_JSON"
       else
         echo "[warn] .mcp.json.cmm+ctx not found — CMM+Context Mode may not be configured" >&2
       fi
