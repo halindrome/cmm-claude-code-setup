@@ -62,6 +62,17 @@ setup_variant() {
       echo "[variant] cmm-cache — CMM enabled, existing index retained (warm cache)"
       ;;
 
+    ctx)
+      # Context Mode only; no CMM index to manage. Template: .mcp.json.ctx
+      cp "$MCP_JSON" "$MCP_BACKUP" 2>/dev/null || true
+      if [ -f "${MCP_JSON}.ctx" ]; then
+        cp "${MCP_JSON}.ctx" "$MCP_JSON"
+      else
+        echo "[warn] .mcp.json.ctx not found — Context Mode may not be configured" >&2
+      fi
+      echo "[variant] ctx — Context Mode enabled, CMM disabled"
+      ;;
+
     *)
       echo "[error] Unknown variant: $variant (expected: baseline, cmm-cold, cmm-cache)" >&2
       return 1
