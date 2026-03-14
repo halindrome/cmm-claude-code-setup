@@ -505,6 +505,14 @@ for hook_type, entries in new_data.get("hooks", {}).items():
         if not new_cmds.issubset(existing_cmds):
             existing["hooks"][hook_type].append(entry)
             existing_cmds |= new_cmds
+        else:
+            # Hook commands already present — update matcher if it changed
+            new_matcher = entry.get("matcher", "")
+            if new_matcher:
+                for existing_entry in existing["hooks"][hook_type]:
+                    entry_cmds = {json.dumps(h, sort_keys=True) for h in existing_entry.get("hooks", [])}
+                    if new_cmds == entry_cmds and existing_entry.get("matcher", "") != new_matcher:
+                        existing_entry["matcher"] = new_matcher
 tmp = target_file + ".tmp"
 with open(tmp, "w") as f:
     json.dump(existing, f, indent=2)
