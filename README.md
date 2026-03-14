@@ -1,59 +1,91 @@
-# codebase-memory-mcp Setup for Claude Code
+# CMM + Context Mode Setup for Claude Code
 
-Hooks, rules, and statusline integration for [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) — a powerful MCP server by [DeusData](https://github.com/DeusData) that builds a persistent code knowledge graph across 64 languages, dramatically reducing token usage in Claude Code.
+Hooks, rules, and enforcement layer for two complementary MCP servers:
 
-> **Credit where it's due:** The hook-based enforcement approach and repository structure are adapted from [jmunch-claude-code-setup](https://github.com/shacharbard/jmunch-claude-code-setup) by [Shachar Bard](https://github.com/shacharbard). This repo does not contain the codebase-memory-mcp server itself — it provides a companion enforcement and tracking layer that helps Claude Code get the most out of it. All the clever indexing, knowledge graph construction, and structural analysis is [DeusData's](https://github.com/DeusData) work.
+- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)** (by [DeusData](https://github.com/DeusData)) — persistent code knowledge graph across 64 languages; replaces file-reading with precise graph queries, saving ~99% of tokens on code exploration
+- **[Context Mode MCP](https://github.com/mksglu/context-mode)** *(optional)* — execution sandboxing + SQLite session persistence; routes tool outputs through isolated subprocesses to keep large outputs out of the context window (~98% context reduction)
 
-## What codebase-memory-mcp Does
+Together they eliminate the two main token sinks in long Claude Code sessions: redundant file reads (CMM) and bloated tool output (Context Mode).
 
-[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) (by DeusData) indexes your codebase into a persistent knowledge graph so Claude fetches precise structural results — functions, call chains, architecture overviews — instead of reading entire files. Supports 64 languages, Cypher-like queries, dead code detection, cross-service HTTP linking, and git diff impact analysis. A single graph query returns what would take dozens of Grep/Read calls, saving ~99% of tokens on code exploration.
+> **Credit where it's due:** The hook-based enforcement approach and repository structure are adapted from [jmunch-claude-code-setup](https://github.com/shacharbard/jmunch-claude-code-setup) by [Shachar Bard](https://github.com/shacharbard). This repo does not contain either MCP server — it provides the enforcement and tracking layer that makes Claude actually use them. All the clever indexing, knowledge graph construction, and execution sandboxing is the MCP authors' work.
 
-This repo provides the full enforcement stack that makes Claude **actually use** these tools instead of falling back to `Read`:
+## What Each MCP Does
+
+### codebase-memory-mcp (CMM)
+
+Indexes your codebase into a persistent knowledge graph so Claude fetches precise structural results — functions, call chains, architecture overviews — instead of reading entire files. Supports 64 languages, Cypher-like queries, dead code detection, cross-service HTTP linking, and git diff impact analysis. A single graph query returns what would take dozens of Grep/Read calls.
+
+### Context Mode MCP *(optional)*
+
+Runs commands and processes files in isolated sandboxes so only relevant output enters the conversation. Also persists all tool calls (file edits, git ops, errors) to a local SQLite database indexed with FTS5 full-text search — enabling session resume after context compaction without re-reading history.
+
+Real-world compression examples: Playwright snapshots 56 KB → 299 bytes; GitHub issues (batch of 20) 59 KB → 1.1 KB; access logs 45 KB → 155 bytes.
+
+## How They Work Together
+
+CMM and Context Mode are complementary, not competing:
+
+| Layer | Tool | When to use |
+|-------|------|-------------|
+| Code exploration | CMM (`search_graph`, `get_code_snippet`, `trace_call_path`) | Finding functions, call chains, architecture — always |
+| Command execution | Context Mode (`ctx_execute`) | Any Bash command producing large output (logs, tests, API responses) |
+| Web content | Context Mode (`ctx_fetch_and_index` + `ctx_search`) | URLs referenced more than once in a session |
+| Indexed doc search | Context Mode (`ctx_search`) | Querying content previously indexed by Context Mode |
+| File search (non-indexed) | Native Grep/Glob | Source code, config, unindexed content |
+
+**Ordering enforced by hooks:** CMM gate fires first (ensures index is ready), then Context Mode gate (routes execution to sandboxes). CMM indexes the codebase; Context Mode sandboxes what happens next.
+
+## Enforcement Stack
 
 | Layer | What | Effect |
 |-------|------|--------|
-| CLAUDE.md rules | Instructions | Tells Claude *when* to use codebase-memory-mcp tools |
-| PreToolUse nudge hooks | Non-blocking | Reminds Claude when it tries `Read` on code files |
-| Session gate | Blocking | Blocks ALL tools until the index is refreshed at session start |
-| Agent spawn gate | Blocking | Blocks subagent spawning without MCP instructions in prompt |
-| PostToolUse trackers | Passive | Tracks call counts per CMM tool |
-| Statusline | Display | Shows CMM call stats in the Claude Code status bar |
+| CLAUDE.md rules | Instructions | Tells Claude when to use CMM and ctx_* tools |
+| Session gate (CMM) | Blocking (PreToolUse) | Blocks ALL tools until CMM index is refreshed at session start |
+| Session gate (Context Mode) | Blocking (PreToolUse) | Gates tool calls until Context Mode is initialized *(if installed)* |
+| Agent spawn gate | Blocking (PreToolUse) | Blocks subagent spawning without MCP instructions in prompt |
+| PreToolUse nudge | Non-blocking | Reminds Claude when it tries `Read` on indexed code files |
+| PostToolUse logger | Passive | Logs tool calls to SQLite for session resume *(if Context Mode installed)* |
+| PostToolUse tracker | Passive | Tracks CMM call counts per tool |
+| PreCompact snapshot | Passive | Captures session state before context compression *(if Context Mode installed)* |
 
 ## Quick Start
 
 ```bash
-# 1. Download codebase-memory-mcp binary for your platform
-#    Full install docs (macOS/Linux/Windows): https://github.com/DeusData/codebase-memory-mcp#installation
-#
-#    macOS/Linux one-liner:
-#      curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/scripts/setup.sh | bash
-#
-#    Or download the binary manually from:
-#      https://github.com/DeusData/codebase-memory-mcp/releases/latest
-#      (darwin-arm64, darwin-amd64, linux-amd64, linux-arm64, windows-amd64)
+# 1. Clone this repo
+git clone https://github.com/your-org/cmm-claude-code-setup
+cd cmm-claude-code-setup
 
-# 2. Register with Claude Code (auto-detects editor, installs skills)
+# 2. Install CMM binary (macOS/Linux)
+curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/scripts/setup.sh | bash
+# Or download from: https://github.com/DeusData/codebase-memory-mcp/releases/latest
+
+# 3. Register CMM with Claude Code
 codebase-memory-mcp install
 
-# 3. Copy hooks to your project
-mkdir -p .claude/hooks
-cp hooks/project/*.sh .claude/hooks/
-cp hooks/global/*.sh .claude/hooks/
-chmod +x .claude/hooks/*.sh
+# 4. Run the setup script from your target project directory
+cd /path/to/your-project
+bash /path/to/cmm-claude-code-setup/setup.sh --project
 
-# 4. Add settings (merge with your existing .claude/settings.json)
-# See rules/project-settings-example.json
+# 5. Append CMM rules to your global CLAUDE.md
+cat /path/to/cmm-claude-code-setup/rules/global-claude-md.md >> ~/.claude/CLAUDE.md
 
-# 5. Add CLAUDE.md rules (append to ~/.claude/CLAUDE.md)
-# See rules/global-claude-md.md
-
-# 6. Allow MCP tools (add to .claude/settings.local.json)
-# Full list (rules/allowed-tools.txt):
-#   index_repository, index_status, list_projects, delete_project,
-#   get_architecture, get_graph_schema, search_graph, search_code,
-#   query_graph, get_code_snippet, trace_call_path, detect_changes,
-#   manage_adr, ingest_traces
+# 6. Allow CMM tools in your project (add to .claude/settings.local.json)
+# See rules/allowed-tools.txt for the full list of tool names to add
 ```
+
+```bash
+# setup.sh options
+bash setup.sh --help
+
+  --project         Install project hooks + settings into current directory
+  --global          Install global hooks into ~/.claude/
+  --all             Install both
+  --force           Overwrite existing files
+  --dry-run         Preview changes without writing anything
+  --skip-mcp-check  Skip MCP availability prompts (for CI/automation)
+```
+
+The setup script also runs **pre-flight MCP checks**: it detects whether CMM is installed and registered, whether the tool allowlist is configured, and (optionally) whether you want Context Mode.
 
 See [docs/setup-guide.md](docs/setup-guide.md) for the full step-by-step walkthrough.
 
@@ -61,23 +93,28 @@ See [docs/setup-guide.md](docs/setup-guide.md) for the full step-by-step walkthr
 
 ```
 hooks/
-  global/                          # Install to ~/.claude/hooks/ (all projects)
-    cmm-nudge.sh                   # PreToolUse:Read — reminds to use CMM tools on code files
-    reindex-after-edit.sh          # PostToolUse:Write|Edit — triggers re-index after edits
-  project/                         # Install to .claude/hooks/ (per project)
-    agent-cmm-gate.sh             # PreToolUse:Agent — blocks agents without MCP instructions
-    cmm-session-start.sh          # SessionStart — injects index refresh prompt
-    cmm-session-gate.sh           # PreToolUse:* — blocks all tools until index ready
-    cmm-sentinel-writer.sh        # PostToolUse — marks index as refreshed
-    reindex-after-commit.sh       # PostToolUse:Bash — re-index after git commits
-    track-cmm-calls.sh            # PostToolUse — tracks call counts per CMM tool
+  global/                               # Install to ~/.claude/hooks/ (all projects)
+    cmm-nudge.sh                        # PreToolUse:Read — reminds Claude to use CMM on code files
+    reindex-after-edit.sh               # PostToolUse:Write|Edit — prompts re-index after edits
+  project/                              # Install to .claude/hooks/ (per project)
+    cmm-session-start.sh                # SessionStart — injects index refresh prompt (agent-aware)
+    cmm-session-gate.sh                 # PreToolUse:* — blocks all tools until CMM index ready
+    cmm-sentinel-writer.sh              # PostToolUse — marks index as refreshed
+    agent-cmm-gate.sh                   # PreToolUse:Agent — blocks agents without MCP instructions
+    track-cmm-calls.sh                  # PostToolUse — tracks call counts per CMM tool
+    context-mode-session-gate.sh        # PreToolUse:* — gates tools until Context Mode ready (no-op if not installed)
+    context-mode-event-logger.sh        # PostToolUse — logs tool calls to SQLite (no-op if not installed)
+    context-mode-pre-compact.sh         # PreCompact — snapshots session state (no-op if not installed)
 rules/
-  global-claude-md.md              # CLAUDE.md rules for ~/.claude/CLAUDE.md
-  project-settings-example.json    # Example .claude/settings.json with all hooks
-  mcp-example.json                 # Example .mcp.json for project root
-  allowed-tools.txt                # MCP tool allowlist for settings.local.json
+  global-claude-md.md                   # CLAUDE.md rules for ~/.claude/CLAUDE.md (CMM + Context Mode sections)
+  project-settings-example.json         # Example .claude/settings.json with all hooks registered
+  mcp-example.json                      # Example .mcp.json for project-scoped MCP registration
+  allowed-tools.txt                     # CMM + Context Mode tool allowlist for settings.local.json
+benchmarks/
+  run.sh                                # 3-variant benchmark runner (baseline / CMM / CMM+cache)
+  README.md                             # Benchmark documentation
 docs/
-  setup-guide.md                   # Full step-by-step setup guide
+  setup-guide.md                        # Full step-by-step setup guide
 ```
 
 ## How Enforcement Works
@@ -86,45 +123,38 @@ docs/
 
 ```
 Session starts
-  -> cmm-session-start.sh injects "run index NOW" prompt
-  -> cmm-session-gate.sh blocks ALL tools until index done
-  -> Claude runs index_repository
+  -> cmm-session-start.sh injects "run index NOW" prompt (or richer agent init if spawned agent)
+  -> cmm-session-gate.sh blocks ALL tools until CMM index done
+  -> Claude runs index_repository / index_status
   -> cmm-sentinel-writer.sh marks session as ready
+  -> context-mode-session-gate.sh checks Context Mode sentinel (no-op if not installed)
   -> All tools unblocked
 
-Claude needs a function
+Claude explores code
   -> Tries Read on a code file
   -> cmm-nudge.sh fires: use search_graph / get_code_snippet instead
-  -> Claude uses CMM tools
+  -> Claude uses CMM graph tools
   -> track-cmm-calls.sh logs the call
+  -> context-mode-event-logger.sh records the event to SQLite
+
+Claude runs a command
+  -> With Context Mode: uses ctx_execute (output sandboxed, only relevant portion enters context)
+  -> Without Context Mode: uses Bash (full output enters context)
 
 Claude spawns a subagent
-  -> agent-cmm-gate.sh checks prompt for MCP instructions
-  -> Missing? BLOCKED with full copy-paste instructions
+  -> agent-cmm-gate.sh checks prompt for CMM keywords (or ctx_* keywords if Context Mode in use)
+  -> Missing? BLOCKED with copy-paste instructions
   -> Present? Allowed
 
-Claude edits a file
-  -> reindex-after-edit.sh fires (debounced 30s)
-  -> Prompts Claude to re-run index_repository
-
-Claude commits
-  -> reindex-after-commit.sh clears sentinel
-  -> All tools blocked until re-index
+Context window approaches limit
+  -> context-mode-pre-compact.sh fires (if installed)
+  -> Snapshots last 20 events + git HEAD into SQLite
+  -> After compaction: Claude can query history via ctx_search
 ```
 
 ### Call Tracking (`_call-counts.json`)
 
-The `track-cmm-calls.sh` hook tracks how many times each codebase-memory-mcp tool is called during your sessions. This provides visibility into which graph tools Claude is actually using and how heavily.
-
-#### Where the file lives
-
-```
-~/.cache/codebase-memory-mcp/_call-counts.json
-```
-
-This file is created automatically on the first CMM tool call. It accumulates across sessions.
-
-#### What it looks like
+The `track-cmm-calls.sh` hook tracks how many times each CMM tool is called. Accumulates across sessions at `~/.cache/codebase-memory-mcp/_call-counts.json`.
 
 ```json
 {
@@ -135,22 +165,18 @@ This file is created automatically on the first CMM tool call. It accumulates ac
     "mcp__codebase-memory-mcp__trace_call_path": 14,
     "mcp__codebase-memory-mcp__get_architecture": 8,
     "mcp__codebase-memory-mcp__query_graph": 6,
-    "mcp__codebase-memory-mcp__index_repository": 4,
-    "mcp__codebase-memory-mcp__detect_changes": 3,
-    "mcp__codebase-memory-mcp__search_code": 1
+    "mcp__codebase-memory-mcp__index_repository": 4
   }
 }
 ```
 
 ## Statusline
 
-To display CMM call stats in your Claude Code statusline, read from the call counts file. Here is an example snippet:
+Display CMM call stats in your Claude Code statusline:
 
 ```bash
 #!/bin/bash
-# Example: read CMM call counts for statusline display
 COUNTS_FILE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
-
 if [ -f "$COUNTS_FILE" ]; then
   TOTAL=$(jq -r '.total_calls // 0' "$COUNTS_FILE")
   SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$COUNTS_FILE")
@@ -175,7 +201,7 @@ Register in `~/.claude/settings.json`:
 
 ## Subagent Instructions Template
 
-When spawning subagents, include these instructions in the prompt to ensure they use codebase-memory-mcp:
+When spawning subagents, include these instructions to ensure they use CMM:
 
 ```
 **Code navigation (MANDATORY):** Use codebase-memory-mcp MCP tools for all code exploration.
@@ -187,78 +213,93 @@ When spawning subagents, include these instructions in the prompt to ensure they
 - Full Read only when: editing 6+ functions in same file, need imports/globals, file <50 lines, non-code files
 ```
 
-The `agent-cmm-gate.sh` hook enforces this — spawning is blocked if these instructions are missing.
+The `agent-cmm-gate.sh` hook enforces this — spawning is blocked if these instructions (or equivalent `ctx_*` keywords) are missing.
 
 ## Context Mode MCP — Optional Add-on
 
-[Context Mode MCP](https://github.com/mksglu/context-mode) is an optional add-on that reduces context window usage by ~98% by routing tool outputs through sandboxes and persisting session state via a local SQLite database. CMM works fully without it — Context Mode is an additive layer for long sessions where context bloat becomes a bottleneck.
+[Context Mode MCP](https://github.com/mksglu/context-mode) reduces context window usage by ~98% by routing tool outputs through sandboxes and persisting session state via SQLite. CMM works fully without it — Context Mode is an additive layer for long sessions where context bloat becomes a bottleneck.
 
-### Prerequisites
+All three Context Mode hooks are included in this repo and **gracefully no-op** when Context Mode is not installed — so you can install them unconditionally and enable Context Mode later.
 
-- `context-mode` MCP server installed separately: [https://github.com/mksglu/context-mode](https://github.com/mksglu/context-mode)
-
-### Install Steps
+### Install
 
 ```bash
 # 1. Install Context Mode MCP
 npx @mksglu/context-mode install
-# (or follow install docs at https://github.com/mksglu/context-mode)
+# (or follow docs at https://github.com/mksglu/context-mode)
 
-# 2. Hooks are already included — just copy them
-cp hooks/project/context-mode-session-gate.sh .claude/hooks/
-cp hooks/project/context-mode-event-logger.sh .claude/hooks/
-cp hooks/project/context-mode-pre-compact.sh .claude/hooks/
-chmod +x .claude/hooks/context-mode-*.sh
+# 2. Hooks are already installed by setup.sh — no extra copy step needed
+#    If you installed manually, they're in hooks/project/context-mode-*.sh
 
-# 3. Merge Context Mode entries into .claude/settings.json
-# See rules/project-settings-example.json for the full merged example
-# IMPORTANT: cmm-session-gate must appear before context-mode-session-gate in PreToolUse
+# 3. The settings example already includes Context Mode hook entries
+#    IMPORTANT: cmm-session-gate must appear before context-mode-session-gate in PreToolUse
+#    See rules/project-settings-example.json
 
-# 4. Append Context Mode rules to ~/.claude/CLAUDE.md
-# See rules/global-claude-md.md (Context Mode section at the bottom)
+# 4. Append the Context Mode rules section to ~/.claude/CLAUDE.md
+#    See the bottom of rules/global-claude-md.md
 ```
+
+### Project-Scoped MCP Registration
+
+Both CMM and Context Mode can be activated for a single project only by adding them to `.mcp.json` in the project root (installed by `setup.sh --project`):
+
+```json
+{
+  "mcpServers": {
+    "codebase-memory-mcp": {
+      "command": "codebase-memory-mcp",
+      "args": [],
+      "type": "stdio"
+    },
+    "context-mode": {
+      "command": "npx",
+      "args": ["@mksglu/context-mode", "start"]
+    }
+  }
+}
+```
+
+The MCP executables live wherever they're installed globally — only the registration is project-scoped.
 
 ### What You Get
 
-- Context Mode session gate (no-ops if not installed) — fires after CMM gate in PreToolUse
-- PostToolUse event logger to `.claude/context-mode.db` — captures file edits, git ops, and tool calls
-- PreCompact snapshot for session resume after context compression
+- Context Mode session gate — fires after CMM gate in PreToolUse; no-ops if not installed
+- PostToolUse event logger to `.claude/context-mode.db` — captures file edits, git ops, tool calls
+- PreCompact snapshot — records session state before context compression for later resume via `ctx_search`
 - CLAUDE.md rules for `ctx_execute`, `ctx_search`, `ctx_fetch_and_index`
 - Agent gate accepts `ctx_*` keywords alongside CMM keywords
 
-The settings example enforces CMM gate before Context Mode gate — CMM indexes the codebase first, then Context Mode sandboxes execution.
-
-## Requirements
-
-- [Claude Code](https://claude.ai/claude-code) CLI
-- [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) binary (Go, installed from GitHub releases)
-- `jq` for JSON parsing in hooks
-- `python3` for hook input parsing
-- `bc` for statusline number formatting
-
 ## Benchmarks
 
-The `benchmarks/` directory contains a reproducible benchmark suite that measures Claude Code token consumption when answering standard codebase questions — comparing three variants:
+The `benchmarks/` directory contains a reproducible benchmark suite comparing three variants:
 
 - **baseline**: No MCP tools (Claude reads files directly)
 - **cmm-cold**: CMM enabled, fresh index each run
 - **cmm-cache**: CMM enabled, pre-warmed index
 
-### Quick Start
-
 ```bash
 ./benchmarks/run.sh
 ```
 
-See [benchmarks/README.md](benchmarks/README.md) for full documentation including prerequisites, configuration, and result interpretation.
+See [benchmarks/README.md](benchmarks/README.md) for prerequisites, configuration, and result interpretation.
+
+## Requirements
+
+- [Claude Code](https://claude.ai/claude-code) CLI
+- [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) binary
+- `python3` (required — used by setup.sh for JSON merging and hook input parsing)
+- `jq` (recommended — used by some hooks for JSON parsing)
+- [Context Mode MCP](https://github.com/mksglu/context-mode) *(optional)*
+- `sqlite3` *(optional — required for Context Mode event logging)*
 
 ## Credits
 
 - [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) by [DeusData](https://github.com/DeusData)
+- [Context Mode MCP](https://github.com/mksglu/context-mode) by [mksglu](https://github.com/mksglu)
 - Repository structure and enforcement approach inspired by [jmunch-claude-code-setup](https://github.com/shacharbard/jmunch-claude-code-setup) by [Shachar Bard](https://github.com/shacharbard)
 
 ## License
 
-The hooks, rules, statusline snippets, and documentation in this repository are licensed under the [MIT License](LICENSE).
+The hooks, rules, and documentation in this repository are licensed under the [MIT License](LICENSE).
 
-This repo does **not** include the codebase-memory-mcp server itself — only configuration and enforcement tooling that works with it. The MCP server is a separate project by [DeusData](https://github.com/DeusData) and is subject to its own license. See [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) for its terms.
+This repo does not include either MCP server — only the configuration and enforcement tooling. Each MCP server is a separate project subject to its own license.
