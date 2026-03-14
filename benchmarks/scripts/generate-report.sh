@@ -22,6 +22,7 @@ OUTPUT="$RESULTS_DIR/REPORT-${TODAY}.md"
 
 CLAUDE_VERSION=$(claude --version 2>/dev/null || echo "unknown")
 CMM_VERSION=$(codebase-memory-mcp --version 2>/dev/null || echo "unknown")
+CTX_VERSION=$(context-mode --version 2>/dev/null || echo "unknown")
 
 # Extract n_runs from the CSV (first data row, column 4)
 N_RUNS=$(awk -F',' 'NR==2{print $4}' "$AGG_CSV")
@@ -65,7 +66,8 @@ END {
   for (v in "baseline cmm-cold cmm-cache") {}
   # print in fixed order
   variants[1] = "baseline"; variants[2] = "cmm-cold"; variants[3] = "cmm-cache"
-  for (i = 1; i <= 3; i++) {
+  variants[4] = "ctx"; variants[5] = "cmm+ctx-cold"; variants[6] = "cmm+ctx-cache"
+  for (i = 1; i <= 6; i++) {
     v = variants[i]
     if (!(v in count)) continue
     vs_baseline = (v == "baseline") ? "—" : fmt_pct(base_mean, grand_mean[v])
@@ -92,11 +94,12 @@ END {
   repo_list[3]="httpie/cli"; repo_list[4]="redis/redis"
   repo_list[5]="meilisearch/meilisearch"
   variants[1]="baseline"; variants[2]="cmm-cold"; variants[3]="cmm-cache"
+  variants[4]="ctx"; variants[5]="cmm+ctx-cold"; variants[6]="cmm+ctx-cache"
   for (ri = 1; ri <= 5; ri++) {
     r = repo_list[ri]
     if (!(r in repos)) continue
     printf "| %s", r
-    for (vi = 1; vi <= 3; vi++) {
+    for (vi = 1; vi <= 6; vi++) {
       v = variants[vi]
       if (count[r][v] > 0)
         printf " | %.0f", sum[r][v] / count[r][v]
@@ -127,11 +130,12 @@ END {
   task_names[3]="03-list-exports"; task_names[4]="04-find-imports"
   task_names[5]="05-dead-code"
   variants[1]="baseline"; variants[2]="cmm-cold"; variants[3]="cmm-cache"
+  variants[4]="ctx"; variants[5]="cmm+ctx-cold"; variants[6]="cmm+ctx-cache"
   for (ti = 1; ti <= 5; ti++) {
     t = task_labels[ti]
     if (!(t in tasks)) continue
     printf "| %s", task_names[ti]
-    for (vi = 1; vi <= 3; vi++) {
+    for (vi = 1; vi <= 6; vi++) {
       v = variants[vi]
       if (count[t][v] > 0)
         printf " | %.0f", sum[t][v] / count[t][v]
