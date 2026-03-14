@@ -189,6 +189,45 @@ When spawning subagents, include these instructions in the prompt to ensure they
 
 The `agent-cmm-gate.sh` hook enforces this — spawning is blocked if these instructions are missing.
 
+## Context Mode MCP — Optional Add-on
+
+[Context Mode MCP](https://github.com/mksglu/context-mode) is an optional add-on that reduces context window usage by ~98% by routing tool outputs through sandboxes and persisting session state via a local SQLite database. CMM works fully without it — Context Mode is an additive layer for long sessions where context bloat becomes a bottleneck.
+
+### Prerequisites
+
+- `context-mode` MCP server installed separately: [https://github.com/mksglu/context-mode](https://github.com/mksglu/context-mode)
+
+### Install Steps
+
+```bash
+# 1. Install Context Mode MCP
+npx @mksglu/context-mode install
+# (or follow install docs at https://github.com/mksglu/context-mode)
+
+# 2. Hooks are already included — just copy them
+cp hooks/project/context-mode-session-gate.sh .claude/hooks/
+cp hooks/project/context-mode-event-logger.sh .claude/hooks/
+cp hooks/project/context-mode-pre-compact.sh .claude/hooks/
+chmod +x .claude/hooks/context-mode-*.sh
+
+# 3. Merge Context Mode entries into .claude/settings.json
+# See rules/project-settings-example.json for the full merged example
+# IMPORTANT: cmm-session-gate must appear before context-mode-session-gate in PreToolUse
+
+# 4. Append Context Mode rules to ~/.claude/CLAUDE.md
+# See rules/global-claude-md.md (Context Mode section at the bottom)
+```
+
+### What You Get
+
+- Context Mode session gate (no-ops if not installed) — fires after CMM gate in PreToolUse
+- PostToolUse event logger to `.claude/context-mode.db` — captures file edits, git ops, and tool calls
+- PreCompact snapshot for session resume after context compression
+- CLAUDE.md rules for `ctx_execute`, `ctx_search`, `ctx_fetch_and_index`
+- Agent gate accepts `ctx_*` keywords alongside CMM keywords
+
+The settings example enforces CMM gate before Context Mode gate — CMM indexes the codebase first, then Context Mode sandboxes execution.
+
 ## Requirements
 
 - [Claude Code](https://claude.ai/claude-code) CLI
