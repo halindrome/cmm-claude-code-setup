@@ -153,6 +153,68 @@ detect_cmm_binary() {
 }
 
 # ---------------------------------------------------------------------------
+# detect_cmm_registration
+# ---------------------------------------------------------------------------
+
+# Status variable populated by detect_cmm_registration(); read by print_preflight_summary()
+CMM_REGISTRATION_STATUS="unknown"
+
+detect_cmm_registration() {
+  if [ "$SKIP_MCP_CHECK" = true ]; then
+    CMM_REGISTRATION_STATUS="skip"
+    return 0
+  fi
+
+  # 1. Project .mcp.json
+  if [ -f ".mcp.json" ] && grep -q "codebase-memory-mcp" ".mcp.json"; then
+    CMM_REGISTRATION_STATUS="ok"
+    echo "  [ok] CMM registered (project .mcp.json)"
+    return 0
+  fi
+
+  # 2. Global settings.json
+  local config_dir
+  config_dir=$(detect_config_dir)
+  if grep -q "codebase-memory-mcp" "${config_dir}/settings.json" 2>/dev/null; then
+    CMM_REGISTRATION_STATUS="ok"
+    echo "  [ok] CMM registered (global settings.json)"
+    return 0
+  fi
+
+  # Not registered
+  CMM_REGISTRATION_STATUS="warn"
+  echo ""
+  echo "  [warn] CMM not registered with Claude Code."
+  echo "  [info] Register it by running (copy and run):"
+  echo "           codebase-memory-mcp install"
+  echo "  [info] Or manually add to .mcp.json:"
+  echo '           { "mcpServers": { "codebase-memory-mcp": { "command": "codebase-memory-mcp", "args": [], "type": "stdio" } } }'
+  echo ""
+  printf "  Continue without registering CMM? [y/N]: "
+  read -r choice
+  choice="${choice:-n}"
+  if [ "$choice" != "y" ] && [ "$choice" != "Y" ]; then
+    echo "Aborting. Register CMM and re-run setup.sh." >&2
+    exit 1
+  fi
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# check_mcp_availability
+# ---------------------------------------------------------------------------
+
+check_mcp_availability() {
+  if [ "$SKIP_MCP_CHECK" = true ]; then
+    return 0
+  fi
+
+  echo "[MCP PRE-FLIGHT CHECKS]"
+  detect_cmm_registration
+  echo ""
+}
+
+# ---------------------------------------------------------------------------
 # check_prerequisites
 # ---------------------------------------------------------------------------
 
@@ -369,6 +431,7 @@ parse_args() {
 main() {
   parse_args "$@"
   check_prerequisites
+  check_mcp_availability
 
   if [ "$INSTALL_GLOBAL" = true ]; then
     install_global
