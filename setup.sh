@@ -288,6 +288,8 @@ _print_cmm_tools_snippet() {
 
 # Status variable populated by detect_context_mode(); read by print_preflight_summary()
 CONTEXT_MODE_STATUS="skip"
+# Whether to register context-mode in .mcp.json (set by detect_context_mode)
+INSTALL_CONTEXT_MODE=false
 
 detect_context_mode() {
   if [ "$SKIP_MCP_CHECK" = true ]; then
@@ -301,9 +303,15 @@ detect_context_mode() {
     return 0
   fi
 
-  # Detection: binary or existing db
-  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ]; then
+  # Detection: binary, existing db, or already registered in .mcp.json
+  local already_registered=false
+  if [ -f ".mcp.json" ] && grep -q "context-mode" ".mcp.json" 2>/dev/null; then
+    already_registered=true
+  fi
+
+  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ] || [ "$already_registered" = true ]; then
     CONTEXT_MODE_STATUS="ok"
+    INSTALL_CONTEXT_MODE=true
     echo "  [ok] context-mode detected"
     return 0
   fi
@@ -316,30 +324,14 @@ detect_context_mode() {
     read -r choice
     choice="${choice:-n}"
     if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
-      echo "  [info] Install Context Mode:"
-      echo "           npm install -g context-mode"
-      if [ "$INSTALL_PROJECT" = true ]; then
-        echo "  [info] Register with Claude Code (project-scoped):"
-        echo "           claude mcp add --scope project context-mode -- npx -y context-mode"
-      else
-        echo "  [info] Register with Claude Code (globally):"
-        echo "           claude mcp add context-mode -- npx -y context-mode"
-        echo "  [info] Or project-scoped (recommended — run from project dir):"
-        echo "           claude mcp add --scope project context-mode -- npx -y context-mode"
-      fi
+      INSTALL_CONTEXT_MODE=true
+      CONTEXT_MODE_STATUS="ok"
+      echo "  [info] Context Mode will be registered in .mcp.json"
       echo "  [info] Docs: https://github.com/mksglu/context-mode"
     fi
   else
     echo "  [warn] context-mode not detected."
-    echo "  [info] Install Context Mode:"
-    echo "           npm install -g context-mode"
-    if [ "$INSTALL_PROJECT" = true ]; then
-      echo "  [info] Register with Claude Code (project-scoped):"
-      echo "           claude mcp add --scope project context-mode -- npx -y context-mode"
-    else
-      echo "  [info] Register with Claude Code:"
-      echo "           claude mcp add context-mode -- npx -y context-mode"
-    fi
+    echo "  [info] To add later: re-run setup.sh --project (without --skip-mcp-check)"
     echo "  [info] Docs: https://github.com/mksglu/context-mode"
   fi
   return 0
@@ -587,7 +579,64 @@ install_project() {
   done
   shopt -u nullglob
 
-  copy_file "$SCRIPT_DIR/rules/mcp-example.json" ".mcp.json"
+  # Merge MCP servers into .mcp.json (creates if missing, preserves existing servers)
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would merge CMM into .mcp.json"
+    if [ "$INSTALL_CONTEXT_MODE" = true ]; then
+      echo "  [DRY RUN] Would merge context-mode into .mcp.json"
+    fi
+  else
+    if python3 - ".mcp.json" "$INSTALL_CONTEXT_MODE" <<'MCPEOF'
+import json, os, sys
+
+mcp_path = sys.argv[1]
+install_ctx = sys.argv[2] == "true"
+
+try:
+    with open(mcp_path) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    data = {}
+
+if "mcpServers" not in data:
+    data["mcpServers"] = {}
+
+# Always ensure CMM is registered
+if "codebase-memory-mcp" not in data["mcpServers"]:
+    data["mcpServers"]["codebase-memory-mcp"] = {
+        "command": "codebase-memory-mcp",
+        "args": [],
+        "type": "stdio"
+    }
+    print("  [ok] Registered codebase-memory-mcp in .mcp.json")
+else:
+    print("  [skip] codebase-memory-mcp already in .mcp.json")
+
+# Register context-mode if requested
+if install_ctx:
+    if "context-mode" not in data["mcpServers"]:
+        data["mcpServers"]["context-mode"] = {
+            "command": "npx",
+            "args": ["-y", "context-mode"],
+            "type": "stdio"
+        }
+        print("  [ok] Registered context-mode in .mcp.json")
+    else:
+        print("  [skip] context-mode already in .mcp.json")
+
+tmp = mcp_path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+os.replace(tmp, mcp_path)
+MCPEOF
+    then
+      python3 -m json.tool ".mcp.json" > /dev/null 2>&1 || \
+        echo "  [warn] JSON validation failed for .mcp.json"
+    else
+      echo "  [warn] Failed to merge MCP servers into .mcp.json"
+    fi
+  fi
 
   merge_settings_json ".claude/settings.json" "project"
 
