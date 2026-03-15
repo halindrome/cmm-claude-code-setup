@@ -7,3 +7,9 @@
 # Editor
 .idea/
 *.swp
+
+# Benchmark results (actual runs) — keep examples and templates
+benchmarks/results/raw-*.csv
+benchmarks/results/aggregated-*.csv
+benchmarks/results/REPORT-*.md
+!benchmarks/results/REPORT-TEMPLATE.md
