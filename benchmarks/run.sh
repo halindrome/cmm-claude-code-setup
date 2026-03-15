@@ -46,11 +46,16 @@ bash "$SCRIPT_DIR/scripts/setup-repos.sh"
 # Step 2: Run benchmarks (outputs raw CSV path on last stdout line)
 # ---------------------------------------------------------------------------
 echo "[run.sh] Step 2/3 — Running benchmarks..."
-RAW_CSV=$(bash "$SCRIPT_DIR/scripts/run-benchmarks.sh" "${PASS_THROUGH_ARGS[@]}" | tail -1)
+BENCH_RC=0
+RAW_CSV=$(bash "$SCRIPT_DIR/scripts/run-benchmarks.sh" "${PASS_THROUGH_ARGS[@]}" | tail -1) || BENCH_RC=$?
 
 if [[ -z "$RAW_CSV" || ! -f "$RAW_CSV" ]]; then
   echo "[error] run-benchmarks.sh did not produce a valid CSV path: '${RAW_CSV}'" >&2
   exit 1
+fi
+
+if [[ $BENCH_RC -ne 0 ]]; then
+  echo "[warn] Some benchmark runs failed (exit $BENCH_RC) — generating report from partial data" >&2
 fi
 
 echo "[run.sh] Raw CSV: $RAW_CSV"
@@ -66,3 +71,5 @@ echo ""
 echo "================================================================"
 echo "Report saved to: $REPORT"
 echo "================================================================"
+
+exit "$BENCH_RC"

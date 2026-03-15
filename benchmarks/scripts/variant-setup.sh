@@ -27,9 +27,14 @@ setup_variant() {
 
   case "$variant" in
     baseline)
-      # Save current .mcp.json then replace with empty mcpServers config
+      # Save current .mcp.json then replace with baseline template (no MCP tools)
       cp "$MCP_JSON" "$MCP_BACKUP" 2>/dev/null || true
-      echo '{"mcpServers":{}}' > "$MCP_JSON"
+      if [ -f "${BENCH_TEMPLATE_DIR}/.mcp.json.baseline" ]; then
+        cp "${BENCH_TEMPLATE_DIR}/.mcp.json.baseline" "$MCP_JSON"
+      else
+        echo '{"mcpServers":{}}' > "$MCP_JSON"
+        echo "[warn] .mcp.json.baseline not found — using inline fallback" >&2
+      fi
       echo "[variant] baseline — CMM disabled (.mcp.json → empty mcpServers)" >&2
       ;;
 

@@ -11,7 +11,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-SESSIONS_GLOB="${HOME}/.config/claude-code/projects/*/*.jsonl"
+SESSIONS_GLOB="${CLAUDE_SESSIONS_DIR:-$HOME/.config/claude-code/projects}/*/*.jsonl"
 
 # Collect candidates sorted by modification time (newest first)
 CANDIDATES=$(ls -t ${SESSIONS_GLOB} 2>/dev/null)

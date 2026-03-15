@@ -26,9 +26,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Resolve absolute paths relative to this script
-RESULTS_DIR="$SCRIPT_DIR/../results"
-PROMPTS_DIR="$SCRIPT_DIR/../prompts"
+# Resolve paths from config, falling back to relative paths
+RESULTS_DIR="${BENCH_RESULTS_DIR:-$SCRIPT_DIR/../results}"
+PROMPTS_DIR="${BENCH_PROMPTS_DIR:-$SCRIPT_DIR/../prompts}"
 OVERRIDES="$PROMPTS_DIR/repo-overrides.json"
 
 mkdir -p "$RESULTS_DIR"
