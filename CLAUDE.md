@@ -49,6 +49,10 @@ Before marking any PR ready for review, follow the QA cycle defined in `CONTRIBU
 
 > **Skip condition:** Docs-only PRs (no changes to `hooks/`, `setup.sh`, or `rules/`) skip the QA cycle.
 
+## Merge Requirements
+
+- **Version bump required.** Every PR merged into `main` must include a version number increase. Bump the version as the final commit before merge — use `scripts/bump-version.sh` if it exists, or update the version file directly. Follow semver: breaking changes → major, new features → minor, fixes → patch.
+
 ## Commands
 
 Run /vbw:status for current progress.
