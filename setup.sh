@@ -184,7 +184,15 @@ detect_cmm_registration() {
     return 0
   fi
 
-  # Not registered
+  # Not registered yet
+  if [ "$INSTALL_PROJECT" = true ] || [ "$INSTALL_GLOBAL" = true ]; then
+    # setup.sh will register CMM in .mcp.json during install — no need to abort
+    CMM_REGISTRATION_STATUS="ok"
+    echo "  [info] CMM not yet registered — setup will add it to .mcp.json"
+    return 0
+  fi
+
+  # Neither --project nor --global: warn and offer to abort
   CMM_REGISTRATION_STATUS="warn"
   echo ""
   echo "  [warn] CMM not registered with Claude Code."
