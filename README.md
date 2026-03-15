@@ -203,7 +203,7 @@ Register in `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "bash \"$HOME/.claude/statusline-cmm.sh\""
+    "command": "bash \"$HOME/.claude/hooks/statusline-cmm.sh\""
   }
 }
 ```

@@ -667,7 +667,7 @@ except Exception:
 #!/bin/bash
 # statusline-cmm.sh — Display CMM call stats in Claude Code statusline
 CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
-if [ ! -f "$CACHE" ]; then echo "CMM:—"; exit 0; fi
+if [ ! -f "$CACHE" ]; then echo "CMM:0"; exit 0; fi
 TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
 SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
 SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
@@ -693,12 +693,12 @@ for config_dir in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.c
   GLOBAL_CMD=$(python3 -c "
 import json, sys
 try:
-    with open('${config_dir}/settings.json') as f:
+    with open(sys.argv[1]) as f:
         cmd = json.load(f).get('statusLine', {}).get('command', '')
         print(cmd)
 except Exception:
     pass
-" 2>/dev/null)
+" "${config_dir}/settings.json" 2>/dev/null)
   [ -n "$GLOBAL_CMD" ] && break
 done
 
@@ -712,7 +712,7 @@ if [ -f "$CACHE" ]; then
   TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
   CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
 else
-  CMM_OUTPUT="CMM:—"
+  CMM_OUTPUT="CMM:0"
 fi
 
 # --- Combine: run global statusline, append CMM stats ---
