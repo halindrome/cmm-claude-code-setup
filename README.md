@@ -174,6 +174,15 @@ The `track-cmm-calls.sh` hook tracks how many times each CMM tool is called. Acc
 
 Display CMM call stats in your Claude Code statusline:
 
+> **Automated install:** Run `bash setup.sh --global` (or `--project`) — setup now
+> offers to install the statusline automatically. Use `--skip-statusline` to bypass.
+
+> - **Global install** generates a standalone script showing CMM stats only.
+> - **Project install** generates a wrapper that runs your existing global statusline
+>   and appends CMM stats (e.g., `my-branch +3 -1 | CMM:5 (sg:3 cs:1 tr:1)`).
+
+### Manual installation
+
 ```bash
 #!/bin/bash
 COUNTS_FILE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
@@ -194,7 +203,7 @@ Register in `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "bash \"$HOME/.claude/statusline-cmm.sh\""
+    "command": "bash \"$HOME/.claude/hooks/statusline-cmm.sh\""
   }
 }
 ```

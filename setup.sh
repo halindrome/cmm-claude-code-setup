@@ -4,7 +4,7 @@ set -euo pipefail
 # setup.sh — Automated installer for codebase-memory-mcp Claude Code hooks
 #
 # Usage:
-#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check]
+#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline]
 #
 # Flags:
 #   --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
@@ -31,6 +31,7 @@ DRY_RUN=false
 INSTALL_GLOBAL=false
 INSTALL_PROJECT=false
 SKIP_MCP_CHECK=false
+SKIP_STATUSLINE=false
 
 # Detect Claude Code config directory at runtime.
 # Priority: $CLAUDE_CONFIG_DIR (set by Claude Code) > ~/.config/claude-code (XDG) > ~/.claude (legacy)
@@ -183,7 +184,15 @@ detect_cmm_registration() {
     return 0
   fi
 
-  # Not registered
+  # Not registered yet
+  if [ "$INSTALL_PROJECT" = true ] || [ "$INSTALL_GLOBAL" = true ]; then
+    # setup.sh will register CMM in .mcp.json during install — no need to abort
+    CMM_REGISTRATION_STATUS="ok"
+    echo "  [info] CMM not yet registered — setup will add it to .mcp.json"
+    return 0
+  fi
+
+  # Neither --project nor --global: warn and offer to abort
   CMM_REGISTRATION_STATUS="warn"
   echo ""
   echo "  [warn] CMM not registered with Claude Code."
@@ -287,6 +296,8 @@ _print_cmm_tools_snippet() {
 
 # Status variable populated by detect_context_mode(); read by print_preflight_summary()
 CONTEXT_MODE_STATUS="skip"
+# Whether to register context-mode in .mcp.json (set by detect_context_mode)
+INSTALL_CONTEXT_MODE=false
 
 detect_context_mode() {
   if [ "$SKIP_MCP_CHECK" = true ]; then
@@ -300,9 +311,15 @@ detect_context_mode() {
     return 0
   fi
 
-  # Detection: binary or existing db
-  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ]; then
+  # Detection: binary, existing db, or already registered in .mcp.json
+  local already_registered=false
+  if [ -f ".mcp.json" ] && grep -q "context-mode" ".mcp.json" 2>/dev/null; then
+    already_registered=true
+  fi
+
+  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ] || [ "$already_registered" = true ]; then
     CONTEXT_MODE_STATUS="ok"
+    INSTALL_CONTEXT_MODE=true
     echo "  [ok] context-mode detected"
     return 0
   fi
@@ -315,30 +332,14 @@ detect_context_mode() {
     read -r choice
     choice="${choice:-n}"
     if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
-      echo "  [info] Install Context Mode:"
-      echo "           npm install -g context-mode"
-      if [ "$INSTALL_PROJECT" = true ]; then
-        echo "  [info] Register with Claude Code (project-scoped):"
-        echo "           claude mcp add --scope project context-mode -- npx -y context-mode"
-      else
-        echo "  [info] Register with Claude Code (globally):"
-        echo "           claude mcp add context-mode -- npx -y context-mode"
-        echo "  [info] Or project-scoped (recommended — run from project dir):"
-        echo "           claude mcp add --scope project context-mode -- npx -y context-mode"
-      fi
+      INSTALL_CONTEXT_MODE=true
+      CONTEXT_MODE_STATUS="ok"
+      echo "  [info] Context Mode will be registered in .mcp.json"
       echo "  [info] Docs: https://github.com/mksglu/context-mode"
     fi
   else
     echo "  [warn] context-mode not detected."
-    echo "  [info] Install Context Mode:"
-    echo "           npm install -g context-mode"
-    if [ "$INSTALL_PROJECT" = true ]; then
-      echo "  [info] Register with Claude Code (project-scoped):"
-      echo "           claude mcp add --scope project context-mode -- npx -y context-mode"
-    else
-      echo "  [info] Register with Claude Code:"
-      echo "           claude mcp add context-mode -- npx -y context-mode"
-    fi
+    echo "  [info] To add later: re-run setup.sh --project (without --skip-mcp-check)"
     echo "  [info] Docs: https://github.com/mksglu/context-mode"
   fi
   return 0
@@ -586,11 +587,278 @@ install_project() {
   done
   shopt -u nullglob
 
-  copy_file "$SCRIPT_DIR/rules/mcp-example.json" ".mcp.json"
+  # Merge MCP servers into .mcp.json (creates if missing, preserves existing servers)
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would merge CMM into .mcp.json"
+    if [ "$INSTALL_CONTEXT_MODE" = true ]; then
+      echo "  [DRY RUN] Would merge context-mode into .mcp.json"
+    fi
+  else
+    if python3 - ".mcp.json" "$INSTALL_CONTEXT_MODE" <<'MCPEOF'
+import json, os, sys
+
+mcp_path = sys.argv[1]
+install_ctx = sys.argv[2] == "true"
+
+try:
+    with open(mcp_path) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    data = {}
+
+if "mcpServers" not in data:
+    data["mcpServers"] = {}
+
+# Always ensure CMM is registered
+if "codebase-memory-mcp" not in data["mcpServers"]:
+    data["mcpServers"]["codebase-memory-mcp"] = {
+        "command": "codebase-memory-mcp",
+        "args": [],
+        "type": "stdio"
+    }
+    print("  [ok] Registered codebase-memory-mcp in .mcp.json")
+else:
+    print("  [skip] codebase-memory-mcp already in .mcp.json")
+
+# Register context-mode if requested
+if install_ctx:
+    if "context-mode" not in data["mcpServers"]:
+        data["mcpServers"]["context-mode"] = {
+            "command": "npx",
+            "args": ["-y", "context-mode"],
+            "type": "stdio"
+        }
+        print("  [ok] Registered context-mode in .mcp.json")
+    else:
+        print("  [skip] context-mode already in .mcp.json")
+
+tmp = mcp_path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+os.replace(tmp, mcp_path)
+MCPEOF
+    then
+      python3 -m json.tool ".mcp.json" > /dev/null 2>&1 || \
+        echo "  [warn] JSON validation failed for .mcp.json"
+    else
+      echo "  [warn] Failed to merge MCP servers into .mcp.json"
+    fi
+  fi
 
   merge_settings_json ".claude/settings.json" "project"
 
   echo ""
+}
+
+# ---------------------------------------------------------------------------
+# install_statusline
+# ---------------------------------------------------------------------------
+
+install_statusline() {
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would offer to install statusline-cmm.sh and merge statusLine into settings.local.json"
+    return
+  fi
+
+  _run_install_statusline_for_target() {
+    local target_config_dir="$1"
+    local mode="$2"
+
+    # statusLine is personal/machine-specific, so it belongs in settings.local.json
+    # (gitignored, per Claude Code docs). We check both files for existing entries.
+    local target_settings="${target_config_dir}/settings.local.json"
+    local shared_settings="${target_config_dir}/settings.json"
+
+    # Detect existing statusLine entry in settings.local.json OR settings.json
+    local has_statusline=false
+    local found_in=""
+    for check_file in "$target_settings" "$shared_settings"; do
+      if [ -f "$check_file" ]; then
+        if python3 -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    sys.exit(0 if 'statusLine' in data else 1)
+except Exception:
+    sys.exit(1)
+" "$check_file" 2>/dev/null; then
+          has_statusline=true
+          found_in="$check_file"
+          break
+        fi
+      fi
+    done
+
+    if [ "$has_statusline" = true ]; then
+      if [ "$FORCE" = true ]; then
+        echo "  [info] Overwriting existing statusLine config in ${found_in} (--force)"
+      else
+        echo "  [warn] Existing statusLine config found in ${found_in}"
+        if [ ! -t 0 ]; then
+          # Non-interactive: skip silently, do not overwrite
+          return
+        fi
+        printf "  Existing statusLine detected. Overwrite with CMM statusline? [y/N] "
+        read -r overwrite_reply
+        case "$overwrite_reply" in
+          y|Y) ;;
+          *) echo "  [skip] Statusline installation skipped"; return ;;
+        esac
+      fi
+    else
+      if [ "$FORCE" != true ]; then
+        if [ ! -t 0 ]; then
+          # Non-interactive: skip silently, no default install
+          return
+        fi
+        printf "  Install CMM call stats statusline? [y/N] "
+        read -r install_reply
+        case "$install_reply" in
+          y|Y) ;;
+          *) echo "  [skip] Statusline installation skipped"; return ;;
+        esac
+      fi
+    fi
+
+    # Create hooks dir if needed
+    mkdir -p "${target_config_dir}/hooks"
+
+    local script_path="${target_config_dir}/hooks/statusline-cmm.sh"
+
+    if [ "$mode" = "global" ]; then
+      # GLOBAL MODE — Generate standalone statusline-cmm.sh
+      cat > "$script_path" <<'STATUSLINE_SCRIPT'
+#!/bin/bash
+# statusline-cmm.sh — Display CMM call stats in Claude Code statusline
+CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
+if [ ! -f "$CACHE" ]; then echo "CMM:0"; exit 0; fi
+TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
+SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
+SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
+TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
+echo "CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+STATUSLINE_SCRIPT
+    else
+      # PROJECT MODE — Generate wrapper statusline-cmm.sh
+      # Wrapper: runs user's global statusline, appends CMM stats
+      cat > "$script_path" <<'WRAPPER_SCRIPT'
+#!/bin/bash
+# statusline-cmm.sh — Wrapper: runs user's global statusline, appends CMM stats
+#
+# Reads the user's global statusLine.command from global settings.json,
+# runs it, and appends CMM call stats with a pipe separator.
+# Falls back to CMM-only output when no global statusline is configured.
+
+# --- Discover user's existing global statusline command ---
+# Check settings.local.json first (higher precedence), then settings.json
+GLOBAL_CMD=""
+for config_dir in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"; do
+  [ -z "$config_dir" ] && continue
+  for settings_file in "${config_dir}/settings.local.json" "${config_dir}/settings.json"; do
+    [ -f "$settings_file" ] || continue
+    GLOBAL_CMD=$(python3 -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        cmd = json.load(f).get('statusLine', {}).get('command', '')
+        print(cmd)
+except Exception:
+    pass
+" "$settings_file" 2>/dev/null)
+    [ -n "$GLOBAL_CMD" ] && break 2
+  done
+done
+
+# --- CMM stats ---
+CMM_OUTPUT=""
+CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
+if [ -f "$CACHE" ]; then
+  TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
+  SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+else
+  CMM_OUTPUT="CMM:0"
+fi
+
+# --- Combine: run global statusline, append CMM stats ---
+# Skip if the global command is itself a CMM statusline (avoids double output with --all)
+case "$GLOBAL_CMD" in
+  *statusline-cmm.sh*) GLOBAL_CMD="" ;;
+esac
+if [ -n "$GLOBAL_CMD" ]; then
+  EXISTING=$(bash -c "$GLOBAL_CMD" 2>/dev/null)
+  if [ -n "$EXISTING" ]; then
+    echo "${EXISTING} | ${CMM_OUTPUT}"
+  else
+    echo "$CMM_OUTPUT"
+  fi
+else
+  echo "$CMM_OUTPUT"
+fi
+WRAPPER_SCRIPT
+    fi
+
+    chmod +x "$script_path"
+    echo "  [ok] Generated ${script_path}"
+
+    # Warn if jq is not found on PATH
+    if ! command -v jq &>/dev/null; then
+      echo "  [warn] jq not found — statusline-cmm.sh requires jq to display call counts"
+      echo "         Install with: brew install jq  (macOS) or apt install jq  (Linux)"
+    fi
+
+    # Merge statusLine into target settings.json
+    if python3 - "$target_settings" "$script_path" <<'PYEOF'
+import json, os, sys
+
+settings_path = sys.argv[1]
+script_path = sys.argv[2]
+
+try:
+    with open(settings_path) as f:
+        settings = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    settings = {}
+
+settings['statusLine'] = {
+    'type': 'command',
+    'command': 'bash "' + script_path + '"'
+}
+
+tmp_path = settings_path + '.tmp'
+os.makedirs(os.path.dirname(settings_path) if os.path.dirname(settings_path) else '.', exist_ok=True)
+with open(tmp_path, 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+os.replace(tmp_path, settings_path)
+print('  [ok] statusLine merged into ' + os.path.basename(settings_path))
+PYEOF
+    then
+      # Validate the written JSON
+      python3 -m json.tool "$target_settings" > /dev/null 2>&1 || \
+        echo "  [warn] JSON validation failed for ${target_settings}"
+    else
+      echo "  [warn] Failed to merge statusLine into ${target_settings}"
+    fi
+  }
+
+  if [ "$INSTALL_GLOBAL" = true ]; then
+    local global_config_dir
+    global_config_dir=$(detect_config_dir)
+    echo "[STATUSLINE — global]"
+    _run_install_statusline_for_target "$global_config_dir" "global"
+    echo ""
+  fi
+
+  if [ "$INSTALL_PROJECT" = true ]; then
+    echo "[STATUSLINE — project]"
+    _run_install_statusline_for_target ".claude" "project"
+    echo ""
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -606,6 +874,7 @@ print_next_steps() {
   echo "  2. If project hooks installed: run 'index_repository' on first session"
   echo "  3. If global hooks installed: hooks fire automatically on Read/Write/Edit"
   echo "  4. Review .claude/settings.json to confirm hook entries"
+  echo "  5. If statusline installed: restart Claude Code to see CMM stats in the status bar"
   echo "============================================================"
 }
 
@@ -622,6 +891,7 @@ parse_args() {
       --force)           FORCE=true ;;
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
+      --skip-statusline) SKIP_STATUSLINE=true ;;
       --help|-h)
         cat <<'HELP'
 setup.sh — Installer for codebase-memory-mcp + Context Mode Claude Code hooks
@@ -631,7 +901,7 @@ Installs hooks, rules, and settings for two complementary MCP servers:
   - Context Mode MCP (optional): execution sandboxing + SQLite session persistence, ~98% context reduction
 
 Usage:
-  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check]
+  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline]
 
 Flags:
   --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
@@ -641,6 +911,7 @@ Flags:
   --force           Overwrite existing files (default: skip existing)
   --dry-run         Show what would be done without making changes
   --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
+  --skip-statusline Skip the CMM statusline installation offer
   --help, -h        Show this help message
 
 MCP pre-flight checks (run automatically unless --skip-mcp-check):
@@ -690,6 +961,10 @@ main() {
 
   if [ "$INSTALL_PROJECT" = true ]; then
     install_project
+  fi
+
+  if [ "$SKIP_STATUSLINE" = false ]; then
+    install_statusline
   fi
 
   if [ "$DRY_RUN" = false ]; then
