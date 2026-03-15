@@ -37,7 +37,7 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 CSV_FILE="$RESULTS_DIR/raw-${TIMESTAMP}.csv"
 
 echo "variant,repo,task,run,input_tokens,output_tokens,cache_creation,cache_read,total_tokens" > "$CSV_FILE"
-echo "[run-benchmarks] Output: $CSV_FILE"
+echo "[run-benchmarks] Output: $CSV_FILE" >&2
 
 FAILED=0
 
@@ -59,7 +59,7 @@ CURRENT_RUN=0
 for repo in "${BENCH_REPOS[@]}"; do
   [[ -n "$FILTER_REPO" && "$repo" != "$FILTER_REPO" ]] && continue
 
-  REPO_PATH="$SCRIPT_DIR/../repos/${repo}"
+  REPO_PATH="${BENCH_REPOS_DIR}/${repo}"
   export REPO_PATH
 
   for variant in "${BENCH_VARIANTS[@]}"; do
@@ -82,10 +82,10 @@ for repo in "${BENCH_REPOS[@]}"; do
 
       for run in $(seq 1 "$BENCH_RUNS"); do
         (( CURRENT_RUN++ ))
-        echo "[${CURRENT_RUN}/${TOTAL_RUNS}] variant=$variant repo=$repo task=$task_num run=$run"
+        echo "[${CURRENT_RUN}/${TOTAL_RUNS}] variant=$variant repo=$repo task=$task_num run=$run" >&2
 
         if $DRY_RUN; then
-          echo "  DRY RUN: variant=$variant repo=$repo task=$task_num run=$run"
+          echo "  DRY RUN: variant=$variant repo=$repo task=$task_num run=$run" >&2
           echo "$variant,$repo,$task_num,$run,0,0,0,0,0" >> "$CSV_FILE"
           continue
         fi
@@ -129,13 +129,13 @@ for repo in "${BENCH_REPOS[@]}"; do
   done
 done
 
-echo "[run-benchmarks] Running aggregation..."
+echo "[run-benchmarks] Running aggregation..." >&2
 AGG_FILE="${CSV_FILE/raw-/aggregated-}"
 bash "$SCRIPT_DIR/aggregate-stats.sh" "$CSV_FILE" > "$AGG_FILE"
-echo "[run-benchmarks] Aggregated CSV: $AGG_FILE"
-echo "[run-benchmarks] Raw CSV: $CSV_FILE"
+echo "[run-benchmarks] Aggregated CSV: $AGG_FILE" >&2
+echo "[run-benchmarks] Raw CSV: $CSV_FILE" >&2
 
-# Export for callers
+# Export for callers (only this line goes to stdout for pipeline consumption)
 echo "$CSV_FILE"
 
 if [[ $FAILED -ne 0 ]]; then

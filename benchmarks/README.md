@@ -81,7 +81,7 @@ source "$(dirname "$0")/../config.sh"
 | `BENCH_RUNS` | `10` | Number of runs per variant/repo/task combination |
 | `BENCH_RESULTS_DIR` | `benchmarks/results` | Output directory for CSV and report files |
 | `BENCH_PROMPTS_DIR` | `benchmarks/prompts` | Directory containing task prompt files |
-| `BENCH_REPOS_DIR` | `benchmarks/repos` | Directory where repos are cloned |
+| `BENCH_REPOS_DIR` | `$HOME/.cache/cmm-benchmarks/repos` | Directory where repos are cloned (outside project tree to avoid CMM indexing) |
 | `CLAUDE_SESSIONS_DIR` | `~/.config/claude-code/projects` | Claude Code session JSONL directory |
 
 **To change run count:** Edit `BENCH_RUNS` in `config.sh`, or pass `--runs N` to `run.sh`.
