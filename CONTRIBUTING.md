@@ -43,14 +43,43 @@ codebase-memory-setup-guide.md  End-to-end setup guide
 
    **Step A — Run the QA prompt.** Open a **new** Claude Code (or other AI) session using a top-tier model — **Claude Opus 4.6** or equivalent. Smaller models don't produce thorough enough reviews. Paste the prompt below (fill in the placeholders):
 
+   > **Agent gate:** This project's `agent-cmm-gate.sh` hook blocks Agent tool calls whose prompt does not reference codebase-memory-mcp tools. The QA prompt below includes the required CMM tool instructions. If you run QA via an Agent subagent, you must include them or the hook will reject the call.
+
    ````text
    You are a read-only QA reviewer. Do NOT modify files, make commits, or push fixes — report only.
 
    PR: #<number>
    Branch: <branch-name>
 
+   Use codebase-memory-mcp (CMM) tools for code exploration. Available tools:
+
+   1. search_graph — Find functions/classes by name pattern, filter by degree
+      Example: search_graph(name_pattern=".*Handler.*", label="Function")
+
+   2. get_code_snippet — Retrieve source code for a function/class by name
+      Example: get_code_snippet(qualified_name="main.HandleRequest")
+
+   3. trace_call_path — Trace who calls a function and what it calls
+      Example: trace_call_path(function_name="ProcessOrder", direction="both")
+
+   4. get_architecture — Get codebase architecture overview
+      Example: get_architecture(aspects=["packages", "hotspots"])
+
+   5. query_graph — Execute Cypher-like graph queries
+      Example: query_graph(query="MATCH (f:Function)-[:CALLS]->(g:Function) WHERE f.name = 'main' RETURN g.name LIMIT 20")
+
+   6. detect_changes — Map uncommitted changes to affected graph symbols
+      Example: detect_changes(scope="all")
+
+   7. index_repository — Index or refresh the code graph
+      Example: index_repository()
+
+   Workflow: search_graph → trace_call_path → get_code_snippet
+   Prefer these over Read/Grep for understanding code structure and relationships.
+
    1. Review the commits in the PR to understand the change narrative.
-   2. Read all files changed in the PR for full context.
+   2. Read all files changed in the PR for full context (use CMM tools first to
+      understand structure, then Read for full file context where needed).
    3. Act as a devil's advocate — find edge cases, missed regressions, and untested
       paths the implementer didn't consider. Pay particular attention to hook exit codes,
       sentinel race conditions, and allow-list gaps.

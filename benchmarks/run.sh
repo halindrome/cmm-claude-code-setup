@@ -47,7 +47,7 @@ bash "$SCRIPT_DIR/scripts/setup-repos.sh"
 # ---------------------------------------------------------------------------
 echo "[run.sh] Step 2/3 — Running benchmarks..."
 BENCH_RC=0
-RAW_CSV=$(bash "$SCRIPT_DIR/scripts/run-benchmarks.sh" "${PASS_THROUGH_ARGS[@]}" | tail -1) || BENCH_RC=$?
+RAW_CSV=$(bash "$SCRIPT_DIR/scripts/run-benchmarks.sh" ${PASS_THROUGH_ARGS[@]+"${PASS_THROUGH_ARGS[@]}"} | tail -1) || BENCH_RC=$?
 
 if [[ -z "$RAW_CSV" || ! -f "$RAW_CSV" ]]; then
   echo "[error] run-benchmarks.sh did not produce a valid CSV path: '${RAW_CSV}'" >&2
