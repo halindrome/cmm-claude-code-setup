@@ -30,7 +30,7 @@ setup_variant() {
       # Save current .mcp.json then replace with empty mcpServers config
       cp "$MCP_JSON" "$MCP_BACKUP" 2>/dev/null || true
       echo '{"mcpServers":{}}' > "$MCP_JSON"
-      echo "[variant] baseline — CMM disabled (.mcp.json → empty mcpServers)"
+      echo "[variant] baseline — CMM disabled (.mcp.json → empty mcpServers)" >&2
       ;;
 
     cmm-cold)
@@ -42,17 +42,25 @@ setup_variant() {
         echo "[warn] .mcp.json.cmm not found — CMM may not be configured" >&2
       fi
 
-      # Delete CMM index databases so the next run indexes from scratch (cold).
+      # Delete CMM index database for the specific benchmark repo (cold start).
       # REPO_PATH must be set by the caller to the repo being benchmarked.
       if [ -n "${REPO_PATH:-}" ]; then
-        local sessions_dir="${CLAUDE_SESSIONS_DIR:-$HOME/.config/claude-code/projects}"
-        # CMM stores DBs under the session project dir matching the repo path hash.
-        # Remove all *.db files that could correspond to this repo's index.
-        find "$sessions_dir" -name "*.db" -path "*/databases/*" -delete 2>/dev/null || true
-        echo "[variant] cmm-cold — CMM enabled, index purged for fresh indexing"
+        # CMM derives DB name from the repo's absolute path: slashes → dashes, e.g.
+        # /Users/ahby/.cache/cmm-benchmarks/repos/expressjs/express → Users-ahby-…-expressjs-express.db
+        local abs_repo_path
+        abs_repo_path="$(cd "$REPO_PATH" && pwd)"
+        local db_name
+        db_name="$(echo "$abs_repo_path" | sed 's|^/||; s|/|-|g').db"
+        local cmm_cache_dir="$HOME/.cache/codebase-memory-mcp"
+        if [ -f "$cmm_cache_dir/$db_name" ]; then
+          rm "$cmm_cache_dir/$db_name"
+          echo "[variant] cmm-cold — CMM enabled, index purged: $db_name" >&2
+        else
+          echo "[variant] cmm-cold — CMM enabled, no index found to purge ($db_name)" >&2
+        fi
       else
         echo "[warn] REPO_PATH not set — skipping index purge (cmm-cold may be warm)" >&2
-        echo "[variant] cmm-cold — CMM enabled (index not purged)"
+        echo "[variant] cmm-cold — CMM enabled (index not purged)" >&2
       fi
       ;;
 
@@ -64,7 +72,7 @@ setup_variant() {
       else
         echo "[warn] .mcp.json.cmm not found — CMM may not be configured" >&2
       fi
-      echo "[variant] cmm-cache — CMM enabled, existing index retained (warm cache)"
+      echo "[variant] cmm-cache — CMM enabled, existing index retained (warm cache)" >&2
       ;;
 
     *)
@@ -79,7 +87,7 @@ teardown_variant() {
   # Restore .mcp.json from backup saved during setup_variant
   if [ -f "$MCP_BACKUP" ]; then
     mv "$MCP_BACKUP" "$MCP_JSON"
-    echo "[teardown] .mcp.json restored from backup"
+    echo "[teardown] .mcp.json restored from backup" >&2
   else
     echo "[warn] No backup found at $MCP_BACKUP — .mcp.json not restored" >&2
   fi

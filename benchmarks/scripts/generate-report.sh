@@ -213,4 +213,5 @@ PYEOF
 
 rm -f "$OUTPUT.tmp" "$SUMMARY_FILE" "$REPO_FILE" "$TASK_FILE"
 
-echo "Report saved to: $OUTPUT"
+echo "[generate-report] Report saved to: $OUTPUT" >&2
+echo "$OUTPUT"
