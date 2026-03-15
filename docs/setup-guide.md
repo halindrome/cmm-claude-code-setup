@@ -611,3 +611,84 @@ Claude edits a file
   -> Prompts Claude to re-run index_repository
   -> Auto-sync also detects changes in background
 ```
+
+---
+
+## setup.sh Installer Flags
+
+`setup.sh` automates Steps 1–6 above. Run from the repo root after cloning:
+
+```bash
+bash setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--global` | Install global hooks to `~/.claude/hooks/` and merge into `~/.claude/settings.json` |
+| `--project` | Install project hooks to `.claude/hooks/`, rules to `.claude/rules/`, create `.mcp.json`, and merge into `.claude/settings.json` |
+| `--all` | Install both global and project hooks |
+| `--force` | Overwrite existing files (default: skip existing) |
+| `--dry-run` | Show what would be done without making changes |
+| `--skip-mcp-check` | Bypass all MCP availability checks (useful for CI/automation) |
+| `--skip-statusline` | Skip the interactive CMM statusline installation offer |
+
+---
+
+## Step 8: Statusline (CMM Call Stats)
+
+`setup.sh` offers to install a statusline script that displays CMM call counts in the Claude Code status bar. The offer appears interactively after hook installation completes.
+
+### How it works
+
+During `--global` or `--project` install, setup.sh:
+
+1. Checks if a `statusLine` entry already exists in the target `settings.json`.
+2. If yes: warns and asks whether to overwrite (defaults to **N**).
+3. If no: asks whether to install (defaults to **N** — opt-in only).
+4. On confirmation: generates `statusline-cmm.sh` in the hooks directory and writes the `statusLine` entry to `settings.json`.
+
+### Two modes
+
+**Global install** (`--global`):
+Generates a standalone `statusline-cmm.sh` that reads `~/.cache/codebase-memory-mcp/_call-counts.json` and outputs:
+```
+CMM:5 (sg:3 cs:1 tr:1)
+```
+
+**Project install** (`--project`):
+Generates a wrapper `statusline-cmm.sh` that discovers the user's existing global `statusLine.command` from global `settings.json`, runs it, and appends CMM stats with a pipe separator:
+```
+my-branch +3 -1 | CMM:5 (sg:3 cs:1 tr:1)
+```
+Falls back to CMM-only output when no global statusline is configured.
+
+### Prerequisites
+
+- **jq** must be installed — the statusline script uses it to parse the call-counts JSON.
+  - macOS: `brew install jq`
+  - Linux: `apt install jq` or `yum install jq`
+
+### Settings.json output
+
+The installer writes the following entry to `settings.json` (global or project scope):
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"/path/to/hooks/statusline-cmm.sh\""
+  }
+}
+```
+
+### Skip the offer
+
+Use `--skip-statusline` to suppress the interactive prompt (useful in automation and CI):
+
+```bash
+bash setup.sh --project --skip-statusline
+```
+
+### Manual installation
+
+See the **Statusline** section in `README.md` for the standalone script template and manual `settings.json` registration example.
