@@ -600,19 +600,25 @@ install_project() {
 
 install_statusline() {
   if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would offer to install statusline-cmm.sh and merge statusLine into settings.json"
+    echo "  [DRY RUN] Would offer to install statusline-cmm.sh and merge statusLine into settings.local.json"
     return
   fi
 
   _run_install_statusline_for_target() {
     local target_config_dir="$1"
-    local target_settings="$2"
-    local mode="$3"
+    local mode="$2"
 
-    # Detect existing statusLine entry in TARGET settings.json
+    # statusLine is personal/machine-specific, so it belongs in settings.local.json
+    # (gitignored, per Claude Code docs). We check both files for existing entries.
+    local target_settings="${target_config_dir}/settings.local.json"
+    local shared_settings="${target_config_dir}/settings.json"
+
+    # Detect existing statusLine entry in settings.local.json OR settings.json
     local has_statusline=false
-    if [ -f "$target_settings" ]; then
-      if python3 -c "
+    local found_in=""
+    for check_file in "$target_settings" "$shared_settings"; do
+      if [ -f "$check_file" ]; then
+        if python3 -c "
 import json, sys
 try:
     with open(sys.argv[1]) as f:
@@ -620,16 +626,19 @@ try:
     sys.exit(0 if 'statusLine' in data else 1)
 except Exception:
     sys.exit(1)
-" "$target_settings" 2>/dev/null; then
-        has_statusline=true
+" "$check_file" 2>/dev/null; then
+          has_statusline=true
+          found_in="$check_file"
+          break
+        fi
       fi
-    fi
+    done
 
     if [ "$has_statusline" = true ]; then
       if [ "$FORCE" = true ]; then
-        echo "  [info] Overwriting existing statusLine config (--force)"
+        echo "  [info] Overwriting existing statusLine config in ${found_in} (--force)"
       else
-        echo "  [warn] Existing statusLine config found in ${target_settings}"
+        echo "  [warn] Existing statusLine config found in ${found_in}"
         if [ ! -t 0 ]; then
           # Non-interactive: skip silently, do not overwrite
           return
@@ -686,11 +695,13 @@ STATUSLINE_SCRIPT
 # Falls back to CMM-only output when no global statusline is configured.
 
 # --- Discover user's existing global statusline command ---
+# Check settings.local.json first (higher precedence), then settings.json
 GLOBAL_CMD=""
 for config_dir in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"; do
   [ -z "$config_dir" ] && continue
-  [ -f "${config_dir}/settings.json" ] || continue
-  GLOBAL_CMD=$(python3 -c "
+  for settings_file in "${config_dir}/settings.local.json" "${config_dir}/settings.json"; do
+    [ -f "$settings_file" ] || continue
+    GLOBAL_CMD=$(python3 -c "
 import json, sys
 try:
     with open(sys.argv[1]) as f:
@@ -698,8 +709,9 @@ try:
         print(cmd)
 except Exception:
     pass
-" "${config_dir}/settings.json" 2>/dev/null)
-  [ -n "$GLOBAL_CMD" ] && break
+" "$settings_file" 2>/dev/null)
+    [ -n "$GLOBAL_CMD" ] && break 2
+  done
 done
 
 # --- CMM stats ---
@@ -781,13 +793,13 @@ PYEOF
     local global_config_dir
     global_config_dir=$(detect_config_dir)
     echo "[STATUSLINE — global]"
-    _run_install_statusline_for_target "$global_config_dir" "${global_config_dir}/settings.json" "global"
+    _run_install_statusline_for_target "$global_config_dir" "global"
     echo ""
   fi
 
   if [ "$INSTALL_PROJECT" = true ]; then
     echo "[STATUSLINE — project]"
-    _run_install_statusline_for_target ".claude" ".claude/settings.json" "project"
+    _run_install_statusline_for_target ".claude" "project"
     echo ""
   fi
 }

@@ -642,10 +642,10 @@ bash setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-c
 
 During `--global` or `--project` install, setup.sh:
 
-1. Checks if a `statusLine` entry already exists in the target `settings.json`.
+1. Checks if a `statusLine` entry already exists in the target `settings.local.json` or `settings.json`.
 2. If yes: warns and asks whether to overwrite (defaults to **N**).
 3. If no: asks whether to install (defaults to **N** — opt-in only).
-4. On confirmation: generates `statusline-cmm.sh` in the hooks directory and writes the `statusLine` entry to `settings.json`.
+4. On confirmation: generates `statusline-cmm.sh` in the hooks directory and writes the `statusLine` entry to `settings.local.json` (personal, gitignored).
 
 ### Two modes
 
@@ -670,7 +670,7 @@ Falls back to CMM-only output when no global statusline is configured.
 
 ### Settings.json output
 
-The installer writes the following entry to `settings.json` (global or project scope):
+The installer writes the following entry to `settings.local.json` (personal, gitignored):
 
 ```json
 {
