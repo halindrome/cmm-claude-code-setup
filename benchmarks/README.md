@@ -1,16 +1,12 @@
 # Benchmark Suite
 
-Measures Claude Code token consumption when answering standard codebase questions — comparing six variants:
+Measures Claude Code token consumption when answering standard codebase questions — comparing three variants:
 
 - **baseline**: No MCP tools. Claude reads files directly via grep/cat.
 - **cmm-cold**: CMM enabled, fresh index per run. Includes indexing overhead.
 - **cmm-cache**: CMM enabled, pre-warmed index. Cache hit rate should be high.
-- **ctx**: Context Mode enabled (no CMM). Measures execution sandboxing overhead.
-- **cmm+ctx-cold**: CMM + Context Mode both enabled, fresh CMM index per run.
-- **cmm+ctx-cache**: CMM + Context Mode both enabled, pre-warmed CMM index.
 
-5 repos × 5 tasks × 6 variants × 10 runs = 1,500 data points by default.
-(ctx variants require context-mode-mcp to be installed. Run without ctx variants: 3 variants × 10 runs = 750 data points.)
+5 repos × 5 tasks × 3 variants × 10 runs = 750 data points by default.
 
 ---
 
@@ -21,7 +17,6 @@ Measures Claude Code token consumption when answering standard codebase question
 | `jq` | Required | Parse JSONL session logs |
 | `claude` CLI | Required | Run benchmark prompts |
 | `codebase-memory-mcp` | Required (cmm variants) | Graph tools for cmm-cold/cmm-cache runs |
-| `context-mode-mcp` | Optional (ctx variants) | Execution sandboxing for ctx/cmm+ctx runs |
 | `git` | Required | Shallow-clone benchmark repos |
 | `awk` | Standard | Aggregation and report generation (included on all Unix systems) |
 
@@ -40,12 +35,6 @@ brew install claude-code
 ```bash
 # macOS/Linux one-liner
 curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/scripts/setup.sh | bash
-```
-
-**Install context-mode-mcp** *(optional — required for ctx and cmm+ctx variants)*:
-
-```bash
-npm install -g @ubos-ai/context-mode
 ```
 
 ---
@@ -125,34 +114,12 @@ CMM MCP tools are **enabled**. The existing CMM index is retained (pre-warmed fr
 
 Token profile: low input tokens, zero `cache_creation`, high `cache_read` tokens.
 
-### Context Mode Variants
-
-The following three variants require `context-mode-mcp` to be installed (`npm install -g @ubos-ai/context-mode`). They can be skipped; the remaining 3 variants run without Context Mode.
-
-### ctx
-
-Context Mode MCP only — no CMM tools. The `.mcp.json` is replaced with config for context-mode only.
-
-Token profile: input/output tokens similar to baseline (no code indexing), but execution sandboxing via `ctx_execute`, `ctx_search`, `ctx_fetch_and_index`. Measures Context Mode overhead in isolation.
-
-### cmm+ctx-cold
-
-CMM + Context Mode both enabled. CMM index is purged before each run (fresh indexing). Measures combined cost of code indexing + execution sandboxing.
-
-Token profile: high `cache_creation` tokens (CMM index build) + execution cost, low `cache_read`.
-
-### cmm+ctx-cache
-
-CMM + Context Mode both enabled. CMM index is retained (pre-warmed). Measures combined benefit of cached code indexing + execution sandboxing.
-
-Token profile: low input tokens (indexed queries), high `cache_read` (CMM cache hits).
+> **Note:** Context Mode MCP benchmarks require a different methodology (multi-turn sessions with tool output accumulation) and are not included in this single-shot suite.
 
 **Variant switching mechanism:** Each variant swaps `.mcp.json` via `benchmarks/scripts/variant-setup.sh`. Template files must exist at the project root before running:
 
 - `.mcp.json.baseline` — `{"mcpServers":{}}` (no MCP tools)
 - `.mcp.json.cmm` — `{"mcpServers":{"codebase-memory-mcp":{...}}}` (your CMM config)
-- `.mcp.json.ctx` — `{"mcpServers":{"context-mode":{...}}}` (Context Mode only)
-- `.mcp.json.cmm+ctx` — `{"mcpServers":{"codebase-memory-mcp":{...},"context-mode":{...}}}` (both MCPs)
 
 ---
 
@@ -216,20 +183,6 @@ The report's Summary Table shows mean total tokens per variant across all repos 
 
 **Variant not switching:** Check that `.mcp.json.baseline` and `.mcp.json.cmm` exist in the project root. The `variant-setup.sh` script logs `[warn] .mcp.json.cmm not found` if the CMM template is missing.
 
-**Context Mode not initializing:** If ctx or cmm+ctx variants fail with `context-mode: command not found`, install context-mode-mcp:
-
-```bash
-npm install -g @ubos-ai/context-mode
-```
-
-Verify installation: `context-mode --version`. Also confirm `.mcp.json.ctx` and `.mcp.json.cmm+ctx` template files exist at the project root.
-
-**Context Mode SQLite errors:** Context Mode stores session state in `.claude/context-mode.db`. If ctx variants fail with SQLite errors, check that the `.claude/` directory has write permissions. To reset session state, delete the database:
-
-```bash
-rm -f .claude/context-mode.db
-```
-
 ---
 
 ## Extending
@@ -267,25 +220,10 @@ rm -f .claude/context-mode.db
 1. Add the variant name to `BENCH_VARIANTS` in `config.sh`.
 2. Add a `case` block in `benchmarks/scripts/variant-setup.sh` implementing `setup_variant` and `teardown_variant` for the new variant.
 3. Create a `.mcp.json.<variant>` template file at the project root with the desired MCP server configuration.
-   - **No-purge variants** (e.g. `ctx`): no index deletion needed — just swap `.mcp.json`.
-   - **Purge variants** (e.g. `cmm+ctx-cold`): add index deletion logic mirroring the `cmm-cold` case block.
+   - **No-purge variants**: no index deletion needed — just swap `.mcp.json`.
+   - **Purge variants** (e.g. `cmm-cold`): add index deletion logic mirroring the `cmm-cold` case block.
 4. Update the error message in `setup_variant` to list the new variant name.
 5. Document the new variant in `benchmarks/README.md` following the style of the existing variant descriptions.
-
-Use `ctx` as the reference for a "no-purge" variant (Context Mode only, no CMM index to manage) and `cmm+ctx-cold` as the reference for a "purge" variant (CMM index deleted before each run).
-
----
-
-## Results
-
-See [REPORT-2026-03-14.md](results/REPORT-2026-03-14.md) for the first full run with all 6 variants on expressjs/express (n=3).
-
-Key findings:
-- All 6 variants within ~45% of baseline in total tokens on expressjs/express
-- `cmm+ctx-cold` was closest to baseline (+2.5%)
-- Task 05 (dead-code) dominates token variance across all variants
-- `cache_read` tokens are 70–86% of total — actual cost difference is smaller than raw counts suggest (~10× cache read discount)
-- Full multi-repo runs needed for statistically significant conclusions
 
 ---
 

@@ -22,9 +22,6 @@ Total tokens by variant (mean ± stddev across all repos and tasks):
 | baseline | XXXXX | XXXXX | — |
 | cmm-cold | XXXXX | XXXXX | +X% / −X% |
 | cmm-cache | XXXXX | XXXXX | +X% / −X% |
-| ctx | XXXXX | XXXXX | +X% / −X% |
-| cmm+ctx-cold | XXXXX | XXXXX | +X% / −X% |
-| cmm+ctx-cache | XXXXX | XXXXX | +X% / −X% |
 
 ---
 
@@ -32,13 +29,13 @@ Total tokens by variant (mean ± stddev across all repos and tasks):
 
 Total tokens mean by repo and variant:
 
-| Repo | baseline | cmm-cold | cmm-cache | ctx | cmm+ctx-cold | cmm+ctx-cache |
-|------|----------|----------|-----------|-----|--------------|---------------|
-| expressjs/express | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX |
-| go-chi/chi | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX |
-| httpie/cli | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX |
-| redis/redis | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX |
-| meilisearch/meilisearch | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX |
+| Repo | baseline | cmm-cold | cmm-cache |
+|------|----------|----------|-----------|
+| expressjs/express | XXXXX | XXXXX | XXXXX |
+| go-chi/chi | XXXXX | XXXXX | XXXXX |
+| httpie/cli | XXXXX | XXXXX | XXXXX |
+| redis/redis | XXXXX | XXXXX | XXXXX |
+| meilisearch/meilisearch | XXXXX | XXXXX | XXXXX |
 
 ---
 
@@ -46,13 +43,13 @@ Total tokens mean by repo and variant:
 
 Total tokens mean by task and variant:
 
-| Task | baseline | cmm-cold | cmm-cache | ctx | cmm+ctx-cold | cmm+ctx-cache |
-|------|----------|----------|-----------|-----|--------------|---------------|
-| 01-find-callers | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX |
-| 02-call-graph | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX |
-| 03-list-exports | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX |
-| 04-find-imports | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX |
-| 05-dead-code | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX | XXXXX |
+| Task | baseline | cmm-cold | cmm-cache |
+|------|----------|----------|-----------|
+| 01-find-callers | XXXXX | XXXXX | XXXXX |
+| 02-call-graph | XXXXX | XXXXX | XXXXX |
+| 03-list-exports | XXXXX | XXXXX | XXXXX |
+| 04-find-imports | XXXXX | XXXXX | XXXXX |
+| 05-dead-code | XXXXX | XXXXX | XXXXX |
 
 ---
 
@@ -68,15 +65,12 @@ _Fill in manually after analysis._
 
 ## Methodology Notes
 
-- **baseline:** Claude Code with no CMM tools. Full file context passed via grep/cat.
-- **cmm-cold:** CMM graph tools used; index freshly built (no cache hits).
-- **cmm-cache:** CMM graph tools used; index pre-warmed (cache read tokens measured).
-- **ctx:** Context Mode MCP only (no CMM). Measures execution sandboxing overhead in isolation.
-- **cmm+ctx-cold:** CMM + Context Mode both enabled; CMM index freshly built (no cache hits).
-- **cmm+ctx-cache:** CMM + Context Mode both enabled; CMM index pre-warmed (cache read tokens measured).
-- Token counts sourced from Claude API response headers (`x-cache-creation-input-tokens`, `x-cache-read-input-tokens`).
+- **baseline:** Claude Code with no MCP tools. Full file context passed via grep/cat.
+- **cmm-cold:** CMM graph tools enabled; index freshly built (no cache hits).
+- **cmm-cache:** CMM graph tools enabled; index pre-warmed (cache read tokens measured).
+- Token counts sourced from Claude Code session JSONL files (`.message.usage` fields).
 - Each variant/repo/task combination run N times; mean and stddev computed over runs.
-- Repos cloned at pinned commits listed in `benchmarks/config.sh`.
+- Repos cloned outside the project tree (`~/.cache/cmm-benchmarks/repos/`) to avoid CMM indexing benchmark repos as part of this project.
 
 ---
 
@@ -86,23 +80,23 @@ _Fill in manually after analysis._
 
 | Column | Type | Description |
 |--------|------|-------------|
-| variant | string | One of: baseline, cmm-cold, cmm-cache, ctx, cmm+ctx-cold, cmm+ctx-cache |
+| variant | string | One of: baseline, cmm-cold, cmm-cache |
 | repo | string | GitHub repo slug (owner/name) |
-| task | string | Task ID (01–05) |
+| task | string | Task ID (01-05) |
 | run | integer | Run number within variant/repo/task |
 | input_tokens | integer | Input tokens billed (excluding cache) |
 | output_tokens | integer | Output tokens generated |
-| cache_creation | integer | Cache creation tokens (cmm-cold only) |
-| cache_read | integer | Cache read tokens (cmm-cache only) |
+| cache_creation | integer | Cache creation tokens (index build overhead) |
+| cache_read | integer | Cache read tokens (cache hits) |
 | total_tokens | integer | Sum of input + output + cache_creation + cache_read |
 
 ### sample-aggregated.csv
 
 | Column | Type | Description |
 |--------|------|-------------|
-| variant | string | One of: baseline, cmm-cold, cmm-cache, ctx, cmm+ctx-cold, cmm+ctx-cache |
+| variant | string | One of: baseline, cmm-cold, cmm-cache |
 | repo | string | GitHub repo slug (owner/name) |
-| task | string | Task ID (01–05) |
+| task | string | Task ID (01-05) |
 | n | integer | Number of runs aggregated |
 | input_mean | float | Mean input tokens |
 | input_stddev | float | Std dev of input tokens |

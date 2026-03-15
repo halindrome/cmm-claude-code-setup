@@ -1,9 +1,6 @@
 # VBW internal planning directory — not relevant to users of this repo
 .vbw-planning/
 
-# Benchmark repos (large, cloned locally by setup-repos.sh)
-benchmarks/repos/
-
 # macOS
 .DS_Store
 

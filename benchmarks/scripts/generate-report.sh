@@ -22,7 +22,6 @@ OUTPUT="$RESULTS_DIR/REPORT-${TODAY}.md"
 
 CLAUDE_VERSION=$(claude --version 2>/dev/null || echo "unknown")
 CMM_VERSION=$(codebase-memory-mcp --version 2>/dev/null || echo "unknown")
-CTX_VERSION=$(context-mode --version 2>/dev/null || echo "unknown")
 
 # Extract n_runs from the CSV (first data row, column 4)
 N_RUNS=$(awk -F',' 'NR==2{print $4}' "$AGG_CSV")
@@ -65,8 +64,7 @@ END {
   base_mean = grand_mean["baseline"]
   # print in fixed order
   variants[1] = "baseline"; variants[2] = "cmm-cold"; variants[3] = "cmm-cache"
-  variants[4] = "ctx"; variants[5] = "cmm+ctx-cold"; variants[6] = "cmm+ctx-cache"
-  for (i = 1; i <= 6; i++) {
+  for (i = 1; i <= 3; i++) {
     v = variants[i]
     if (!(v in count)) continue
     vs_baseline = (v == "baseline") ? "—" : fmt_pct(base_mean, grand_mean[v])
@@ -93,12 +91,11 @@ END {
   repo_list[3]="httpie/cli"; repo_list[4]="redis/redis"
   repo_list[5]="meilisearch/meilisearch"
   variants[1]="baseline"; variants[2]="cmm-cold"; variants[3]="cmm-cache"
-  variants[4]="ctx"; variants[5]="cmm+ctx-cold"; variants[6]="cmm+ctx-cache"
   for (ri = 1; ri <= 5; ri++) {
     r = repo_list[ri]
     if (!(r in repos)) continue
     printf "| %s", r
-    for (vi = 1; vi <= 6; vi++) {
+    for (vi = 1; vi <= 3; vi++) {
       v = variants[vi]
       if (count[r SUBSEP v] > 0)
         printf " | %.0f", sum[r SUBSEP v] / count[r SUBSEP v]
@@ -129,12 +126,11 @@ END {
   task_names[3]="03-list-exports"; task_names[4]="04-find-imports"
   task_names[5]="05-dead-code"
   variants[1]="baseline"; variants[2]="cmm-cold"; variants[3]="cmm-cache"
-  variants[4]="ctx"; variants[5]="cmm+ctx-cold"; variants[6]="cmm+ctx-cache"
   for (ti = 1; ti <= 5; ti++) {
     t = task_labels[ti]
     if (!(t in tasks)) continue
     printf "| %s", task_names[ti]
-    for (vi = 1; vi <= 6; vi++) {
+    for (vi = 1; vi <= 3; vi++) {
       v = variants[vi]
       if (count[t SUBSEP v] > 0)
         printf " | %.0f", sum[t SUBSEP v] / count[t SUBSEP v]
@@ -190,14 +186,14 @@ with open(task_file) as f:
 
 # Replace placeholder rows in Summary Table
 content = re.sub(
-    r'\| baseline \| XXXXX \| XXXXX \| — \|\n\| cmm-cold \| XXXXX \| XXXXX \| \+X% / −X% \|\n\| cmm-cache \| XXXXX \| XXXXX \| \+X% / −X% \|\n\| ctx \| XXXXX \| XXXXX \| \+X% / −X% \|\n\| cmm\+ctx-cold \| XXXXX \| XXXXX \| \+X% / −X% \|\n\| cmm\+ctx-cache \| XXXXX \| XXXXX \| \+X% / −X% \|',
+    r'\| baseline \| XXXXX \| XXXXX \| — \|\n\| cmm-cold \| XXXXX \| XXXXX \| \+X% / −X% \|\n\| cmm-cache \| XXXXX \| XXXXX \| \+X% / −X% \|',
     summary_rows.rstrip('\n'),
     content
 )
 
 # Replace per-repo placeholder rows
 content = re.sub(
-    r'\| expressjs/express \| XXXXX \| XXXXX \| XXXXX \| XXXXX \| XXXXX \| XXXXX \|.*?\| meilisearch/meilisearch \| XXXXX \| XXXXX \| XXXXX \| XXXXX \| XXXXX \| XXXXX \|',
+    r'\| expressjs/express \| XXXXX \| XXXXX \| XXXXX \|.*?\| meilisearch/meilisearch \| XXXXX \| XXXXX \| XXXXX \|',
     repo_rows.rstrip('\n'),
     content,
     flags=re.DOTALL
@@ -205,7 +201,7 @@ content = re.sub(
 
 # Replace per-task placeholder rows
 content = re.sub(
-    r'\| 01-find-callers \| XXXXX \| XXXXX \| XXXXX \| XXXXX \| XXXXX \| XXXXX \|.*?\| 05-dead-code \| XXXXX \| XXXXX \| XXXXX \| XXXXX \| XXXXX \| XXXXX \|',
+    r'\| 01-find-callers \| XXXXX \| XXXXX \| XXXXX \|.*?\| 05-dead-code \| XXXXX \| XXXXX \| XXXXX \|',
     task_rows.rstrip('\n'),
     content,
     flags=re.DOTALL

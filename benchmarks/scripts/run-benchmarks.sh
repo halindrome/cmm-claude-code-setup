@@ -1,5 +1,5 @@
 #!/bin/bash
-# Main benchmark orchestrator — runs 6 variants × 5 repos × 5 tasks × n runs, writes raw CSV
+# Main benchmark orchestrator — runs 3 variants × 5 repos × 5 tasks × n runs, writes raw CSV
 
 set -euo pipefail
 
@@ -41,6 +41,21 @@ echo "[run-benchmarks] Output: $CSV_FILE"
 
 FAILED=0
 
+# --- Progress counter ---
+# Count total iterations for progress display
+TOTAL_RUNS=0
+for _repo in "${BENCH_REPOS[@]}"; do
+  [[ -n "$FILTER_REPO" && "$_repo" != "$FILTER_REPO" ]] && continue
+  for _variant in "${BENCH_VARIANTS[@]}"; do
+    [[ -n "$FILTER_VARIANT" && "$_variant" != "$FILTER_VARIANT" ]] && continue
+    for _task in 01 02 03 04 05; do
+      [[ -n "$FILTER_TASK" && "$_task" != "$FILTER_TASK" ]] && continue
+      (( TOTAL_RUNS += BENCH_RUNS ))
+    done
+  done
+done
+CURRENT_RUN=0
+
 for repo in "${BENCH_REPOS[@]}"; do
   [[ -n "$FILTER_REPO" && "$repo" != "$FILTER_REPO" ]] && continue
 
@@ -49,14 +64,6 @@ for repo in "${BENCH_REPOS[@]}"; do
 
   for variant in "${BENCH_VARIANTS[@]}"; do
     [[ -n "$FILTER_VARIANT" && "$variant" != "$FILTER_VARIANT" ]] && continue
-
-    # Skip ctx and cmm+ctx* variants if context-mode binary is not installed
-    if [[ "$variant" == "ctx" || "$variant" == cmm+ctx* ]]; then
-      if ! command -v context-mode &>/dev/null; then
-        echo "[skip] $variant variant skipped — context-mode not found" >&2
-        continue
-      fi
-    fi
 
     for task_num in 01 02 03 04 05; do
       [[ -n "$FILTER_TASK" && "$task_num" != "$FILTER_TASK" ]] && continue
@@ -74,7 +81,8 @@ for repo in "${BENCH_REPOS[@]}"; do
       PROMPT="${PROMPT_TEMPLATE//\{SEARCH_TERM\}/$SEARCH_TERM}"
 
       for run in $(seq 1 "$BENCH_RUNS"); do
-        echo "[run] variant=$variant repo=$repo task=$task_num run=$run"
+        (( CURRENT_RUN++ ))
+        echo "[${CURRENT_RUN}/${TOTAL_RUNS}] variant=$variant repo=$repo task=$task_num run=$run"
 
         if $DRY_RUN; then
           echo "  DRY RUN: variant=$variant repo=$repo task=$task_num run=$run"

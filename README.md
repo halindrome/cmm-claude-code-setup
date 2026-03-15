@@ -111,7 +111,7 @@ rules/
   mcp-example.json                      # Example .mcp.json for project-scoped MCP registration
   allowed-tools.txt                     # CMM + Context Mode tool allowlist for settings.local.json
 benchmarks/
-  run.sh                                # 3-variant benchmark runner (baseline / CMM / CMM+cache)
+  run.sh                                # Benchmark runner (baseline / cmm-cold / cmm-cache)
   README.md                             # Benchmark documentation
 docs/
   setup-guide.md                        # Full step-by-step setup guide
@@ -276,20 +276,17 @@ The MCP executables live wherever they're installed globally — only the regist
 
 ## Benchmarks
 
-The `benchmarks/` directory contains a reproducible benchmark suite comparing six variants:
+The `benchmarks/` directory contains a reproducible benchmark suite comparing three variants:
 
 - **baseline**: No MCP tools (Claude reads files directly)
 - **cmm-cold**: CMM enabled, fresh index each run
 - **cmm-cache**: CMM enabled, pre-warmed index
-- **ctx**: Context Mode enabled (no CMM). Measures execution sandboxing overhead.
-- **cmm+ctx-cold**: CMM + Context Mode both enabled, fresh CMM index per run.
-- **cmm+ctx-cache**: CMM + Context Mode both enabled, pre-warmed CMM index.
 
 ```bash
 ./benchmarks/run.sh
 ```
 
-See [benchmarks/README.md](benchmarks/README.md) for prerequisites, configuration, and result interpretation (full benchmark suite with 6 variants).
+See [benchmarks/README.md](benchmarks/README.md) for prerequisites, configuration, and result interpretation.
 
 ## Requirements
 
