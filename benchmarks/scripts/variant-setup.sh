@@ -16,7 +16,7 @@
 
 MCP_JSON="${MCP_JSON:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.mcp.json}"
 
-# Template directory: where .mcp.json.cmm, .mcp.json.ctx, etc. live (project root)
+# Template directory: where .mcp.json.cmm, .mcp.json.baseline live (project root)
 _BENCH_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH_TEMPLATE_DIR="${BENCH_TEMPLATE_DIR:-$(cd "$_BENCH_SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null)}"
 BENCH_TEMPLATE_DIR="${BENCH_TEMPLATE_DIR:-$(cd "$_BENCH_SCRIPT_DIR/../.." && pwd)}"
