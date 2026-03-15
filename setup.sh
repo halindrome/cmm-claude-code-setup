@@ -615,38 +615,45 @@ install_statusline() {
       if python3 -c "
 import json, sys
 try:
-    data = json.load(open('${target_settings}'))
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
     sys.exit(0 if 'statusLine' in data else 1)
 except Exception:
     sys.exit(1)
-" 2>/dev/null; then
+" "$target_settings" 2>/dev/null; then
         has_statusline=true
       fi
     fi
 
     if [ "$has_statusline" = true ]; then
-      echo "  [warn] Existing statusLine config found in ${target_settings}"
-      if [ ! -t 0 ]; then
-        # Non-interactive: skip silently, do not overwrite
-        return
+      if [ "$FORCE" = true ]; then
+        echo "  [info] Overwriting existing statusLine config (--force)"
+      else
+        echo "  [warn] Existing statusLine config found in ${target_settings}"
+        if [ ! -t 0 ]; then
+          # Non-interactive: skip silently, do not overwrite
+          return
+        fi
+        printf "  Existing statusLine detected. Overwrite with CMM statusline? [y/N] "
+        read -r overwrite_reply
+        case "$overwrite_reply" in
+          y|Y) ;;
+          *) echo "  [skip] Statusline installation skipped"; return ;;
+        esac
       fi
-      printf "  Existing statusLine detected. Overwrite with CMM statusline? [y/N] "
-      read -r overwrite_reply
-      case "$overwrite_reply" in
-        y|Y) ;;
-        *) echo "  [skip] Statusline installation skipped"; return ;;
-      esac
     else
-      if [ ! -t 0 ]; then
-        # Non-interactive: skip silently, no default install
-        return
+      if [ "$FORCE" != true ]; then
+        if [ ! -t 0 ]; then
+          # Non-interactive: skip silently, no default install
+          return
+        fi
+        printf "  Install CMM call stats statusline? [y/N] "
+        read -r install_reply
+        case "$install_reply" in
+          y|Y) ;;
+          *) echo "  [skip] Statusline installation skipped"; return ;;
+        esac
       fi
-      printf "  Install CMM call stats statusline? [y/N] "
-      read -r install_reply
-      case "$install_reply" in
-        y|Y) ;;
-        *) echo "  [skip] Statusline installation skipped"; return ;;
-      esac
     fi
 
     # Create hooks dir if needed
@@ -661,10 +668,10 @@ except Exception:
 # statusline-cmm.sh — Display CMM call stats in Claude Code statusline
 CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
 if [ ! -f "$CACHE" ]; then echo "CMM:—"; exit 0; fi
-TOTAL=$(jq '.total // 0' "$CACHE" 2>/dev/null || echo 0)
-SEARCH=$(jq '.search_graph // 0' "$CACHE" 2>/dev/null || echo 0)
-SNIPPET=$(jq '.get_code_snippet // 0' "$CACHE" 2>/dev/null || echo 0)
-TRACE=$(jq '.trace_call_path // 0' "$CACHE" 2>/dev/null || echo 0)
+TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
+SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
+SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
+TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
 echo "CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
 STATUSLINE_SCRIPT
     else
@@ -699,18 +706,22 @@ done
 CMM_OUTPUT=""
 CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
 if [ -f "$CACHE" ]; then
-  TOTAL=$(jq '.total // 0' "$CACHE" 2>/dev/null || echo 0)
-  SEARCH=$(jq '.search_graph // 0' "$CACHE" 2>/dev/null || echo 0)
-  SNIPPET=$(jq '.get_code_snippet // 0' "$CACHE" 2>/dev/null || echo 0)
-  TRACE=$(jq '.trace_call_path // 0' "$CACHE" 2>/dev/null || echo 0)
+  TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
+  SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
   CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
 else
   CMM_OUTPUT="CMM:—"
 fi
 
 # --- Combine: run global statusline, append CMM stats ---
+# Skip if the global command is itself a CMM statusline (avoids double output with --all)
+case "$GLOBAL_CMD" in
+  *statusline-cmm.sh*) GLOBAL_CMD="" ;;
+esac
 if [ -n "$GLOBAL_CMD" ]; then
-  EXISTING=$(eval "$GLOBAL_CMD" 2>/dev/null)
+  EXISTING=$(bash -c "$GLOBAL_CMD" 2>/dev/null)
   if [ -n "$EXISTING" ]; then
     echo "${EXISTING} | ${CMM_OUTPUT}"
   else
@@ -732,11 +743,11 @@ WRAPPER_SCRIPT
     fi
 
     # Merge statusLine into target settings.json
-    python3 - <<PYEOF
-import json, os
+    if python3 - "$target_settings" "$script_path" <<'PYEOF'
+import json, os, sys
 
-settings_path = '${target_settings}'
-script_path = '${script_path}'
+settings_path = sys.argv[1]
+script_path = sys.argv[2]
 
 try:
     with open(settings_path) as f:
@@ -757,10 +768,13 @@ with open(tmp_path, 'w') as f:
 os.replace(tmp_path, settings_path)
 print('  [ok] statusLine merged into ' + os.path.basename(settings_path))
 PYEOF
-
-    # Validate the written JSON
-    python3 -m json.tool "$target_settings" > /dev/null 2>&1 || \
-      echo "  [warn] JSON validation failed for ${target_settings}"
+    then
+      # Validate the written JSON
+      python3 -m json.tool "$target_settings" > /dev/null 2>&1 || \
+        echo "  [warn] JSON validation failed for ${target_settings}"
+    else
+      echo "  [warn] Failed to merge statusLine into ${target_settings}"
+    fi
   }
 
   if [ "$INSTALL_GLOBAL" = true ]; then
