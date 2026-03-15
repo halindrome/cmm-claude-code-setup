@@ -595,6 +595,190 @@ install_project() {
 }
 
 # ---------------------------------------------------------------------------
+# install_statusline
+# ---------------------------------------------------------------------------
+
+install_statusline() {
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would offer to install statusline-cmm.sh and merge statusLine into settings.json"
+    return
+  fi
+
+  _run_install_statusline_for_target() {
+    local target_config_dir="$1"
+    local target_settings="$2"
+    local mode="$3"
+
+    # Detect existing statusLine entry in TARGET settings.json
+    local has_statusline=false
+    if [ -f "$target_settings" ]; then
+      if python3 -c "
+import json, sys
+try:
+    data = json.load(open('${target_settings}'))
+    sys.exit(0 if 'statusLine' in data else 1)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null; then
+        has_statusline=true
+      fi
+    fi
+
+    if [ "$has_statusline" = true ]; then
+      echo "  [warn] Existing statusLine config found in ${target_settings}"
+      if [ ! -t 0 ]; then
+        # Non-interactive: skip silently, do not overwrite
+        return
+      fi
+      printf "  Existing statusLine detected. Overwrite with CMM statusline? [y/N] "
+      read -r overwrite_reply
+      case "$overwrite_reply" in
+        y|Y) ;;
+        *) echo "  [skip] Statusline installation skipped"; return ;;
+      esac
+    else
+      if [ ! -t 0 ]; then
+        # Non-interactive: skip silently, no default install
+        return
+      fi
+      printf "  Install CMM call stats statusline? [y/N] "
+      read -r install_reply
+      case "$install_reply" in
+        y|Y) ;;
+        *) echo "  [skip] Statusline installation skipped"; return ;;
+      esac
+    fi
+
+    # Create hooks dir if needed
+    mkdir -p "${target_config_dir}/hooks"
+
+    local script_path="${target_config_dir}/hooks/statusline-cmm.sh"
+
+    if [ "$mode" = "global" ]; then
+      # GLOBAL MODE — Generate standalone statusline-cmm.sh
+      cat > "$script_path" <<'STATUSLINE_SCRIPT'
+#!/bin/bash
+# statusline-cmm.sh — Display CMM call stats in Claude Code statusline
+CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
+if [ ! -f "$CACHE" ]; then echo "CMM:—"; exit 0; fi
+TOTAL=$(jq '.total // 0' "$CACHE" 2>/dev/null || echo 0)
+SEARCH=$(jq '.search_graph // 0' "$CACHE" 2>/dev/null || echo 0)
+SNIPPET=$(jq '.get_code_snippet // 0' "$CACHE" 2>/dev/null || echo 0)
+TRACE=$(jq '.trace_call_path // 0' "$CACHE" 2>/dev/null || echo 0)
+echo "CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+STATUSLINE_SCRIPT
+    else
+      # PROJECT MODE — Generate wrapper statusline-cmm.sh
+      # Wrapper: runs user's global statusline, appends CMM stats
+      cat > "$script_path" <<'WRAPPER_SCRIPT'
+#!/bin/bash
+# statusline-cmm.sh — Wrapper: runs user's global statusline, appends CMM stats
+#
+# Reads the user's global statusLine.command from global settings.json,
+# runs it, and appends CMM call stats with a pipe separator.
+# Falls back to CMM-only output when no global statusline is configured.
+
+# --- Discover user's existing global statusline command ---
+GLOBAL_CMD=""
+for config_dir in "${CLAUDE_CONFIG_DIR:-}" "$HOME/.config/claude-code" "$HOME/.claude"; do
+  [ -z "$config_dir" ] && continue
+  [ -f "${config_dir}/settings.json" ] || continue
+  GLOBAL_CMD=$(python3 -c "
+import json, sys
+try:
+    with open('${config_dir}/settings.json') as f:
+        cmd = json.load(f).get('statusLine', {}).get('command', '')
+        print(cmd)
+except Exception:
+    pass
+" 2>/dev/null)
+  [ -n "$GLOBAL_CMD" ] && break
+done
+
+# --- CMM stats ---
+CMM_OUTPUT=""
+CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
+if [ -f "$CACHE" ]; then
+  TOTAL=$(jq '.total // 0' "$CACHE" 2>/dev/null || echo 0)
+  SEARCH=$(jq '.search_graph // 0' "$CACHE" 2>/dev/null || echo 0)
+  SNIPPET=$(jq '.get_code_snippet // 0' "$CACHE" 2>/dev/null || echo 0)
+  TRACE=$(jq '.trace_call_path // 0' "$CACHE" 2>/dev/null || echo 0)
+  CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+else
+  CMM_OUTPUT="CMM:—"
+fi
+
+# --- Combine: run global statusline, append CMM stats ---
+if [ -n "$GLOBAL_CMD" ]; then
+  EXISTING=$(eval "$GLOBAL_CMD" 2>/dev/null)
+  if [ -n "$EXISTING" ]; then
+    echo "${EXISTING} | ${CMM_OUTPUT}"
+  else
+    echo "$CMM_OUTPUT"
+  fi
+else
+  echo "$CMM_OUTPUT"
+fi
+WRAPPER_SCRIPT
+    fi
+
+    chmod +x "$script_path"
+    echo "  [ok] Generated ${script_path}"
+
+    # Warn if jq is not found on PATH
+    if ! command -v jq &>/dev/null; then
+      echo "  [warn] jq not found — statusline-cmm.sh requires jq to display call counts"
+      echo "         Install with: brew install jq  (macOS) or apt install jq  (Linux)"
+    fi
+
+    # Merge statusLine into target settings.json
+    python3 - <<PYEOF
+import json, os
+
+settings_path = '${target_settings}'
+script_path = '${script_path}'
+
+try:
+    with open(settings_path) as f:
+        settings = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    settings = {}
+
+settings['statusLine'] = {
+    'type': 'command',
+    'command': 'bash "' + script_path + '"'
+}
+
+tmp_path = settings_path + '.tmp'
+os.makedirs(os.path.dirname(settings_path) if os.path.dirname(settings_path) else '.', exist_ok=True)
+with open(tmp_path, 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+os.replace(tmp_path, settings_path)
+print('  [ok] statusLine merged into ' + os.path.basename(settings_path))
+PYEOF
+
+    # Validate the written JSON
+    python3 -m json.tool "$target_settings" > /dev/null 2>&1 || \
+      echo "  [warn] JSON validation failed for ${target_settings}"
+  }
+
+  if [ "$INSTALL_GLOBAL" = true ]; then
+    local global_config_dir
+    global_config_dir=$(detect_config_dir)
+    echo "[STATUSLINE — global]"
+    _run_install_statusline_for_target "$global_config_dir" "${global_config_dir}/settings.json" "global"
+    echo ""
+  fi
+
+  if [ "$INSTALL_PROJECT" = true ]; then
+    echo "[STATUSLINE — project]"
+    _run_install_statusline_for_target ".claude" ".claude/settings.json" "project"
+    echo ""
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # print_next_steps
 # ---------------------------------------------------------------------------
 
