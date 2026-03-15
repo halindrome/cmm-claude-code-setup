@@ -1,13 +1,8 @@
 # VBW internal planning directory — not relevant to users of this repo
 .vbw-planning/
 
-# Benchmark run outputs (examples are checked in under benchmarks/results/)
-benchmarks/results/*.csv
-benchmarks/results/REPORT-*.md
-!benchmarks/results/example-*.csv
-!benchmarks/results/example-*.md
-!benchmarks/results/sample-*.csv
-!benchmarks/results/REPORT-TEMPLATE.md
+# Benchmark repos (large, cloned locally by setup-repos.sh)
+benchmarks/repos/
 
 # macOS
 .DS_Store
