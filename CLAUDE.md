@@ -38,6 +38,17 @@ _(Run /vbw:skills to list)_
 - Language list: derive from CMM source when possible, use a shared config/extension list
 - jmunch equivalents: jCodeMunch → CMM graph tools; jDocMunch → CMM search_code/get_code_snippet
 
+## Pull Request QA (Required)
+
+Before marking any PR ready for review, follow the QA cycle defined in `CONTRIBUTING.md § Pull Request Process`. The process requires 2–4 rounds of:
+
+1. **QA round** — Open a **new** Claude Code session with **Opus-class model**. Use the read-only QA prompt from CONTRIBUTING.md (fill in PR number and branch). Do NOT fix issues in the QA session.
+2. **Fix round** — Apply fixes in a separate commit (`fix(scope): address QA round N`). Never amend previous commits.
+3. **Repeat** — Fresh QA session each round until findings are clean or only minor/hypothetical.
+4. **Post reports** — Paste each round's QA report as a separate PR comment.
+
+> **Skip condition:** Docs-only PRs (no changes to `hooks/`, `setup.sh`, or `rules/`) skip the QA cycle.
+
 ## Commands
 
 Run /vbw:status for current progress.
