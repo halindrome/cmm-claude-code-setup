@@ -791,6 +791,7 @@ print_next_steps() {
   echo "  2. If project hooks installed: run 'index_repository' on first session"
   echo "  3. If global hooks installed: hooks fire automatically on Read/Write/Edit"
   echo "  4. Review .claude/settings.json to confirm hook entries"
+  echo "  5. If statusline installed: restart Claude Code to see CMM stats in the status bar"
   echo "============================================================"
 }
 
@@ -877,6 +878,10 @@ main() {
 
   if [ "$INSTALL_PROJECT" = true ]; then
     install_project
+  fi
+
+  if [ "$SKIP_STATUSLINE" = false ]; then
+    install_statusline
   fi
 
   if [ "$DRY_RUN" = false ]; then
