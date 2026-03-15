@@ -52,7 +52,7 @@ CMM and Context Mode are complementary, not competing:
 
 ```bash
 # 1. Clone this repo
-git clone https://github.com/your-org/cmm-claude-code-setup
+git clone https://github.com/halindrome/cmm-claude-code-setup
 cd cmm-claude-code-setup
 
 # 2. Install CMM binary (macOS/Linux)
@@ -276,17 +276,20 @@ The MCP executables live wherever they're installed globally — only the regist
 
 ## Benchmarks
 
-The `benchmarks/` directory contains a reproducible benchmark suite comparing three variants:
+The `benchmarks/` directory contains a reproducible benchmark suite comparing six variants:
 
 - **baseline**: No MCP tools (Claude reads files directly)
 - **cmm-cold**: CMM enabled, fresh index each run
 - **cmm-cache**: CMM enabled, pre-warmed index
+- **ctx**: Context Mode enabled (no CMM). Measures execution sandboxing overhead.
+- **cmm+ctx-cold**: CMM + Context Mode both enabled, fresh CMM index per run.
+- **cmm+ctx-cache**: CMM + Context Mode both enabled, pre-warmed CMM index.
 
 ```bash
 ./benchmarks/run.sh
 ```
 
-See [benchmarks/README.md](benchmarks/README.md) for prerequisites, configuration, and result interpretation.
+See [benchmarks/README.md](benchmarks/README.md) for prerequisites, configuration, and result interpretation (full benchmark suite with 6 variants).
 
 ## Requirements
 
