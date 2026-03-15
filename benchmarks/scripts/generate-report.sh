@@ -62,7 +62,6 @@ END {
     grand_stddev[v] = sqrt(variance)
   }
   base_mean = grand_mean["baseline"]
-  for (v in "baseline cmm-cold cmm-cache") {}
   # print in fixed order
   variants[1] = "baseline"; variants[2] = "cmm-cold"; variants[3] = "cmm-cache"
   for (i = 1; i <= 3; i++) {
@@ -82,8 +81,8 @@ NR == 1 { next }
 {
   variant = $1; repo = $2
   total_mean = $13+0
-  sum[repo][variant] += total_mean
-  count[repo][variant]++
+  sum[repo SUBSEP variant] += total_mean
+  count[repo SUBSEP variant]++
   repos[repo] = 1
 }
 END {
@@ -98,8 +97,8 @@ END {
     printf "| %s", r
     for (vi = 1; vi <= 3; vi++) {
       v = variants[vi]
-      if (count[r][v] > 0)
-        printf " | %.0f", sum[r][v] / count[r][v]
+      if (count[r SUBSEP v] > 0)
+        printf " | %.0f", sum[r SUBSEP v] / count[r SUBSEP v]
       else
         printf " | N/A"
     }
@@ -116,8 +115,8 @@ NR == 1 { next }
 {
   variant = $1; task = $3
   total_mean = $13+0
-  sum[task][variant] += total_mean
-  count[task][variant]++
+  sum[task SUBSEP variant] += total_mean
+  count[task SUBSEP variant]++
   tasks[task] = 1
 }
 END {
@@ -133,8 +132,8 @@ END {
     printf "| %s", task_names[ti]
     for (vi = 1; vi <= 3; vi++) {
       v = variants[vi]
-      if (count[t][v] > 0)
-        printf " | %.0f", sum[t][v] / count[t][v]
+      if (count[t SUBSEP v] > 0)
+        printf " | %.0f", sum[t SUBSEP v] / count[t SUBSEP v]
       else
         printf " | N/A"
     }
@@ -146,14 +145,19 @@ END {
 # ---------------------------------------------------------------------------
 # Build report from template using awk multi-line replacement
 # ---------------------------------------------------------------------------
+# Write computed tables to temp files so newlines survive shell handoff
+SUMMARY_FILE=$(mktemp)
+REPO_FILE=$(mktemp)
+TASK_FILE=$(mktemp)
+printf '%s\n' "$SUMMARY_TABLE" > "$SUMMARY_FILE"
+printf '%s\n' "$PER_REPO_TABLE" > "$REPO_FILE"
+printf '%s\n' "$PER_TASK_TABLE" > "$TASK_FILE"
+
 awk \
   -v date="$TODAY" \
   -v claude_ver="$CLAUDE_VERSION" \
   -v cmm_ver="$CMM_VERSION" \
   -v n_runs="$N_RUNS" \
-  -v summary_rows="$SUMMARY_TABLE" \
-  -v repo_rows="$PER_REPO_TABLE" \
-  -v task_rows="$PER_TASK_TABLE" \
 '
 {
   gsub(/YYYY-MM-DD/, date)
@@ -164,25 +168,32 @@ awk \
 }
 ' "$TEMPLATE" > "$OUTPUT.tmp"
 
-# Replace placeholder rows in summary table
-python3 - "$OUTPUT.tmp" "$OUTPUT" "$SUMMARY_TABLE" "$PER_REPO_TABLE" "$PER_TASK_TABLE" << 'PYEOF'
+# Replace placeholder rows in summary table using temp files
+python3 - "$OUTPUT.tmp" "$OUTPUT" "$SUMMARY_FILE" "$REPO_FILE" "$TASK_FILE" << 'PYEOF'
 import sys, re
 
-tmp_path, out_path, summary_rows, repo_rows, task_rows = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+tmp_path, out_path, summary_file, repo_file, task_file = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 
 with open(tmp_path) as f:
     content = f.read()
 
+with open(summary_file) as f:
+    summary_rows = f.read()
+with open(repo_file) as f:
+    repo_rows = f.read()
+with open(task_file) as f:
+    task_rows = f.read()
+
 # Replace placeholder rows in Summary Table
 content = re.sub(
-    r'(\| baseline \| XXXXX \| XXXXX \| — \|)\n\| cmm-cold \| XXXXX \| XXXXX \| \+X% / −X% \|\n\| cmm-cache \| XXXXX \| XXXXX \| \+X% / −X% \|',
+    r'\| baseline \| XXXXX \| XXXXX \| — \|\n\| cmm-cold \| XXXXX \| XXXXX \| \+X% / −X% \|\n\| cmm-cache \| XXXXX \| XXXXX \| \+X% / −X% \|',
     summary_rows.rstrip('\n'),
     content
 )
 
 # Replace per-repo placeholder rows
 content = re.sub(
-    r'(\| expressjs/express \| XXXXX \| XXXXX \| XXXXX \|)\n.*?\| meilisearch/meilisearch \| XXXXX \| XXXXX \| XXXXX \|',
+    r'\| expressjs/express \| XXXXX \| XXXXX \| XXXXX \|.*?\| meilisearch/meilisearch \| XXXXX \| XXXXX \| XXXXX \|',
     repo_rows.rstrip('\n'),
     content,
     flags=re.DOTALL
@@ -190,7 +201,7 @@ content = re.sub(
 
 # Replace per-task placeholder rows
 content = re.sub(
-    r'(\| 01-find-callers \| XXXXX \| XXXXX \| XXXXX \|)\n.*?\| 05-dead-code \| XXXXX \| XXXXX \| XXXXX \|',
+    r'\| 01-find-callers \| XXXXX \| XXXXX \| XXXXX \|.*?\| 05-dead-code \| XXXXX \| XXXXX \| XXXXX \|',
     task_rows.rstrip('\n'),
     content,
     flags=re.DOTALL
@@ -200,6 +211,7 @@ with open(out_path, 'w') as f:
     f.write(content)
 PYEOF
 
-rm -f "$OUTPUT.tmp"
+rm -f "$OUTPUT.tmp" "$SUMMARY_FILE" "$REPO_FILE" "$TASK_FILE"
 
-echo "Report saved to: $OUTPUT"
+echo "[generate-report] Report saved to: $OUTPUT" >&2
+echo "$OUTPUT"

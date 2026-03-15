@@ -52,7 +52,7 @@ CMM and Context Mode are complementary, not competing:
 
 ```bash
 # 1. Clone this repo
-git clone https://github.com/your-org/cmm-claude-code-setup
+git clone https://github.com/halindrome/cmm-claude-code-setup
 cd cmm-claude-code-setup
 
 # 2. Install CMM binary (macOS/Linux)
@@ -111,7 +111,7 @@ rules/
   mcp-example.json                      # Example .mcp.json for project-scoped MCP registration
   allowed-tools.txt                     # CMM + Context Mode tool allowlist for settings.local.json
 benchmarks/
-  run.sh                                # 3-variant benchmark runner (baseline / CMM / CMM+cache)
+  run.sh                                # Benchmark runner (baseline / cmm-cold / cmm-cache)
   README.md                             # Benchmark documentation
 docs/
   setup-guide.md                        # Full step-by-step setup guide

@@ -1,5 +1,5 @@
 #!/bin/bash
-# End-to-end benchmark runner: prerequisite checks → setup repos → run benchmarks → aggregate → report
+# End-to-end benchmark runner: prerequisite checks → setup repos → run benchmarks → report
 
 set -euo pipefail
 
@@ -39,37 +39,37 @@ done
 # ---------------------------------------------------------------------------
 # Step 1: Setup repos
 # ---------------------------------------------------------------------------
-echo "[run.sh] Step 1/4 — Setting up benchmark repos..."
+echo "[run.sh] Step 1/3 — Setting up benchmark repos..."
 bash "$SCRIPT_DIR/scripts/setup-repos.sh"
 
 # ---------------------------------------------------------------------------
 # Step 2: Run benchmarks (outputs raw CSV path on last stdout line)
 # ---------------------------------------------------------------------------
-echo "[run.sh] Step 2/4 — Running benchmarks..."
-RAW_CSV=$(bash "$SCRIPT_DIR/scripts/run-benchmarks.sh" "${PASS_THROUGH_ARGS[@]}" | tail -1)
+echo "[run.sh] Step 2/3 — Running benchmarks..."
+BENCH_RC=0
+RAW_CSV=$(bash "$SCRIPT_DIR/scripts/run-benchmarks.sh" ${PASS_THROUGH_ARGS[@]+"${PASS_THROUGH_ARGS[@]}"} | tail -1) || BENCH_RC=$?
 
 if [[ -z "$RAW_CSV" || ! -f "$RAW_CSV" ]]; then
   echo "[error] run-benchmarks.sh did not produce a valid CSV path: '${RAW_CSV}'" >&2
   exit 1
 fi
 
+if [[ $BENCH_RC -ne 0 ]]; then
+  echo "[warn] Some benchmark runs failed (exit $BENCH_RC) — generating report from partial data" >&2
+fi
+
 echo "[run.sh] Raw CSV: $RAW_CSV"
 
 # ---------------------------------------------------------------------------
-# Step 3: Aggregate stats
+# Step 3: Generate report (aggregation already done by run-benchmarks.sh)
 # ---------------------------------------------------------------------------
-echo "[run.sh] Step 3/4 — Aggregating statistics..."
 AGG_CSV="${RAW_CSV/raw-/aggregated-}"
-bash "$SCRIPT_DIR/scripts/aggregate-stats.sh" "$RAW_CSV" > "$AGG_CSV"
-echo "[run.sh] Aggregated CSV: $AGG_CSV"
-
-# ---------------------------------------------------------------------------
-# Step 4: Generate report
-# ---------------------------------------------------------------------------
-echo "[run.sh] Step 4/4 — Generating report..."
+echo "[run.sh] Step 3/3 — Generating report..."
 REPORT=$(bash "$SCRIPT_DIR/scripts/generate-report.sh" "$AGG_CSV" | tail -1)
 
 echo ""
 echo "================================================================"
 echo "Report saved to: $REPORT"
 echo "================================================================"
+
+exit "$BENCH_RC"

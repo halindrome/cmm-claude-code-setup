@@ -11,7 +11,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-SESSIONS_GLOB="${HOME}/.config/claude-code/projects/*/sessions/*.jsonl"
+SESSIONS_GLOB="${CLAUDE_SESSIONS_DIR:-$HOME/.config/claude-code/projects}/*/*.jsonl"
 
 # Collect candidates sorted by modification time (newest first)
 CANDIDATES=$(ls -t ${SESSIONS_GLOB} 2>/dev/null)
@@ -25,7 +25,7 @@ fi
 if [ -n "$PROJECT_PATH" ]; then
   # Claude Code hashes project paths by replacing / with - and removing leading -
   HASHED=$(echo "$PROJECT_PATH" | sed 's|/|-|g' | sed 's|^-||')
-  CANDIDATES=$(echo "$CANDIDATES" | grep "/${HASHED}/sessions/" 2>/dev/null)
+  CANDIDATES=$(echo "$CANDIDATES" | grep "/${HASHED}/" 2>/dev/null)
   if [ -z "$CANDIDATES" ]; then
     echo "Error: No session files found for project: $PROJECT_PATH" >&2
     exit 1

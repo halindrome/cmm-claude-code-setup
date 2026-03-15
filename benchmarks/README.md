@@ -81,7 +81,7 @@ source "$(dirname "$0")/../config.sh"
 | `BENCH_RUNS` | `10` | Number of runs per variant/repo/task combination |
 | `BENCH_RESULTS_DIR` | `benchmarks/results` | Output directory for CSV and report files |
 | `BENCH_PROMPTS_DIR` | `benchmarks/prompts` | Directory containing task prompt files |
-| `BENCH_REPOS_DIR` | `benchmarks/repos` | Directory where repos are cloned |
+| `BENCH_REPOS_DIR` | `$HOME/.cache/cmm-benchmarks/repos` | Directory where repos are cloned (outside project tree to avoid CMM indexing) |
 | `CLAUDE_SESSIONS_DIR` | `~/.config/claude-code/projects` | Claude Code session JSONL directory |
 
 **To change run count:** Edit `BENCH_RUNS` in `config.sh`, or pass `--runs N` to `run.sh`.
@@ -114,7 +114,9 @@ CMM MCP tools are **enabled**. The existing CMM index is retained (pre-warmed fr
 
 Token profile: low input tokens, zero `cache_creation`, high `cache_read` tokens.
 
-**Variant switching mechanism:** Each variant swaps `.mcp.json` via `benchmarks/scripts/variant-setup.sh`. Two template files must exist at the project root before running:
+> **Note:** Context Mode MCP benchmarks require a different methodology (multi-turn sessions with tool output accumulation) and are not included in this single-shot suite.
+
+**Variant switching mechanism:** Each variant swaps `.mcp.json` via `benchmarks/scripts/variant-setup.sh`. Template files must exist at the project root before running:
 
 - `.mcp.json.baseline` — `{"mcpServers":{}}` (no MCP tools)
 - `.mcp.json.cmm` — `{"mcpServers":{"codebase-memory-mcp":{...}}}` (your CMM config)
@@ -217,6 +219,11 @@ The report's Summary Table shows mean total tokens per variant across all repos 
 
 1. Add the variant name to `BENCH_VARIANTS` in `config.sh`.
 2. Add a `case` block in `benchmarks/scripts/variant-setup.sh` implementing `setup_variant` and `teardown_variant` for the new variant.
+3. Create a `.mcp.json.<variant>` template file at the project root with the desired MCP server configuration.
+   - **No-purge variants**: no index deletion needed — just swap `.mcp.json`.
+   - **Purge variants** (e.g. `cmm-cold`): add index deletion logic mirroring the `cmm-cold` case block.
+4. Update the error message in `setup_variant` to list the new variant name.
+5. Document the new variant in `benchmarks/README.md` following the style of the existing variant descriptions.
 
 ---
 

@@ -1,17 +1,15 @@
 # VBW internal planning directory — not relevant to users of this repo
 .vbw-planning/
 
-# Benchmark run outputs (examples are checked in under benchmarks/results/)
-benchmarks/results/*.csv
-benchmarks/results/REPORT-*.md
-!benchmarks/results/example-*.csv
-!benchmarks/results/example-*.md
-!benchmarks/results/sample-*.csv
-!benchmarks/results/REPORT-TEMPLATE.md
-
 # macOS
 .DS_Store
 
 # Editor
 .idea/
 *.swp
+
+# Benchmark results (actual runs) — keep examples and templates
+benchmarks/results/raw-*.csv
+benchmarks/results/aggregated-*.csv
+benchmarks/results/REPORT-*.md
+!benchmarks/results/REPORT-TEMPLATE.md

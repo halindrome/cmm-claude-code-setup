@@ -65,12 +65,12 @@ _Fill in manually after analysis._
 
 ## Methodology Notes
 
-- **baseline:** Claude Code with no CMM tools. Full file context passed via grep/cat.
-- **cmm-cold:** CMM graph tools used; index freshly built (no cache hits).
-- **cmm-cache:** CMM graph tools used; index pre-warmed (cache read tokens measured).
-- Token counts sourced from Claude API response headers (`x-cache-creation-input-tokens`, `x-cache-read-input-tokens`).
+- **baseline:** Claude Code with no MCP tools. Full file context passed via grep/cat.
+- **cmm-cold:** CMM graph tools enabled; index freshly built (no cache hits).
+- **cmm-cache:** CMM graph tools enabled; index pre-warmed (cache read tokens measured).
+- Token counts sourced from Claude Code session JSONL files (`.message.usage` fields).
 - Each variant/repo/task combination run N times; mean and stddev computed over runs.
-- Repos cloned at pinned commits listed in `benchmarks/config.sh`.
+- Repos cloned outside the project tree (`~/.cache/cmm-benchmarks/repos/`) to avoid CMM indexing benchmark repos as part of this project.
 
 ---
 
@@ -82,12 +82,12 @@ _Fill in manually after analysis._
 |--------|------|-------------|
 | variant | string | One of: baseline, cmm-cold, cmm-cache |
 | repo | string | GitHub repo slug (owner/name) |
-| task | string | Task ID (01–05) |
+| task | string | Task ID (01-05) |
 | run | integer | Run number within variant/repo/task |
 | input_tokens | integer | Input tokens billed (excluding cache) |
 | output_tokens | integer | Output tokens generated |
-| cache_creation | integer | Cache creation tokens (cmm-cold only) |
-| cache_read | integer | Cache read tokens (cmm-cache only) |
+| cache_creation | integer | Cache creation tokens (index build overhead) |
+| cache_read | integer | Cache read tokens (cache hits) |
 | total_tokens | integer | Sum of input + output + cache_creation + cache_read |
 
 ### sample-aggregated.csv
@@ -96,7 +96,7 @@ _Fill in manually after analysis._
 |--------|------|-------------|
 | variant | string | One of: baseline, cmm-cold, cmm-cache |
 | repo | string | GitHub repo slug (owner/name) |
-| task | string | Task ID (01–05) |
+| task | string | Task ID (01-05) |
 | n | integer | Number of runs aggregated |
 | input_mean | float | Mean input tokens |
 | input_stddev | float | Std dev of input tokens |

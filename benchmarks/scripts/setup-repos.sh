@@ -1,5 +1,6 @@
 #!/bin/bash
-# Clone benchmark repos (shallow) into benchmarks/repos/ if not already present
+# Clone benchmark repos (shallow) into ~/.cache/cmm-benchmarks/repos/ if not already present
+# Repos are stored OUTSIDE the project tree so CMM doesn't index them as part of this project.
 
 set -euo pipefail
 
