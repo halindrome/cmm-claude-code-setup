@@ -216,6 +216,20 @@ The report's Summary Table shows mean total tokens per variant across all repos 
 
 **Variant not switching:** Check that `.mcp.json.baseline` and `.mcp.json.cmm` exist in the project root. The `variant-setup.sh` script logs `[warn] .mcp.json.cmm not found` if the CMM template is missing.
 
+**Context Mode not initializing:** If ctx or cmm+ctx variants fail with `context-mode: command not found`, install context-mode-mcp:
+
+```bash
+npm install -g @ubos-ai/context-mode
+```
+
+Verify installation: `context-mode --version`. Also confirm `.mcp.json.ctx` and `.mcp.json.cmm+ctx` template files exist at the project root.
+
+**Context Mode SQLite errors:** Context Mode stores session state in `.claude/context-mode.db`. If ctx variants fail with SQLite errors, check that the `.claude/` directory has write permissions. To reset session state, delete the database:
+
+```bash
+rm -f .claude/context-mode.db
+```
+
 ---
 
 ## Extending
@@ -252,6 +266,26 @@ The report's Summary Table shows mean total tokens per variant across all repos 
 
 1. Add the variant name to `BENCH_VARIANTS` in `config.sh`.
 2. Add a `case` block in `benchmarks/scripts/variant-setup.sh` implementing `setup_variant` and `teardown_variant` for the new variant.
+3. Create a `.mcp.json.<variant>` template file at the project root with the desired MCP server configuration.
+   - **No-purge variants** (e.g. `ctx`): no index deletion needed — just swap `.mcp.json`.
+   - **Purge variants** (e.g. `cmm+ctx-cold`): add index deletion logic mirroring the `cmm-cold` case block.
+4. Update the error message in `setup_variant` to list the new variant name.
+5. Document the new variant in `benchmarks/README.md` following the style of the existing variant descriptions.
+
+Use `ctx` as the reference for a "no-purge" variant (Context Mode only, no CMM index to manage) and `cmm+ctx-cold` as the reference for a "purge" variant (CMM index deleted before each run).
+
+---
+
+## Results
+
+See [REPORT-2026-03-14.md](results/REPORT-2026-03-14.md) for the first full run with all 6 variants on expressjs/express (n=3).
+
+Key findings:
+- All 6 variants within ~45% of baseline in total tokens on expressjs/express
+- `cmm+ctx-cold` was closest to baseline (+2.5%)
+- Task 05 (dead-code) dominates token variance across all variants
+- `cache_read` tokens are 70–86% of total — actual cost difference is smaller than raw counts suggest (~10× cache read discount)
+- Full multi-repo runs needed for statistically significant conclusions
 
 ---
 
