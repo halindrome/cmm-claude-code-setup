@@ -855,8 +855,10 @@ PYEOF
   fi
 
   if [ "$INSTALL_PROJECT" = true ]; then
+    local project_root
+    project_root=$(pwd)
     echo "[STATUSLINE — project]"
-    _run_install_statusline_for_target ".claude" "project"
+    _run_install_statusline_for_target "${project_root}/.claude" "project"
     echo ""
   fi
 }
