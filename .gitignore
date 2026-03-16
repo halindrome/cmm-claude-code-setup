@@ -1,6 +1,10 @@
 # VBW internal planning directory — not relevant to users of this repo
 .vbw-planning/
 
+# Local Claude Code configuration (installed hooks, local settings, session state)
+# Source hooks live in hooks/project/ — .claude/ is the local installation target
+.claude/
+
 # macOS
 .DS_Store
 
