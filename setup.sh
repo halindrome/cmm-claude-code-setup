@@ -311,36 +311,69 @@ detect_context_mode() {
     return 0
   fi
 
-  # Detection: binary, existing db, or already registered in .mcp.json
-  local already_registered=false
+  # Step 1: If .mcp.json exists AND contains context-mode → already registered
   if [ -f ".mcp.json" ] && grep -q "context-mode" ".mcp.json" 2>/dev/null; then
-    already_registered=true
-  fi
-
-  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ] || [ "$already_registered" = true ]; then
     CONTEXT_MODE_STATUS="ok"
     INSTALL_CONTEXT_MODE=true
     echo "  [ok] context-mode detected"
     return 0
   fi
 
-  # Not detected: prompt interactively when stdin is a tty, otherwise warn non-interactively
-  CONTEXT_MODE_STATUS="warn"
-  echo ""
-  if [ -t 0 ]; then
-    printf "  Use Context Mode integration? [y/N]: "
-    read -r choice
-    choice="${choice:-n}"
-    if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
-      INSTALL_CONTEXT_MODE=true
-      CONTEXT_MODE_STATUS="ok"
-      echo "  [info] Context Mode will be registered in .mcp.json"
+  # Step 2: If .mcp.json exists but does NOT contain context-mode → opt-out flag
+  local mcp_json_exists_without_ctx=false
+  if [ -f ".mcp.json" ]; then
+    mcp_json_exists_without_ctx=true
+  fi
+
+  # Step 3: Detect binary or db
+  local context_mode_available=false
+  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ]; then
+    context_mode_available=true
+  fi
+
+  # Step 4: Decision
+  if [ "$mcp_json_exists_without_ctx" = true ] && [ "$context_mode_available" = true ]; then
+    # Project has .mcp.json but opted out of context-mode — prompt with default N
+    CONTEXT_MODE_STATUS="warn"
+    echo ""
+    if [ -t 0 ]; then
+      printf "  Project .mcp.json exists but does not include context-mode. Add it? [y/N]: "
+      read -r choice
+      choice="${choice:-n}"
+      if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
+        INSTALL_CONTEXT_MODE=true
+        CONTEXT_MODE_STATUS="ok"
+        echo "  [info] Context Mode will be registered in .mcp.json"
+        echo "  [info] Docs: https://github.com/mksglu/context-mode"
+      else
+        echo "  [skip] Context Mode not added (project .mcp.json opt-out)"
+      fi
+    else
+      echo "  [skip] context-mode not added (project .mcp.json exists without it)"
+    fi
+  elif [ "$context_mode_available" = true ]; then
+    CONTEXT_MODE_STATUS="ok"
+    INSTALL_CONTEXT_MODE=true
+    echo "  [ok] context-mode detected"
+  else
+    # Not detected: prompt interactively when stdin is a tty, otherwise warn non-interactively
+    CONTEXT_MODE_STATUS="warn"
+    echo ""
+    if [ -t 0 ]; then
+      printf "  Use Context Mode integration? [y/N]: "
+      read -r choice
+      choice="${choice:-n}"
+      if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
+        INSTALL_CONTEXT_MODE=true
+        CONTEXT_MODE_STATUS="ok"
+        echo "  [info] Context Mode will be registered in .mcp.json"
+        echo "  [info] Docs: https://github.com/mksglu/context-mode"
+      fi
+    else
+      echo "  [warn] context-mode not detected."
+      echo "  [info] To add later: re-run setup.sh --project (without --skip-mcp-check)"
       echo "  [info] Docs: https://github.com/mksglu/context-mode"
     fi
-  else
-    echo "  [warn] context-mode not detected."
-    echo "  [info] To add later: re-run setup.sh --project (without --skip-mcp-check)"
-    echo "  [info] Docs: https://github.com/mksglu/context-mode"
   fi
   return 0
 }
