@@ -33,6 +33,8 @@ case "$TOOL" in
     exit 0 ;;
   mcp__context-mode__*)                          # context-mode gate fires after CMM gate; avoid deadlock
     exit 0 ;;
+  Bash|Read|Grep|Glob)                           # read-only tools; safe to run in parallel with index_status
+    exit 0 ;;
 esac
 
 # --- Sentinel Check ---
