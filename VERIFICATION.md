@@ -72,7 +72,7 @@ cd "$TMPDIR"
 git init -q
 
 # 2. Install statusline (answer 'y' when prompted, or pipe 'y' in)
-echo "y" | bash /path/to/setup.sh --project --skip-mcp-check
+echo "y" | bash setup.sh --project --skip-mcp-check  # run from project root
 
 # 3. Confirm settings.local.json contains an absolute path (starts with /)
 grep -o '"command".*statusline-cmm.sh"' .claude/settings.local.json
@@ -83,7 +83,7 @@ grep -o '"command".*statusline-cmm.sh"' .claude/settings.local.json
 mkdir -p sub/dir
 cd sub/dir
 bash "$TMPDIR/.claude/hooks/statusline-cmm.sh"
-# Should output: CMM:— or CMM:N (not "file not found")
+# Should output: CMM:0 or CMM:N (not "file not found")
 ```
 
 **Automated regression test:**
