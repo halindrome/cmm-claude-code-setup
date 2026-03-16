@@ -31,6 +31,8 @@ case "$TOOL" in
     exit 0 ;;
   SendMessage)                                  # inter-agent coordination; must never be gated
     exit 0 ;;
+  mcp__context-mode__*)                          # context-mode gate fires after CMM gate; avoid deadlock
+    exit 0 ;;
 esac
 
 # --- Sentinel Check ---
