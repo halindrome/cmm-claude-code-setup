@@ -55,3 +55,43 @@ date: "2026-03-13"
 ## Summary
 
 Tier: standard / Result: PASS / Passed: 24/24 / Failed: none
+
+---
+
+## Statusline Absolute Path (Issue #4)
+
+Verify that project-mode statusline installation writes an absolute path into
+`.claude/settings.local.json`.
+
+**Manual verification:**
+
+```bash
+# 1. Run setup in a temp directory
+TMPDIR=$(mktemp -d)
+cd "$TMPDIR"
+git init -q
+
+# 2. Install statusline (answer 'y' when prompted, or pipe 'y' in)
+echo "y" | bash /path/to/setup.sh --project --skip-mcp-check
+
+# 3. Confirm settings.local.json contains an absolute path (starts with /)
+grep -o '"command".*statusline-cmm.sh"' .claude/settings.local.json
+# Expected: "command": "bash \"/absolute/path/to/.claude/hooks/statusline-cmm.sh\""
+# Must NOT be: "command": "bash \".claude/hooks/statusline-cmm.sh\""
+
+# 4. Confirm the statusline runs from a subdirectory
+mkdir -p sub/dir
+cd sub/dir
+bash "$TMPDIR/.claude/hooks/statusline-cmm.sh"
+# Should output: CMM:— or CMM:N (not "file not found")
+```
+
+**Automated regression test:**
+```bash
+bash tests/test-statusline-path.sh
+```
+
+Note: Projects that installed the statusline before this fix will need to re-run
+`bash setup.sh --project --skip-mcp-check` to update the path to absolute.
+
+---
