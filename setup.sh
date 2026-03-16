@@ -614,6 +614,71 @@ install_project() {
   done
   shopt -u nullglob
 
+  # Purge deprecated hook files and their settings.json entries (--force only).
+  # When hooks are renamed or merged, a plain --force re-run otherwise leaves stale
+  # files in .claude/hooks/ that remain registered in settings.json and can deadlock
+  # the session (e.g. old cmm-session-gate.sh blocking Bash after session-gate.sh merge).
+  if [ "$FORCE" = true ]; then
+    valid_hooks=()
+    shopt -s nullglob
+    for f in "$SCRIPT_DIR/hooks/project/"*.sh; do
+      valid_hooks+=("$(basename "$f")")
+    done
+    shopt -u nullglob
+
+    stale_hooks=()
+    shopt -s nullglob
+    for installed in .claude/hooks/*.sh; do
+      name="$(basename "$installed")"
+      is_valid=false
+      for v in "${valid_hooks[@]}"; do
+        [ "$v" = "$name" ] && is_valid=true && break
+      done
+      if [ "$is_valid" = false ]; then
+        stale_hooks+=("$name")
+        if [ "$DRY_RUN" = true ]; then
+          echo "  [DRY RUN] Would remove deprecated hook: $name"
+        else
+          rm "$installed"
+          echo "  [removed] Deprecated hook: $name"
+        fi
+      fi
+    done
+    shopt -u nullglob
+
+    if [ "${#stale_hooks[@]}" -gt 0 ] && [ "$DRY_RUN" = false ] && [ -f ".claude/settings.json" ]; then
+      python3 -c '
+import json, os, sys
+target = sys.argv[1]
+stale = set(sys.argv[2].split())
+try:
+    with open(target) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    sys.exit(0)
+changed = False
+for hook_type in list(data.get("hooks", {})):
+    before = len(data["hooks"][hook_type])
+    data["hooks"][hook_type] = [
+        entry for entry in data["hooks"][hook_type]
+        if not any(
+            os.path.basename(h.get("command", "").split()[-1]) in stale
+            for h in entry.get("hooks", [])
+        )
+    ]
+    if len(data["hooks"][hook_type]) < before:
+        changed = True
+if changed:
+    tmp = target + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, target)
+    print("  [ok] Pruned deprecated hook entries from settings.json")
+' ".claude/settings.json" "${stale_hooks[*]}"
+    fi
+  fi
+
   shopt -s nullglob
   for file in "$SCRIPT_DIR/rules/"*; do
     copy_file "$file" ".claude/rules/$(basename "$file")"
