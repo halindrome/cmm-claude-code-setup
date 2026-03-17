@@ -15,6 +15,8 @@ set -euo pipefail
 #   --dry-run         Show what would be done without making changes
 #   --skip-mcp-check  Bypass all MCP availability checks (CMM binary, registration,
 #                     tool allowlist, context-mode). Useful for CI/automation.
+#   --skip-statusline Skip the CMM statusline installation offer
+#   --verify          After installing hooks, verify file integrity against CHECKSUMS.sha256
 #
 # No flags: interactive prompt asking which to install.
 #
@@ -90,7 +92,7 @@ verify_repo_remote() {
   if [ -z "$remote_url" ]; then
     return 0
   fi
-  local expected_pattern="github\.com[/:].*cmm.*setup\|github\.com[/:].*codebase-memory"
+  local expected_pattern="github\.com[/:].*cmm.*setup|github\.com[/:].*codebase-memory"
   if ! echo "$remote_url" | grep -qE "$expected_pattern"; then
     echo "" >&2
     echo "  [WARN] Unexpected git remote: $remote_url" >&2
@@ -129,11 +131,14 @@ verify_installation() {
   while IFS= read -r line; do
     [ -z "$line" ] && continue
     local expected file full actual
-    expected=$(echo "$line" | awk '{print $1}')
-    file=$(echo "$line" | awk '{print $2}')
+    expected=$(echo "$line" | cut -c1-64)
+    file=$(echo "$line" | cut -c67-)
     full="$SCRIPT_DIR/$file"
-    [ ! -f "$full" ] && continue
-    actual=$(shasum -a 256 "$full" 2>/dev/null | awk '{print $1}')
+    if [ ! -f "$full" ]; then
+      echo "  [?] $file (not installed — skipped)" >&2
+      continue
+    fi
+    actual=$(shasum -a 256 "$full" 2>/dev/null | cut -c1-64 || sha256sum "$full" 2>/dev/null | cut -c1-64)
     if [ "$actual" != "$expected" ]; then
       echo "  [✗] $file (checksum mismatch)" >&2
       failures=$((failures + 1))

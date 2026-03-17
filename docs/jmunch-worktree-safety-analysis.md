@@ -150,7 +150,7 @@ HASH=$(echo "$CWD" | md5 -q 2>/dev/null || echo "$CWD" | md5sum 2>/dev/null | cu
 SENTINEL="/tmp/jmunch-ready-${HASH}"
 ```
 
-### After (stable sentinel hash — verbatim from cmm-claude-code-setup `session-gate.sh` lines 15–50)
+### After (stable sentinel hash — adapted from cmm-claude-code-setup `session-gate.sh` lines 15–50)
 
 ```bash
 # --- Stable Sentinel Path Computation ---
