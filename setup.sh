@@ -461,7 +461,7 @@ HOOKJSON
     # Rewrite hook commands to use absolute paths so hooks are found regardless of
     # the session CWD (e.g. when Claude Code is opened from inside a git submodule).
     local abs_hook_dir
-    abs_hook_dir="$(pwd)/.claude/hooks"
+    abs_hook_dir="$(pwd -P)/.claude/hooks"
     NEW_HOOKS_JSON=$(python3 -c "
 import sys
 content = open(sys.argv[1]).read()
