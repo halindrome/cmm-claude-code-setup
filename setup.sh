@@ -4,7 +4,7 @@ set -euo pipefail
 # setup.sh — Automated installer for codebase-memory-mcp Claude Code hooks
 #
 # Usage:
-#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline]
+#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
 #
 # Flags:
 #   --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
@@ -32,6 +32,7 @@ INSTALL_GLOBAL=false
 INSTALL_PROJECT=false
 SKIP_MCP_CHECK=false
 SKIP_STATUSLINE=false
+VERIFY=false
 
 # Detect Claude Code config directory at runtime.
 # Priority: $CLAUDE_CONFIG_DIR (set by Claude Code) > ~/.config/claude-code (XDG) > ~/.claude (legacy)
@@ -1093,6 +1094,7 @@ parse_args() {
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
+      --verify)          VERIFY=true ;;
       --help|-h)
         cat <<'HELP'
 setup.sh — Installer for codebase-memory-mcp + Context Mode Claude Code hooks
@@ -1102,7 +1104,7 @@ Installs hooks, rules, and settings for two complementary MCP servers:
   - Context Mode MCP (optional): execution sandboxing + SQLite session persistence, ~98% context reduction
 
 Usage:
-  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline]
+  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
 
 Flags:
   --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
@@ -1113,6 +1115,7 @@ Flags:
   --dry-run         Show what would be done without making changes
   --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
   --skip-statusline Skip the CMM statusline installation offer
+  --verify          After installing hooks, verify file integrity against CHECKSUMS.sha256
   --help, -h        Show this help message
 
 MCP pre-flight checks (run automatically unless --skip-mcp-check):
