@@ -59,19 +59,15 @@ cd cmm-claude-code-setup
 curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/scripts/setup.sh | bash
 # Or download from: https://github.com/DeusData/codebase-memory-mcp/releases/latest
 
-# 3. Register CMM with Claude Code
-codebase-memory-mcp install
-
-# 4. Run the setup script from your target project directory
+# 3. Run the setup script from your target project directory
 cd /path/to/your-project
 bash /path/to/cmm-claude-code-setup/setup.sh --project
 
-# 5. Append CMM rules to your global CLAUDE.md
+# 4. Append CMM rules to your global CLAUDE.md
 cat /path/to/cmm-claude-code-setup/rules/global-claude-md.md >> ~/.claude/CLAUDE.md
-
-# 6. Allow CMM tools in your project (add to .claude/settings.local.json)
-# See rules/allowed-tools.txt for the full list of tool names to add
 ```
+
+Step 3 handles the rest automatically: it detects whether CMM is registered with Claude Code and creates `.mcp.json` if needed, adds all 14 CMM tool names to `.claude/settings.json` (the tool allowlist), and optionally sets up Context Mode — all interactively with prompts at each step.
 
 ```bash
 # setup.sh options
@@ -85,9 +81,8 @@ bash setup.sh --help
   --skip-mcp-check  Skip MCP availability prompts (for CI/automation)
 ```
 
-The setup script also runs **pre-flight MCP checks**: it detects whether CMM is installed and registered, whether the tool allowlist is configured, and (optionally) whether you want Context Mode.
-
 See [docs/setup-guide.md](docs/setup-guide.md) for the full step-by-step walkthrough.
+
 
 ## Repository Structure
 
