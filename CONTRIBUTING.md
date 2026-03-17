@@ -22,7 +22,7 @@ codebase-memory-setup-guide.md  End-to-end setup guide
 
 ## Making Changes
 
-1. **Fork the repo** and create a feature branch from `main` (e.g., `fix/gate-allow-list` or `feat/better-agent-prompt`). **Never commit directly to `main`**.
+1. **Fork the repo** and create a feature branch from `develop` (e.g., `fix/gate-allow-list` or `feat/better-agent-prompt`). **Never commit directly to `develop` or `production`**.
 2. **Test locally** by installing the hooks into a real project and exercising the relevant code paths.
 3. **Keep commits atomic** — one logical change per commit.
 4. **Follow code style:**
@@ -30,6 +30,24 @@ codebase-memory-setup-guide.md  End-to-end setup guide
    - Exit codes: `exit 2` = block tool call with message, `exit 0` = allow
    - Sentinel pattern: `/tmp/cmm-session-ready-<project-root-md5hash>` (hash computed by `session-gate.sh`)
    - Commit format: `{type}({scope}): {description}` — types: feat, fix, docs, refactor, chore
+
+## Branch Model
+
+```
+feature/my-work
+      │
+      ▼  PR → develop
+   develop
+      │
+      ▼  PR → production (version bump required)
+  production  ◄── tagged vX.Y.Z + stable
+```
+
+| Branch | Base | Target | Rules |
+|--------|------|---------|-------|
+| `feature/*` | `develop` | `develop` | One feature per branch |
+| `develop` | — | `production` | All tests pass |
+| `production` | — | — | Version bump required; tagged on merge |
 
 ## Pull Request Process
 

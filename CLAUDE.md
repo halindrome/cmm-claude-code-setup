@@ -6,13 +6,13 @@ This project uses VBW (Vibe Better with Claude Code) for structured development.
 
 ## State
 - Planning directory: `.vbw-planning/`
-- 9 phases complete (2 milestones shipped)
+- 17 phases complete (3 milestones shipped)
 - Reference: `../jmunch-claude-code-setup` (Shachar Bard's jmunch work, MIT license)
 - Reference: `../codebase-memory-mcp` (DeusData CMM source)
 
 ## Active Context
 
-**Milestone 02 shipped:** Token Benchmarks, Agent Init Context, Context Mode Integration, Setup MCP Availability Check (phases 06-09)
+**Milestone 03 shipped:** Benchmark Context Mode, Statusline Setup Offer, Context Mode Bootstrap, Statusline Token Savings, Fix Statusline Relative Path, Single Gate + Monorepo Path Fix, jmunch Security Hardening, Git Branching Strategy (phases 10-17)
 **Next action:** `/vbw:vibe --add` to define new work
 
 ## VBW Rules
@@ -51,7 +51,17 @@ Before marking any PR ready for review, follow the QA cycle defined in `CONTRIBU
 
 ## Merge Requirements
 
-- **Version bump required.** Every PR merged into `main` must include a version number increase. Bump the version as the final commit before merge — use `scripts/bump-version.sh` if it exists, or update the version file directly. Follow semver: breaking changes → major, new features → minor, fixes → patch.
+- **Version bump required.** Every PR merged into `production` must include a version number increase. Bump the version as the final commit before merge — use `scripts/bump-version.sh` if it exists, or update the version file directly. Follow semver: breaking changes → major, new features → minor, fixes → patch.
+
+## Branch Model
+
+| Branch | Purpose |
+|--------|---------|
+| `production` | Stable releases. Every merge requires version bump + tag. |
+| `develop` | Active development. Feature branches merge here. |
+| `feature/*` | Short-lived work branches. Base from `develop`, PR to `develop`. |
+
+**Release flow:** `feature/* → develop → production`
 
 ## Commands
 
