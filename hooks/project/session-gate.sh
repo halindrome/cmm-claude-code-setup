@@ -3,8 +3,8 @@
 # BLOCKING: gates all tools until CMM index is refreshed and (if installed) Context Mode is initialized
 #
 # Purpose: Single merged gate replacing cmm-session-gate.sh and context-mode-session-gate.sh.
-#          Sentinel path is derived from the hook's own directory to remain stable when the
-#          user navigates into subdirectories (monorepo/submodule safe).
+#          Sentinel path uses git-aware root detection (show-superproject-working-tree) so
+#          the hash is stable whether the session CWD is the project root or a git submodule.
 #
 # Install: cp hooks/project/session-gate.sh .claude/hooks/ && chmod +x .claude/hooks/session-gate.sh
 # Register in .claude/settings.json:
@@ -12,9 +12,19 @@
 # Matcher: PreToolUse:*
 
 # --- Stable Sentinel Path Computation ---
-# Derive project root from script location: hooks/project/ -> project root
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Use git to find the true project root. When the session CWD is inside a git submodule,
+# show-superproject-working-tree returns the parent project (where .claude/ lives).
+# Falls back to show-toplevel, then to BASH_SOURCE traversal for non-git environments.
+_SUPERPROJECT="$(git rev-parse --show-superproject-working-tree 2>/dev/null)"
+if [ -n "$_SUPERPROJECT" ]; then
+    PROJECT_ROOT="$_SUPERPROJECT"
+else
+    PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+fi
+if [ -z "$PROJECT_ROOT" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
 
