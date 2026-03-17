@@ -29,6 +29,23 @@ if [ -z "$PROJECT_ROOT" ]; then
     PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 fi
 
+# --- Git Worktree Detection ---
+# git worktrees share the main repo but show-superproject-working-tree returns empty
+# (worktrees are not submodules). Detect via git-common-dir: in a worktree it points
+# to the main .git dir, while git-dir points into .git/worktrees/<name>.
+# Use the main project root so sentinel hashes are stable across worktree sessions.
+if [ -n "$PROJECT_ROOT" ]; then
+    _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
+    _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
+    # Resolve relative paths (git may return relative paths in the main working tree)
+    [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
+    [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
+    if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
+        _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
+        [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
+    fi
+fi
+
 # --- Path Integrity Check ---
 _SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P 2>/dev/null)"
 if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PROJECT_ROOT" ]; then
