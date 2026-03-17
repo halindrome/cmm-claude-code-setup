@@ -75,6 +75,37 @@ set_executable() {
 }
 
 # ---------------------------------------------------------------------------
+# verify_repo_remote
+# ---------------------------------------------------------------------------
+
+# Checks that setup.sh is being run from a repo with an expected git remote.
+# Non-blocking: warns and prompts for confirmation if remote looks unexpected.
+# Skips silently if no .git directory is present (e.g. zip extract, CI).
+verify_repo_remote() {
+  if [ ! -d "$SCRIPT_DIR/.git" ]; then
+    return 0
+  fi
+  local remote_url
+  remote_url=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "")
+  if [ -z "$remote_url" ]; then
+    return 0
+  fi
+  local expected_pattern="github\.com[/:].*cmm.*setup\|github\.com[/:].*codebase-memory"
+  if ! echo "$remote_url" | grep -qE "$expected_pattern"; then
+    echo "" >&2
+    echo "  [WARN] Unexpected git remote: $remote_url" >&2
+    echo "  [WARN] Expected a github.com/*/cmm-claude-code-setup remote." >&2
+    echo "  [WARN] This may indicate you cloned from an unofficial source." >&2
+    printf "  Continue anyway? [y/N]: " >&2
+    read -r choice
+    if [ "$choice" != "y" ] && [ "$choice" != "Y" ]; then
+      echo "Aborting. Clone from the official repo and re-run setup.sh." >&2
+      exit 1
+    fi
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # interactive_prompt
 # ---------------------------------------------------------------------------
 
@@ -1156,6 +1187,7 @@ HELP
 
 main() {
   parse_args "$@"
+  verify_repo_remote
   check_prerequisites
   check_mcp_availability
 
