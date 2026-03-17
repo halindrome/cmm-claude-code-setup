@@ -225,7 +225,7 @@ detect_cmm_tools_allowed() {
     return 0
   fi
 
-  local settings_file=".claude/settings.local.json"
+  local settings_file=".claude/settings.json"
 
   if [ ! -f "$settings_file" ]; then
     CMM_TOOLS_STATUS="missing"
@@ -352,9 +352,9 @@ print_preflight_summary() {
 
   # CMM tools line
   case "$CMM_TOOLS_STATUS" in
-    ok)      tools_line="[ok]   All 14 CMM tools allowlisted in .claude/settings.local.json" ;;
-    warn)    tools_line="[warn] ${CMM_TOOLS_COUNT}/14 CMM tools in .claude/settings.local.json" ;;
-    missing) tools_line="[warn] .claude/settings.local.json not found — CMM tools not allowlisted" ;;
+    ok)      tools_line="[ok]   All 14 CMM tools allowlisted in .claude/settings.json" ;;
+    warn)    tools_line="[warn] ${CMM_TOOLS_COUNT}/14 CMM tools in .claude/settings.json" ;;
+    missing) tools_line="[warn] .claude/settings.json not found — CMM tools not allowlisted" ;;
     skip)    tools_line="[skip] CMM tools check (--skip-mcp-check)" ;;
     *)       tools_line="[skip] CMM tools check (not run)" ;;
   esac
@@ -458,7 +458,15 @@ merge_settings_json() {
 HOOKJSON
 )
   else
-    NEW_HOOKS_JSON=$(cat "$SCRIPT_DIR/rules/project-settings-example.json")
+    # Rewrite hook commands to use absolute paths so hooks are found regardless of
+    # the session CWD (e.g. when Claude Code is opened from inside a git submodule).
+    local abs_hook_dir
+    abs_hook_dir="$(pwd -P)/.claude/hooks"
+    NEW_HOOKS_JSON=$(python3 -c "
+import sys
+content = open(sys.argv[1]).read()
+sys.stdout.write(content.replace('bash .claude/hooks/', 'bash ' + sys.argv[2] + '/'))
+" "$SCRIPT_DIR/rules/project-settings-example.json" "$abs_hook_dir")
   fi
 
   python3 -c '
@@ -919,7 +927,9 @@ print_next_steps() {
 # install_allowlist
 # ---------------------------------------------------------------------------
 # Offer to write the CMM tool allowlist (and optionally context-mode tools)
-# into .claude/settings.local.json under permissions.allow.
+# into .claude/settings.json under permissions.allow.
+# Tool allowlist is project-level (not personal), so it belongs in the committed
+# settings.json — this ensures worktree sessions inherit the allowlist automatically.
 # Only runs for project installs. Follows the same prompt pattern as
 # install_statusline: detect current state, prompt, merge on yes.
 
@@ -931,14 +941,14 @@ install_allowlist() {
   echo "[ALLOWLIST]"
 
   if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would offer to write CMM tool allowlist to .claude/settings.local.json"
+    echo "  [DRY RUN] Would offer to write CMM tool allowlist to .claude/settings.json"
     [ "$INSTALL_CONTEXT_MODE" = true ] && \
       echo "  [DRY RUN] Would include context-mode tools (INSTALL_CONTEXT_MODE=true)"
     echo ""
     return 0
   fi
 
-  local settings_file=".claude/settings.local.json"
+  local settings_file=".claude/settings.json"
 
   # Determine if CMM tools already fully present
   if [ "$CMM_TOOLS_STATUS" = "ok" ] && [ "$FORCE" != true ]; then
@@ -1108,7 +1118,7 @@ Flags:
 MCP pre-flight checks (run automatically unless --skip-mcp-check):
   - CMM binary       detected via PATH and common install locations
   - CMM registration checked in .mcp.json and global MCP config
-  - Tool allowlist   verified in .claude/settings.local.json (14 CMM tools)
+  - Tool allowlist   verified in .claude/settings.json (14 CMM tools)
   - Context Mode     optional; prompts to install if not detected
 
 Context Mode hooks (context-mode-*.sh) are always installed but gracefully
