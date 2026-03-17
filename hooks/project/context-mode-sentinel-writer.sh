@@ -28,6 +28,14 @@ if [ -z "$PROJECT_ROOT" ]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 fi
+
+# --- Path Integrity Check ---
+_SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd 2>/dev/null)"
+if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PROJECT_ROOT" ]; then
+    echo "cmm-hooks: path mismatch — hooks registered for '$_SCRIPT_ROOT' but git root is '$PROJECT_ROOT'." >&2
+    echo "Project was moved or cloned. Re-run: bash setup.sh --project --force" >&2
+fi
+
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 
 # --- Context Mode Presence Check ---
