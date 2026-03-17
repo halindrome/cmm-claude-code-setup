@@ -568,19 +568,28 @@ for hook_type, entries in new_data.get("hooks", {}).items():
     if hook_type not in existing["hooks"]:
         existing["hooks"][hook_type] = []
     existing_cmds = {json.dumps(h, sort_keys=True) for group in existing["hooks"][hook_type] for h in group.get("hooks", [])}
+    # Also track basenames for path-normalized dedup (prevents relative + absolute duplicates)
+    existing_basenames = {h.get("command","").split("/")[-1] for group in existing["hooks"][hook_type] for h in group.get("hooks", [])}
     for entry in entries:
         new_cmds = {json.dumps(h, sort_keys=True) for h in entry.get("hooks", [])}
-        if not new_cmds.issubset(existing_cmds):
+        new_basenames = {h.get("command","").split("/")[-1] for h in entry.get("hooks", [])}
+        if new_basenames.issubset(existing_basenames):
+            # Script already registered (possibly under different path form) — update command + matcher
+            new_matcher = entry.get("matcher", "")
+            for existing_entry in existing["hooks"][hook_type]:
+                entry_basenames = {h.get("command","").split("/")[-1] for h in existing_entry.get("hooks", [])}
+                if new_basenames == entry_basenames:
+                    # Update command to new form (e.g. relative -> absolute)
+                    for new_h in entry.get("hooks", []):
+                        for ex_h in existing_entry.get("hooks", []):
+                            if new_h.get("command","").split("/")[-1] == ex_h.get("command","").split("/")[-1]:
+                                ex_h["command"] = new_h["command"]
+                    if new_matcher and existing_entry.get("matcher", "") != new_matcher:
+                        existing_entry["matcher"] = new_matcher
+        elif not new_cmds.issubset(existing_cmds):
             existing["hooks"][hook_type].append(entry)
             existing_cmds |= new_cmds
-        else:
-            # Hook commands already present — update matcher if it changed
-            new_matcher = entry.get("matcher", "")
-            if new_matcher:
-                for existing_entry in existing["hooks"][hook_type]:
-                    entry_cmds = {json.dumps(h, sort_keys=True) for h in existing_entry.get("hooks", [])}
-                    if new_cmds == entry_cmds and existing_entry.get("matcher", "") != new_matcher:
-                        existing_entry["matcher"] = new_matcher
+            existing_basenames |= new_basenames
 tmp = target_file + ".tmp"
 with open(tmp, "w") as f:
     json.dump(existing, f, indent=2)
