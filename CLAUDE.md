@@ -33,7 +33,7 @@ _(Run /vbw:skills to list)_
 
 - Bash hooks: shebang `#!/bin/bash`, one-line purpose comment, install/register instructions at top
 - Exit codes: `exit 2` = block tool call with message, `exit 0` = allow
-- Sentinel pattern: `/tmp/cmm-session-ready-${PPID}` for session gate
+- Sentinel pattern: `/tmp/cmm-session-ready-<project-root-md5hash>` for session gate
 - Attribution: Shachar Bard (shacharbard) cited at top of README as inspiration for structure
 - Language list: derive from CMM source when possible, use a shared config/extension list
 - jmunch equivalents: jCodeMunch → CMM graph tools; jDocMunch → CMM search_code/get_code_snippet

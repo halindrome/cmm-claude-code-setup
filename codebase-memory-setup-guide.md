@@ -372,7 +372,7 @@ When Claude spawns a sub-agent, the sub-agent starts a new session. Here is what
 
 If the CMM server is unavailable, the agent (or user) can create the sentinel manually:
 ```bash
-touch "/tmp/cmm-session-ready-$(echo "$PWD" | tr '/' '-')"
+touch "/tmp/cmm-session-ready-$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | cut -d' ' -f1)"
 ```
 
 ---
