@@ -306,6 +306,28 @@ See [benchmarks/README.md](benchmarks/README.md) for prerequisites, configuratio
 - [Context Mode MCP](https://github.com/mksglu/context-mode) *(optional)*
 - `sqlite3` *(optional — required for Context Mode event logging)*
 
+## Branch Strategy
+
+This project uses a three-branch model:
+
+| Branch | Purpose |
+|--------|---------|
+| `production` | Stable releases only. Every merge requires a version bump. Tagged with `vX.Y.Z` and `stable`. |
+| `develop` | Active development. All feature branches merge here first. |
+| `feature/*` | Short-lived branches for individual changes. Branch from `develop`, PR back to `develop`. |
+
+**Release flow:** `feature/* → develop → production`
+
+To start new work:
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b feature/my-feature
+# ... make changes ...
+git push origin feature/my-feature
+# Open PR targeting develop
+```
+
 ## Credits
 
 - [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) by [DeusData](https://github.com/DeusData)
