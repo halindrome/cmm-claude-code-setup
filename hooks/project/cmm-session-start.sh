@@ -20,6 +20,39 @@ PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT"
 rm -f "/tmp/cmm-session-ready-${PROJECT_HASH}"
 rm -f "/tmp/context-mode-ready-${PROJECT_HASH}"
 
+# --- Context Mode Bootstrap ---
+# If Context Mode is installed, write its sentinel at session start.
+# This eliminates the manual ctx_stats call that was previously required.
+# The sentinel is advisory: if the MCP server is down, ctx_* tool calls will
+# fail with a clear MCP error (not a gate block), which is acceptable UX.
+CONTEXT_MODE_INSTALLED=0
+if python3 -c "
+import json, os, sys
+# 1. Project .mcp.json
+try:
+    with open('${PROJECT_ROOT}/.mcp.json') as f:
+        if 'context-mode' in json.load(f).get('mcpServers', {}):
+            sys.exit(0)
+except Exception: pass
+# 2. Global Claude Code settings
+for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
+    if not d: continue
+    try:
+        with open(os.path.join(d, 'settings.json')) as f:
+            if 'context-mode' in json.load(f).get('mcpServers', {}):
+                sys.exit(0)
+    except Exception: pass
+sys.exit(1)
+" 2>/dev/null; then
+  CONTEXT_MODE_INSTALLED=1
+fi
+# Also activate if a session DB already exists (context-mode was used here before)
+[ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
+
+if [ "$CONTEXT_MODE_INSTALLED" -eq 1 ]; then
+  echo "ready" > "/tmp/context-mode-ready-${PROJECT_HASH}"
+fi
+
 # --- Session Type Detection ---
 if [ -n "${CLAUDE_AGENT_ID:-}" ] || [ -n "${CLAUDE_PARENT_SESSION_ID:-}" ]; then
   IS_AGENT=1
@@ -50,6 +83,14 @@ You must open the gate first — all Read/Grep/Glob/Bash calls will fail until y
 
 **If CMM server is unavailable**, create the sentinel manually:
   touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
+
+## Context Mode Auto-Initialization
+
+If Context Mode is installed, its sentinel is written automatically at session start.
+You do NOT need to call `ctx_stats` manually — the gate is already open.
+
+**If the Context Mode MCP server is unavailable** (sentinel missing despite auto-init):
+  touch "/tmp/context-mode-ready-${PROJECT_HASH}"
 
 ## Finding Your Task
 
