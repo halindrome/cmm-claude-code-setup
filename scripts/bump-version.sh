@@ -11,6 +11,17 @@ if [[ ! -f "$VERSION_FILE" ]]; then
 fi
 
 BUMP="${1}"
+
+if [[ "$BUMP" == "--verify" ]]; then
+  V1="$(cat "$VERSION_FILE" 2>/dev/null || echo "")"
+  V2="$(cat "$REPO_ROOT/VERSION" 2>/dev/null || echo "")"
+  if [[ "$V1" != "$V2" ]]; then
+    echo "MISMATCH: version.txt=$V1  VERSION=$V2" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
 if [[ "$BUMP" != "major" && "$BUMP" != "minor" && "$BUMP" != "patch" ]]; then
   echo "Usage: $0 major|minor|patch" >&2
   exit 1
@@ -27,4 +38,5 @@ esac
 
 NEW="$MAJOR.$MINOR.$PATCH"
 echo "$NEW" > "$VERSION_FILE"
+echo "$NEW" > "$REPO_ROOT/VERSION"
 echo "Bumped $CURRENT → $NEW"
