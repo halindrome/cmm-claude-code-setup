@@ -106,6 +106,52 @@ verify_repo_remote() {
 }
 
 # ---------------------------------------------------------------------------
+# verify_installation
+# ---------------------------------------------------------------------------
+
+# Validates installed file integrity against CHECKSUMS.sha256 when --verify is set.
+# Non-blocking if CHECKSUMS.sha256 is absent: prints a warning and returns.
+# Exits non-zero if checksums are present but files fail verification.
+verify_installation() {
+  if [ "$VERIFY" != true ]; then
+    return 0
+  fi
+
+  local checksum_file="$SCRIPT_DIR/CHECKSUMS.sha256"
+  if [ ! -f "$checksum_file" ]; then
+    echo "  [warn] CHECKSUMS.sha256 not found — skipping verification" >&2
+    return 0
+  fi
+
+  echo ""
+  echo "Verifying file integrity..."
+  local failures=0
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    local expected file full actual
+    expected=$(echo "$line" | awk '{print $1}')
+    file=$(echo "$line" | awk '{print $2}')
+    full="$SCRIPT_DIR/$file"
+    [ ! -f "$full" ] && continue
+    actual=$(shasum -a 256 "$full" 2>/dev/null | awk '{print $1}')
+    if [ "$actual" != "$expected" ]; then
+      echo "  [✗] $file (checksum mismatch)" >&2
+      failures=$((failures + 1))
+    else
+      echo "  [✓] $file"
+    fi
+  done < "$checksum_file"
+
+  if [ "$failures" -gt 0 ]; then
+    echo "" >&2
+    echo "  [ERROR] $failures file(s) failed integrity check." >&2
+    echo "  [ERROR] Your installation may be corrupted or tampered with." >&2
+    exit 1
+  fi
+  echo "  All files verified."
+}
+
+# ---------------------------------------------------------------------------
 # interactive_prompt
 # ---------------------------------------------------------------------------
 
@@ -1198,6 +1244,8 @@ main() {
   if [ "$INSTALL_PROJECT" = true ]; then
     install_project
   fi
+
+  verify_installation
 
   if [ "$SKIP_STATUSLINE" = false ]; then
     install_statusline
