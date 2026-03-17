@@ -21,6 +21,21 @@ case "$SUBAGENT_TYPE" in
     ;;
 esac
 
+# --- Explicit bypass marker ---
+# Add "# cmm-exempt" anywhere in the prompt to skip the gate for non-code tasks.
+if echo "$PROMPT" | grep -q "cmm-exempt"; then
+  exit 0
+fi
+
+# --- Non-code prompt heuristic ---
+# Short prompts (<300 chars) with no code-exploration signals are exempt.
+# Code signals: file/function/class/method/repo/codebase/import/hook/script/grep/refactor/debug
+PROMPT_LEN=${#PROMPT}
+CODE_SIGNALS="file|function|class|method|repo|codebase|import|hook|script|grep|refactor|debug|source|endpoint|schema|module|package|implement"
+if [ "$PROMPT_LEN" -lt 300 ] && ! echo "$PROMPT" | grep -qiE "$CODE_SIGNALS"; then
+  exit 0
+fi
+
 # --- Keyword Check: CMM tool function names ---
 KEYWORDS="search_graph|trace_call_path|get_code_snippet|index_repository|detect_changes|get_architecture|query_graph|ctx_execute|ctx_search|ctx_index|ctx_fetch_and_index|ctx_batch_execute"
 if echo "$PROMPT" | grep -qiE "$KEYWORDS"; then

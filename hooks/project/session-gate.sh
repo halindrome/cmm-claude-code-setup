@@ -1,0 +1,126 @@
+#!/bin/bash
+# session-gate.sh — PreToolUse:* hook (unified CMM + Context Mode session gate)
+# BLOCKING: gates all tools until CMM index is refreshed and (if installed) Context Mode is initialized
+#
+# Purpose: Single merged gate replacing cmm-session-gate.sh and context-mode-session-gate.sh.
+#          Sentinel path is derived from the hook's own directory to remain stable when the
+#          user navigates into subdirectories (monorepo/submodule safe).
+#
+# Install: cp hooks/project/session-gate.sh .claude/hooks/ && chmod +x .claude/hooks/session-gate.sh
+# Register in .claude/settings.json:
+#   "hooks": { "PreToolUse": [{ "matcher": "*", "hooks": [{"type": "command", "command": "bash .claude/hooks/session-gate.sh"}] }] }
+# Matcher: PreToolUse:*
+
+# --- Stable Sentinel Path Computation ---
+# Derive project root from script location: hooks/project/ -> project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
+
+# --- Input Parsing ---
+INPUT=$(cat)
+TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
+
+# If parsing failed, do not block — fail open to avoid spurious hook errors
+[ -z "$TOOL" ] && exit 0
+
+# --- Phase 1: Universal Allow-list ---
+# Bypass both gates unconditionally
+case "$TOOL" in
+  Agent)        exit 0 ;;  # subagents run in their own session with their own gate
+  ToolSearch)   exit 0 ;;  # schema fetch needed to escape the catch-22
+  SendMessage)  exit 0 ;;  # inter-agent coordination; must never be gated
+esac
+
+# --- Phase 2: CMM Gate ---
+# Allow-list: CMM bootstrap tools and read-only tools
+case "$TOOL" in
+  mcp__codebase-memory-mcp__index_repository)  # creates sentinel via cmm-sentinel-writer.sh
+    exit 0 ;;
+  mcp__codebase-memory-mcp__index_status)      # fast check; sentinel writer fires on success
+    exit 0 ;;
+  mcp__codebase-memory-mcp__delete_project)    # safe pre-index; needed for forced re-index
+    exit 0 ;;
+  Bash|Read|Grep|Glob)                         # read-only tools; safe to run in parallel with index_status
+    exit 0 ;;
+esac
+
+# Check CMM sentinel
+if [ ! -f "$CMM_SENTINEL" ]; then
+  cat >&2 <<BLOCKED
+BLOCKED: CMM index not refreshed for this session.
+
+Run one of these first:
+  mcp__codebase-memory-mcp__index_status       (fast check — opens gate if server is up)
+  mcp__codebase-memory-mcp__index_repository   (full reindex)
+
+If the CMM server is unavailable, create the bypass sentinel in your terminal:
+  touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
+BLOCKED
+  exit 2
+fi
+
+# --- Phase 3: Context Mode Gate (only if installed) ---
+# Detection: check project .mcp.json and global Claude Code settings, then session DB
+CONTEXT_MODE_INSTALLED=0
+if python3 -c "
+import json, os, sys
+# 1. Project .mcp.json
+try:
+    with open('${PROJECT_ROOT}/.mcp.json') as f:
+        if 'context-mode' in json.load(f).get('mcpServers', {}):
+            sys.exit(0)
+except Exception: pass
+# 2. Global Claude Code settings
+for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
+    if not d: continue
+    try:
+        with open(os.path.join(d, 'settings.json')) as f:
+            if 'context-mode' in json.load(f).get('mcpServers', {}):
+                sys.exit(0)
+    except Exception: pass
+sys.exit(1)
+" 2>/dev/null; then
+  CONTEXT_MODE_INSTALLED=1
+fi
+# Also activate if a session DB already exists (context-mode was used here before)
+[ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
+
+if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
+  exit 0
+fi
+
+# Context Mode allow-list (bypass Context Mode sentinel check)
+case "$TOOL" in
+  mcp__context-mode__*)  exit 0 ;;
+  ctx_execute)           exit 0 ;;
+  ctx_search)            exit 0 ;;
+  ctx_index)             exit 0 ;;
+  ctx_fetch_and_index)   exit 0 ;;
+  ctx_batch_execute)     exit 0 ;;
+  ctx_execute_file)      exit 0 ;;
+  ctx_stats)             exit 0 ;;
+  ctx_doctor)            exit 0 ;;
+  ctx_upgrade)           exit 0 ;;
+  mcp__codebase-memory-mcp__*)  exit 0 ;;
+esac
+
+# Check Context Mode sentinel
+CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
+
+if [ ! -f "$CONTEXT_MODE_SENTINEL" ]; then
+  cat >&2 <<BLOCKED
+BLOCKED: Context Mode is installed but not yet initialized for this session.
+
+Run one of these to initialize:
+  ctx_stats          (fast check — initializes Context Mode for this session)
+  ctx_execute        (run any command through the sandbox to initialize)
+
+If you want to bypass the gate temporarily, create the sentinel in your terminal:
+  touch "/tmp/context-mode-ready-${PROJECT_HASH}"
+BLOCKED
+  exit 2
+fi
+
+exit 0

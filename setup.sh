@@ -229,11 +229,6 @@ detect_cmm_tools_allowed() {
 
   if [ ! -f "$settings_file" ]; then
     CMM_TOOLS_STATUS="missing"
-    echo ""
-    echo "  [warn] .claude/settings.local.json not found — CMM tools not allowlisted."
-    _print_cmm_tools_snippet
-    printf "  Acknowledged? [Enter to continue]: "
-    read -r _ack
     return 0
   fi
 
@@ -253,41 +248,11 @@ PYEOF
 
   if [ "$CMM_TOOLS_COUNT" -ge 14 ]; then
     CMM_TOOLS_STATUS="ok"
-    echo "  [ok] All 14 CMM tools allowlisted in $settings_file"
     return 0
   fi
 
   CMM_TOOLS_STATUS="warn"
-  echo ""
-  echo "  [warn] Only ${CMM_TOOLS_COUNT}/14 CMM tools in $settings_file"
-  _print_cmm_tools_snippet
-  printf "  Acknowledged? [Enter to continue]: "
-  read -r _ack
   return 0
-}
-
-_print_cmm_tools_snippet() {
-  echo "  [info] Add the following to .claude/settings.local.json under permissions.allow:"
-  echo '  {'
-  echo '    "permissions": {'
-  echo '      "allow": ['
-  echo '        "mcp__codebase-memory-mcp__index_repository",'
-  echo '        "mcp__codebase-memory-mcp__index_status",'
-  echo '        "mcp__codebase-memory-mcp__list_projects",'
-  echo '        "mcp__codebase-memory-mcp__delete_project",'
-  echo '        "mcp__codebase-memory-mcp__get_architecture",'
-  echo '        "mcp__codebase-memory-mcp__get_graph_schema",'
-  echo '        "mcp__codebase-memory-mcp__search_graph",'
-  echo '        "mcp__codebase-memory-mcp__search_code",'
-  echo '        "mcp__codebase-memory-mcp__query_graph",'
-  echo '        "mcp__codebase-memory-mcp__get_code_snippet",'
-  echo '        "mcp__codebase-memory-mcp__trace_call_path",'
-  echo '        "mcp__codebase-memory-mcp__detect_changes",'
-  echo '        "mcp__codebase-memory-mcp__manage_adr",'
-  echo '        "mcp__codebase-memory-mcp__ingest_traces"'
-  echo '      ]'
-  echo '    }'
-  echo '  }'
 }
 
 # ---------------------------------------------------------------------------
@@ -311,36 +276,47 @@ detect_context_mode() {
     return 0
   fi
 
-  # Detection: binary, existing db, or already registered in .mcp.json
-  local already_registered=false
+  # Step 1: If .mcp.json exists AND contains context-mode → already registered
   if [ -f ".mcp.json" ] && grep -q "context-mode" ".mcp.json" 2>/dev/null; then
-    already_registered=true
-  fi
-
-  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ] || [ "$already_registered" = true ]; then
     CONTEXT_MODE_STATUS="ok"
     INSTALL_CONTEXT_MODE=true
     echo "  [ok] context-mode detected"
     return 0
   fi
 
-  # Not detected: prompt interactively when stdin is a tty, otherwise warn non-interactively
-  CONTEXT_MODE_STATUS="warn"
-  echo ""
-  if [ -t 0 ]; then
-    printf "  Use Context Mode integration? [y/N]: "
-    read -r choice
-    choice="${choice:-n}"
-    if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
-      INSTALL_CONTEXT_MODE=true
-      CONTEXT_MODE_STATUS="ok"
-      echo "  [info] Context Mode will be registered in .mcp.json"
+  # Step 2: Detect binary or db (binary on PATH or existing db in project)
+  local context_mode_available=false
+  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ]; then
+    context_mode_available=true
+  fi
+
+  # Step 3: Decision
+  # Note: .mcp.json may have been created by a prior setup.sh run (for CMM only) — its
+  # absence of context-mode is NOT evidence of an intentional opt-out. Treat both cases
+  # (with or without existing .mcp.json) the same way: detect and prompt.
+  if [ "$context_mode_available" = true ]; then
+    CONTEXT_MODE_STATUS="ok"
+    INSTALL_CONTEXT_MODE=true
+    echo "  [ok] context-mode detected"
+  else
+    # Not detected: prompt interactively when stdin is a tty, otherwise warn non-interactively
+    CONTEXT_MODE_STATUS="warn"
+    echo ""
+    if [ -t 0 ]; then
+      printf "  Use Context Mode integration? [y/N]: "
+      read -r choice
+      choice="${choice:-n}"
+      if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
+        INSTALL_CONTEXT_MODE=true
+        CONTEXT_MODE_STATUS="ok"
+        echo "  [info] Context Mode will be registered in .mcp.json"
+        echo "  [info] Docs: https://github.com/mksglu/context-mode"
+      fi
+    else
+      echo "  [warn] context-mode not detected."
+      echo "  [info] To add later: re-run setup.sh --project (without --skip-mcp-check)"
       echo "  [info] Docs: https://github.com/mksglu/context-mode"
     fi
-  else
-    echo "  [warn] context-mode not detected."
-    echo "  [info] To add later: re-run setup.sh --project (without --skip-mcp-check)"
-    echo "  [info] Docs: https://github.com/mksglu/context-mode"
   fi
   return 0
 }
@@ -580,6 +556,65 @@ install_project() {
     set_executable ".claude/hooks/$(basename "$file")"
   done
   shopt -u nullglob
+
+  # Purge deprecated hook files and their settings.json entries (--force only).
+  # When hooks are renamed or merged, a plain --force re-run otherwise leaves stale
+  # files in .claude/hooks/ that remain registered in settings.json and can deadlock
+  # the session (e.g. old cmm-session-gate.sh blocking Bash after session-gate.sh merge).
+  # IMPORTANT: Only delete hooks on this explicit list — never delete unknown hooks,
+  # as they may be user-created or generated by other install steps (e.g. statusline-cmm.sh).
+  deprecated_hooks=(
+    "cmm-session-gate.sh"
+    "context-mode-session-gate.sh"
+  )
+
+  if [ "$FORCE" = true ]; then
+    stale_hooks=()
+    for name in "${deprecated_hooks[@]}"; do
+      installed=".claude/hooks/$name"
+      if [ -f "$installed" ]; then
+        stale_hooks+=("$name")
+        if [ "$DRY_RUN" = true ]; then
+          echo "  [DRY RUN] Would remove deprecated hook: $name"
+        else
+          rm "$installed"
+          echo "  [removed] Deprecated hook: $name"
+        fi
+      fi
+    done
+
+    if [ "${#stale_hooks[@]}" -gt 0 ] && [ "$DRY_RUN" = false ] && [ -f ".claude/settings.json" ]; then
+      python3 -c '
+import json, os, sys
+target = sys.argv[1]
+stale = set(sys.argv[2].split())
+try:
+    with open(target) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    sys.exit(0)
+changed = False
+for hook_type in list(data.get("hooks", {})):
+    before = len(data["hooks"][hook_type])
+    data["hooks"][hook_type] = [
+        entry for entry in data["hooks"][hook_type]
+        if not any(
+            os.path.basename(h.get("command", "").split()[-1]) in stale
+            for h in entry.get("hooks", [])
+        )
+    ]
+    if len(data["hooks"][hook_type]) < before:
+        changed = True
+if changed:
+    tmp = target + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, target)
+    print("  [ok] Pruned deprecated hook entries from settings.json")
+' ".claude/settings.json" "${stale_hooks[*]}"
+    fi
+  fi
 
   shopt -s nullglob
   for file in "$SCRIPT_DIR/rules/"*; do
@@ -881,6 +916,160 @@ print_next_steps() {
 }
 
 # ---------------------------------------------------------------------------
+# install_allowlist
+# ---------------------------------------------------------------------------
+# Offer to write the CMM tool allowlist (and optionally context-mode tools)
+# into .claude/settings.local.json under permissions.allow.
+# Only runs for project installs. Follows the same prompt pattern as
+# install_statusline: detect current state, prompt, merge on yes.
+
+install_allowlist() {
+  if [ "$INSTALL_PROJECT" != true ]; then
+    return 0
+  fi
+
+  echo "[ALLOWLIST]"
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would offer to write CMM tool allowlist to .claude/settings.local.json"
+    [ "$INSTALL_CONTEXT_MODE" = true ] && \
+      echo "  [DRY RUN] Would include context-mode tools (INSTALL_CONTEXT_MODE=true)"
+    echo ""
+    return 0
+  fi
+
+  local settings_file=".claude/settings.local.json"
+
+  # Determine if CMM tools already fully present
+  if [ "$CMM_TOOLS_STATUS" = "ok" ] && [ "$FORCE" != true ]; then
+    echo "  [ok] CMM tool allowlist already configured in $settings_file"
+    if [ "$INSTALL_CONTEXT_MODE" = true ]; then
+      # Check if context-mode tools are also present
+      local ctx_count
+      ctx_count=$(python3 - "$settings_file" <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    allow = data.get("permissions", {}).get("allow", [])
+    count = sum(1 for t in allow if "mcp__context-mode__" in str(t))
+    print(count)
+except Exception:
+    print(0)
+PYEOF
+)
+      if [ "$ctx_count" -ge 9 ]; then
+        echo "  [ok] context-mode tool allowlist already configured"
+        echo ""
+        return 0
+      else
+        echo "  [warn] context-mode tools not yet allowlisted (${ctx_count}/9)"
+      fi
+    else
+      echo ""
+      return 0
+    fi
+  fi
+
+  # Build prompt describing what will be written
+  local prompt_msg="  Write CMM tool allowlist to ${settings_file}? [y/N] "
+  if [ "$INSTALL_CONTEXT_MODE" = true ]; then
+    prompt_msg="  Write CMM + context-mode tool allowlist to ${settings_file}? [y/N] "
+  fi
+  if [ "$CMM_TOOLS_STATUS" = "warn" ]; then
+    echo "  [warn] Only ${CMM_TOOLS_COUNT}/14 CMM tools currently allowlisted"
+  elif [ "$CMM_TOOLS_STATUS" = "missing" ]; then
+    echo "  [warn] ${settings_file} not found — CMM tools not allowlisted"
+  elif [ "$FORCE" = true ] && [ "$CMM_TOOLS_STATUS" = "ok" ]; then
+    echo "  [info] Overwriting existing CMM allowlist (--force)"
+  fi
+
+  printf "%s" "$prompt_msg"
+  local answer
+  read -r answer
+  if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+    echo "  [skip] Allowlist not written"
+    echo ""
+    return 0
+  fi
+
+  # Merge CMM tools (and optionally context-mode tools) into permissions.allow
+  local include_ctx="false"
+  [ "$INSTALL_CONTEXT_MODE" = true ] && include_ctx="true"
+
+  python3 - "$settings_file" "$include_ctx" <<'PYEOF'
+import json, os, sys
+
+settings_path = sys.argv[1]
+include_ctx = sys.argv[2] == "true"
+
+CMM_TOOLS = [
+    "mcp__codebase-memory-mcp__index_repository",
+    "mcp__codebase-memory-mcp__index_status",
+    "mcp__codebase-memory-mcp__list_projects",
+    "mcp__codebase-memory-mcp__delete_project",
+    "mcp__codebase-memory-mcp__get_architecture",
+    "mcp__codebase-memory-mcp__get_graph_schema",
+    "mcp__codebase-memory-mcp__search_graph",
+    "mcp__codebase-memory-mcp__search_code",
+    "mcp__codebase-memory-mcp__query_graph",
+    "mcp__codebase-memory-mcp__get_code_snippet",
+    "mcp__codebase-memory-mcp__trace_call_path",
+    "mcp__codebase-memory-mcp__detect_changes",
+    "mcp__codebase-memory-mcp__manage_adr",
+    "mcp__codebase-memory-mcp__ingest_traces",
+]
+
+CTX_TOOLS = [
+    "mcp__context-mode__ctx_execute",
+    "mcp__context-mode__ctx_search",
+    "mcp__context-mode__ctx_index",
+    "mcp__context-mode__ctx_fetch_and_index",
+    "mcp__context-mode__ctx_batch_execute",
+    "mcp__context-mode__ctx_execute_file",
+    "mcp__context-mode__ctx_stats",
+    "mcp__context-mode__ctx_doctor",
+    "mcp__context-mode__ctx_upgrade",
+]
+
+try:
+    with open(settings_path) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    data = {}
+
+allow = data.setdefault("permissions", {}).setdefault("allow", [])
+existing = set(allow)
+
+to_add = CMM_TOOLS[:]
+if include_ctx:
+    to_add += CTX_TOOLS
+
+added = [t for t in to_add if t not in existing]
+allow.extend(added)
+
+tmp = settings_path + ".tmp"
+os.makedirs(os.path.dirname(settings_path) if os.path.dirname(settings_path) else ".", exist_ok=True)
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+os.replace(tmp, settings_path)
+
+print(f"  [ok] Added {len(added)} tool(s) to permissions.allow in {os.path.basename(settings_path)}")
+if include_ctx:
+    ctx_added = [t for t in CTX_TOOLS if t in added]
+    cmm_added = [t for t in CMM_TOOLS if t in added]
+    print(f"       CMM: {len(cmm_added)} added, context-mode: {len(ctx_added)} added")
+PYEOF
+
+  # Validate written JSON
+  python3 -m json.tool "$settings_file" > /dev/null 2>&1 || \
+    echo "  [warn] JSON validation failed for ${settings_file}"
+
+  echo ""
+}
+
+# ---------------------------------------------------------------------------
 # parse_args
 # ---------------------------------------------------------------------------
 
@@ -968,6 +1157,8 @@ main() {
   if [ "$SKIP_STATUSLINE" = false ]; then
     install_statusline
   fi
+
+  install_allowlist
 
   if [ "$DRY_RUN" = false ]; then
     print_next_steps

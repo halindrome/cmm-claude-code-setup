@@ -10,9 +10,15 @@
 #
 # Matcher: SessionStart (no matcher needed — fires on every session start)
 
+# --- Stable Sentinel Path Computation ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+
 # --- Sentinel Deletion ---
-SENTINEL="/tmp/cmm-session-ready-$(echo "$PWD" | tr '/' '-')"
-rm -f "$SENTINEL"
+# Delete both CMM and Context Mode sentinels to force re-initialization each session
+rm -f "/tmp/cmm-session-ready-${PROJECT_HASH}"
+rm -f "/tmp/context-mode-ready-${PROJECT_HASH}"
 
 # --- Session Type Detection ---
 if [ -n "${CLAUDE_AGENT_ID:-}" ] || [ -n "${CLAUDE_PARENT_SESSION_ID:-}" ]; then
@@ -28,7 +34,7 @@ if [ "$IS_AGENT" -eq 1 ]; then
 
 ## CMM Session Gate
 
-`cmm-session-gate.sh` (PreToolUse:*) blocks ALL tools until the CMM index sentinel exists.
+`session-gate.sh` (PreToolUse:*) blocks ALL tools until the CMM index sentinel exists.
 You must open the gate first — all Read/Grep/Glob/Bash calls will fail until you do.
 
 **Step 1 — Open the gate (choose one):**
@@ -43,7 +49,7 @@ You must open the gate first — all Read/Grep/Glob/Bash calls will fail until y
 - `SendMessage` — inter-agent coordination (never gated)
 
 **If CMM server is unavailable**, create the sentinel manually:
-  touch "/tmp/cmm-session-ready-$(echo "$PWD" | tr '/' '-')"
+  touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
 
 ## Finding Your Task
 
