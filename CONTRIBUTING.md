@@ -28,7 +28,7 @@ codebase-memory-setup-guide.md  End-to-end setup guide
 4. **Follow code style:**
    - Shell scripts: `#!/bin/bash` shebang, no external dependencies beyond `jq` and `python3`
    - Exit codes: `exit 2` = block tool call with message, `exit 0` = allow
-   - Sentinel pattern: `/tmp/cmm-session-ready-$(echo "$PWD" | tr '/' '-')`
+   - Sentinel pattern: `/tmp/cmm-session-ready-<project-root-md5hash>` (hash computed by `session-gate.sh`)
    - Commit format: `{type}({scope}): {description}` — types: feat, fix, docs, refactor, chore
 
 ## Pull Request Process
@@ -86,12 +86,21 @@ codebase-memory-setup-guide.md  End-to-end setup guide
 
    Do NOT prescribe what to test upfront. Discover what matters by reading the code.
 
-   Report format (use a markdown code block):
-   - Model used:
-   - What was tested
-   - Expected vs actual
-   - Severity (critical / major / minor)
-   - Confirmed vs hypothetical
+   Post your report directly as markdown (do NOT wrap it in a code block — plain
+   markdown renders correctly in GitHub PR comments; a code block prevents formatting):
+
+   ## QA Report — PR #<number> (<brief description>)
+
+   **Model used:** <model>
+
+   ### What Was Tested
+   <bullet list of areas reviewed>
+
+   ### Findings
+   <per-finding subsections with severity and confirmed/hypothetical label>
+
+   ### Overall Recommendation
+   PASS / PASS with minor notes / Needs fixes
    ````
 
    **Step B — Fix the findings.** Copy the QA report and paste it into your original working session (or a new session on the same branch). Each QA round's fixes must be a **separate commit** — do not amend previous commits. Use the format `fix(scope): address QA round N`.
