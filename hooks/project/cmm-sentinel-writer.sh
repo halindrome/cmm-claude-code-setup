@@ -11,13 +11,18 @@
 #   "hooks": { "PostToolUse": [{ "matcher": "mcp__codebase-memory-mcp__index_repository|mcp__codebase-memory-mcp__index_status", "hooks": [{"type": "command", "command": "bash .claude/hooks/cmm-sentinel-writer.sh"}] }] }
 
 # --- Stable Sentinel Path Computation ---
-# Use git to find the true project root (submodule-aware). When CWD is inside a git submodule,
-# show-superproject-working-tree returns the parent project (where .claude/ lives).
-_SUPERPROJECT="$(git rev-parse --show-superproject-working-tree 2>/dev/null)"
-if [ -n "$_SUPERPROJECT" ]; then
-    PROJECT_ROOT="$_SUPERPROJECT"
-else
-    PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+# Walk the git superproject chain to find the outermost project root.
+# Handles arbitrarily nested submodules — each iteration climbs one level until there is
+# no further superproject. Falls back to BASH_SOURCE traversal for non-git environments.
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$PROJECT_ROOT" ]; then
+    _WALK="$PROJECT_ROOT"
+    while true; do
+        _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_PARENT" ] && break
+        _WALK="$_PARENT"
+    done
+    PROJECT_ROOT="$_WALK"
 fi
 if [ -z "$PROJECT_ROOT" ]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
