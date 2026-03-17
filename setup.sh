@@ -4,7 +4,7 @@ set -euo pipefail
 # setup.sh — Automated installer for codebase-memory-mcp Claude Code hooks
 #
 # Usage:
-#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline]
+#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
 #
 # Flags:
 #   --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
@@ -15,6 +15,8 @@ set -euo pipefail
 #   --dry-run         Show what would be done without making changes
 #   --skip-mcp-check  Bypass all MCP availability checks (CMM binary, registration,
 #                     tool allowlist, context-mode). Useful for CI/automation.
+#   --skip-statusline Skip the CMM statusline installation offer
+#   --verify          After installing hooks, verify file integrity against CHECKSUMS.sha256
 #
 # No flags: interactive prompt asking which to install.
 #
@@ -32,6 +34,7 @@ INSTALL_GLOBAL=false
 INSTALL_PROJECT=false
 SKIP_MCP_CHECK=false
 SKIP_STATUSLINE=false
+VERIFY=false
 
 # Detect Claude Code config directory at runtime.
 # Priority: $CLAUDE_CONFIG_DIR (set by Claude Code) > ~/.config/claude-code (XDG) > ~/.claude (legacy)
@@ -71,6 +74,86 @@ set_executable() {
     return
   fi
   chmod +x "$file"
+}
+
+# ---------------------------------------------------------------------------
+# verify_repo_remote
+# ---------------------------------------------------------------------------
+
+# Checks that setup.sh is being run from a repo with an expected git remote.
+# Non-blocking: warns and prompts for confirmation if remote looks unexpected.
+# Skips silently if no .git directory is present (e.g. zip extract, CI).
+verify_repo_remote() {
+  if [ ! -d "$SCRIPT_DIR/.git" ]; then
+    return 0
+  fi
+  local remote_url
+  remote_url=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "")
+  if [ -z "$remote_url" ]; then
+    return 0
+  fi
+  local expected_pattern="github\.com[/:].*cmm.*setup|github\.com[/:].*codebase-memory"
+  if ! echo "$remote_url" | grep -qE "$expected_pattern"; then
+    echo "" >&2
+    echo "  [WARN] Unexpected git remote: $remote_url" >&2
+    echo "  [WARN] Expected a github.com/*/cmm-claude-code-setup remote." >&2
+    echo "  [WARN] This may indicate you cloned from an unofficial source." >&2
+    printf "  Continue anyway? [y/N]: " >&2
+    read -r choice
+    if [ "$choice" != "y" ] && [ "$choice" != "Y" ]; then
+      echo "Aborting. Clone from the official repo and re-run setup.sh." >&2
+      exit 1
+    fi
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# verify_installation
+# ---------------------------------------------------------------------------
+
+# Validates installed file integrity against CHECKSUMS.sha256 when --verify is set.
+# Non-blocking if CHECKSUMS.sha256 is absent: prints a warning and returns.
+# Exits non-zero if checksums are present but files fail verification.
+verify_installation() {
+  if [ "$VERIFY" != true ]; then
+    return 0
+  fi
+
+  local checksum_file="$SCRIPT_DIR/CHECKSUMS.sha256"
+  if [ ! -f "$checksum_file" ]; then
+    echo "  [warn] CHECKSUMS.sha256 not found — skipping verification" >&2
+    return 0
+  fi
+
+  echo ""
+  echo "Verifying file integrity..."
+  local failures=0
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    local expected file full actual
+    expected=$(echo "$line" | cut -c1-64)
+    file=$(echo "$line" | cut -c67-)
+    full="$SCRIPT_DIR/$file"
+    if [ ! -f "$full" ]; then
+      echo "  [?] $file (not installed — skipped)" >&2
+      continue
+    fi
+    actual=$(shasum -a 256 "$full" 2>/dev/null | cut -c1-64 || sha256sum "$full" 2>/dev/null | cut -c1-64)
+    if [ "$actual" != "$expected" ]; then
+      echo "  [✗] $file (checksum mismatch)" >&2
+      failures=$((failures + 1))
+    else
+      echo "  [✓] $file"
+    fi
+  done < "$checksum_file"
+
+  if [ "$failures" -gt 0 ]; then
+    echo "" >&2
+    echo "  [ERROR] $failures file(s) failed integrity check." >&2
+    echo "  [ERROR] Your installation may be corrupted or tampered with." >&2
+    exit 1
+  fi
+  echo "  All files verified."
 }
 
 # ---------------------------------------------------------------------------
@@ -1093,6 +1176,7 @@ parse_args() {
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
+      --verify)          VERIFY=true ;;
       --help|-h)
         cat <<'HELP'
 setup.sh — Installer for codebase-memory-mcp + Context Mode Claude Code hooks
@@ -1102,7 +1186,7 @@ Installs hooks, rules, and settings for two complementary MCP servers:
   - Context Mode MCP (optional): execution sandboxing + SQLite session persistence, ~98% context reduction
 
 Usage:
-  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline]
+  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
 
 Flags:
   --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
@@ -1113,6 +1197,7 @@ Flags:
   --dry-run         Show what would be done without making changes
   --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
   --skip-statusline Skip the CMM statusline installation offer
+  --verify          After installing hooks, verify file integrity against CHECKSUMS.sha256
   --help, -h        Show this help message
 
 MCP pre-flight checks (run automatically unless --skip-mcp-check):
@@ -1153,6 +1238,7 @@ HELP
 
 main() {
   parse_args "$@"
+  verify_repo_remote
   check_prerequisites
   check_mcp_availability
 
@@ -1163,6 +1249,8 @@ main() {
   if [ "$INSTALL_PROJECT" = true ]; then
     install_project
   fi
+
+  verify_installation
 
   if [ "$SKIP_STATUSLINE" = false ]; then
     install_statusline
