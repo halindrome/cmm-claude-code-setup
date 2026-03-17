@@ -6,13 +6,13 @@ This project uses VBW (Vibe Better with Claude Code) for structured development.
 
 ## State
 - Planning directory: `.vbw-planning/`
-- 9 phases complete (2 milestones shipped)
+- 17 phases complete (3 milestones shipped)
 - Reference: `../jmunch-claude-code-setup` (Shachar Bard's jmunch work, MIT license)
 - Reference: `../codebase-memory-mcp` (DeusData CMM source)
 
 ## Active Context
 
-**Milestone 02 shipped:** Token Benchmarks, Agent Init Context, Context Mode Integration, Setup MCP Availability Check (phases 06-09)
+**Milestone 03 shipped:** Benchmark Context Mode, Statusline Setup Offer, Context Mode Bootstrap, Statusline Token Savings, Fix Statusline Relative Path, Single Gate + Monorepo Path Fix, jmunch Security Hardening, Git Branching Strategy (phases 10-17)
 **Next action:** `/vbw:vibe --add` to define new work
 
 ## VBW Rules
