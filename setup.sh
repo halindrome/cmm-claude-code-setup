@@ -284,39 +284,17 @@ detect_context_mode() {
     return 0
   fi
 
-  # Step 2: If .mcp.json exists but does NOT contain context-mode → opt-out flag
-  local mcp_json_exists_without_ctx=false
-  if [ -f ".mcp.json" ]; then
-    mcp_json_exists_without_ctx=true
-  fi
-
-  # Step 3: Detect binary or db
+  # Step 2: Detect binary or db (binary on PATH or existing db in project)
   local context_mode_available=false
   if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ]; then
     context_mode_available=true
   fi
 
-  # Step 4: Decision
-  if [ "$mcp_json_exists_without_ctx" = true ] && [ "$context_mode_available" = true ]; then
-    # Project has .mcp.json but opted out of context-mode — prompt with default N
-    CONTEXT_MODE_STATUS="warn"
-    echo ""
-    if [ -t 0 ]; then
-      printf "  Project .mcp.json exists but does not include context-mode. Add it? [y/N]: "
-      read -r choice
-      choice="${choice:-n}"
-      if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
-        INSTALL_CONTEXT_MODE=true
-        CONTEXT_MODE_STATUS="ok"
-        echo "  [info] Context Mode will be registered in .mcp.json"
-        echo "  [info] Docs: https://github.com/mksglu/context-mode"
-      else
-        echo "  [skip] Context Mode not added (project .mcp.json opt-out)"
-      fi
-    else
-      echo "  [skip] context-mode not added (project .mcp.json exists without it)"
-    fi
-  elif [ "$context_mode_available" = true ]; then
+  # Step 3: Decision
+  # Note: .mcp.json may have been created by a prior setup.sh run (for CMM only) — its
+  # absence of context-mode is NOT evidence of an intentional opt-out. Treat both cases
+  # (with or without existing .mcp.json) the same way: detect and prompt.
+  if [ "$context_mode_available" = true ]; then
     CONTEXT_MODE_STATUS="ok"
     INSTALL_CONTEXT_MODE=true
     echo "  [ok] context-mode detected"
