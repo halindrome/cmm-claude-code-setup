@@ -116,9 +116,8 @@ You must open the gate first — all Read/Grep/Glob/Bash calls will fail until y
 - `index_repository` — full re-index; use if index is stale
 
 **Allow-listed tools (bypass gate before sentinel exists):**
-- `mcp__codebase-memory-mcp__index_repository` — creates sentinel
-- `mcp__codebase-memory-mcp__index_status` — fast check
-- `mcp__codebase-memory-mcp__delete_project` — safe pre-index
+- `mcp__codebase-memory-mcp__*` — ALL CMM tools pass Phase 2 unconditionally
+- `Bash`, `Read`, `Grep`, `Glob` — read-only file tools
 - `ToolSearch` — schema fetch (catch-22 escape)
 - `SendMessage` — inter-agent coordination (never gated)
 
