@@ -108,8 +108,9 @@ if [ "$IS_AGENT" -eq 1 ]; then
 
 ## CMM Session Gate
 
-`session-gate.sh` (PreToolUse:*) blocks ALL tools until the CMM index sentinel exists.
-You must open the gate first — all Read/Grep/Glob/Bash calls will fail until you do.
+`session-gate.sh` (PreToolUse:*) blocks write/network tools until the CMM index sentinel exists.
+CMM tools, Bash, Read, Grep, and Glob bypass the gate — but Edit, Write, WebFetch, etc. are blocked.
+Run `index_status` or `index_repository` first to create the sentinel and unblock everything.
 
 **Step 1 — Open the gate (choose one):**
 - `index_status` — fast check; opens gate automatically if CMM server is up
@@ -151,7 +152,7 @@ else
 2. If the index is stale, missing, or has never been built, run `index_repository` to refresh it.
 3. Only after the index is confirmed current, proceed with the user's request.
 
-Do NOT skip this step. The session gate will block all other tools until indexing is complete.
+Do NOT skip this step. Until indexing is complete, write and network tools are blocked (Edit, Write, WebFetch, etc.).
 PROMPT
 fi
 
