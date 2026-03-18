@@ -67,7 +67,7 @@ case "$TOOL_NAME" in
   mcp__codebase-memory-mcp__*)
     EVENT_TYPE="cmm_call"
     ;;
-  ctx_*)
+  mcp__context-mode__ctx_*)
     EVENT_TYPE="ctx_call"
     ;;
 esac
