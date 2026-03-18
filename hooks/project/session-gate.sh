@@ -93,7 +93,7 @@ if [ ! -f "$CMM_SENTINEL" ]; then
 BLOCKED: CMM index not refreshed for this session.
 
 You can still use these tools:
-  mcp__codebase-memory-mcp__*  (all CMM tools — call any to open the gate)
+  mcp__codebase-memory-mcp__*  (all CMM tools bypass this check; use index_status to open the gate)
   Bash, Read, Grep, Glob       (read-only file tools)
   ToolSearch, Agent, SendMessage
 
