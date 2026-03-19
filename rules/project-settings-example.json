@@ -51,6 +51,16 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/reindex-after-commit.sh",
+            "_comment": "Marks CMM sentinel stale after git commit, unless running in VBW team mode"
+          }
+        ]
+      },
+      {
         "matcher": "mcp__codebase-memory-mcp__*",
         "hooks": [
           {

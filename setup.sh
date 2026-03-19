@@ -651,6 +651,9 @@ install_project() {
   fi
 
   shopt -s nullglob
+  # Copies all hooks/project/*.sh to .claude/hooks/, including:
+  #   reindex-after-commit.sh — PostToolUse:Bash hook that marks CMM sentinel stale after git commits
+  # Registration of reindex-after-commit.sh in PostToolUse is handled via rules/project-settings-example.json.
   for file in "$SCRIPT_DIR/hooks/project/"*.sh; do
     copy_file "$file" ".claude/hooks/$(basename "$file")"
     set_executable ".claude/hooks/$(basename "$file")"
