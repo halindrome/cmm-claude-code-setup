@@ -1,0 +1,97 @@
+#!/bin/bash
+# reindex-after-commit.sh — PostToolUse:Bash hook (marks CMM sentinel stale after git commit)
+# Detects successful git commit calls and writes "stale" to the CMM sentinel file, prompting
+# the session-gate.sh to block non-CMM tools until the user refreshes the index.
+# In VBW team mode the hook skips writing stale to prevent cascade-stalling parallel agents.
+#
+# Install: cp hooks/project/reindex-after-commit.sh .claude/hooks/ && chmod +x .claude/hooks/reindex-after-commit.sh
+# Register in .claude/settings.json:
+#   "hooks": { "PostToolUse": [{ "matcher": "Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/reindex-after-commit.sh"}] }] }
+# Matcher: PostToolUse:Bash
+
+# --- Stable Sentinel Path Computation ---
+# Walk the git superproject chain to find the outermost project root.
+# Handles arbitrarily nested submodules — each iteration climbs one level until there is
+# no further superproject. Falls back to BASH_SOURCE traversal for non-git environments.
+# Git worktrees are handled separately below (they are not submodules).
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$PROJECT_ROOT" ]; then
+    _WALK="$PROJECT_ROOT"
+    while true; do
+        _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_PARENT" ] && break
+        _WALK="$_PARENT"
+    done
+    PROJECT_ROOT="$_WALK"
+fi
+if [ -z "$PROJECT_ROOT" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+fi
+
+# --- Git Worktree Detection ---
+# git worktrees share the main repo but show-superproject-working-tree returns empty
+# (worktrees are not submodules). Detect via git-common-dir: in a worktree it points
+# to the main .git dir, while git-dir points into .git/worktrees/<name>.
+# Use the main project root so sentinel hashes are stable across worktree sessions.
+if [ -n "$PROJECT_ROOT" ]; then
+    _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
+    _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
+    # Resolve relative paths (git may return relative paths in the main working tree)
+    [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
+    [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
+    if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
+        _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
+        [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
+    fi
+fi
+
+PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
+
+# --- Input Parsing ---
+INPUT=$(cat)
+CMD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null || echo "")
+STDOUT=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_output',{}).get('stdout',''))" 2>/dev/null || echo "")
+
+# --- Commit Detection ---
+# Only act on git commit commands; exit immediately for all other Bash calls
+case "$CMD" in
+  *"git commit"*) ;;
+  *) exit 0 ;;
+esac
+
+# --- False-Positive Guard ---
+# If git reported no actual commit (nothing staged), skip marking stale
+case "$STDOUT" in
+  *"nothing to commit"*|*"no changes"*) exit 0 ;;
+esac
+
+# --- Team-Mode Detection ---
+# VBW team agents detect they are running inside a team context and skip marking stale.
+# This prevents a commit in one agent's worktree from cascade-stalling all parallel agents.
+# The main session (TEAM_MODE=0) is responsible for marking stale and reindexing.
+TEAM_MODE=0
+for d in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/teams/vbw-*; do
+  [ -d "$d" ] && TEAM_MODE=1 && break
+done
+if [ "$TEAM_MODE" -eq 1 ]; then
+  exit 0
+fi
+
+# --- Write Stale Marker ---
+echo "stale" > "$CMM_SENTINEL"
+
+# --- Informational Message ---
+cat <<'EOF' >&2
+CMM note: Commit detected in this session.
+The codebase-memory-mcp index is now STALE relative to your commit.
+
+To refresh the index, run one of these:
+  mcp__codebase-memory-mcp__index_status       (fast — checks if server is responsive)
+  mcp__codebase-memory-mcp__index_repository   (full reindex)
+
+Until you refresh, CMM tools will return results based on pre-commit state.
+EOF
+
+exit 0
