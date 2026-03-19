@@ -88,9 +88,10 @@ case "$TOOL" in
 esac
 
 # Check CMM sentinel
-if [ ! -f "$CMM_SENTINEL" ]; then
+if [ ! -f "$CMM_SENTINEL" ] || grep -q '^stale$' "$CMM_SENTINEL"; then
   cat >&2 <<BLOCKED
 BLOCKED: CMM index not refreshed for this session.
+(The CMM sentinel is absent or marked STALE — a commit was detected since last reindex.)
 
 You can still use these tools:
   mcp__codebase-memory-mcp__*  (all CMM tools bypass this check; use index_status to open the gate)
@@ -155,9 +156,10 @@ esac
 # Check Context Mode sentinel
 CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
 
-if [ ! -f "$CONTEXT_MODE_SENTINEL" ]; then
+if [ ! -f "$CONTEXT_MODE_SENTINEL" ] || grep -q '^stale$' "$CONTEXT_MODE_SENTINEL"; then
   cat >&2 <<BLOCKED
 BLOCKED: Context Mode is installed but not yet initialized for this session.
+(The Context Mode sentinel is absent or marked STALE.)
 
 Run one of these to initialize:
   ctx_stats          (fast check — initializes Context Mode for this session)
