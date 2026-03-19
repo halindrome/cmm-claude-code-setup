@@ -81,13 +81,9 @@ esac
 # --- Phase 2: CMM Gate ---
 # Allow-list: CMM bootstrap tools and read-only tools
 case "$TOOL" in
-  mcp__codebase-memory-mcp__index_repository)  # creates sentinel via cmm-sentinel-writer.sh
+  mcp__codebase-memory-mcp__*)  # all CMM tools bypass CMM sentinel check unconditionally
     exit 0 ;;
-  mcp__codebase-memory-mcp__index_status)      # fast check; sentinel writer fires on success
-    exit 0 ;;
-  mcp__codebase-memory-mcp__delete_project)    # safe pre-index; needed for forced re-index
-    exit 0 ;;
-  Bash|Read|Grep|Glob)                         # read-only tools; safe to run in parallel with index_status
+  Bash|Read|Grep|Glob)          # read-only tools; safe to run in parallel with index_status
     exit 0 ;;
 esac
 
@@ -96,7 +92,12 @@ if [ ! -f "$CMM_SENTINEL" ]; then
   cat >&2 <<BLOCKED
 BLOCKED: CMM index not refreshed for this session.
 
-Run one of these first:
+You can still use these tools:
+  mcp__codebase-memory-mcp__*  (all CMM tools bypass this check; use index_status to open the gate)
+  Bash, Read, Grep, Glob       (read-only file tools)
+  ToolSearch, Agent, SendMessage
+
+Run one of these to open the gate:
   mcp__codebase-memory-mcp__index_status       (fast check — opens gate if server is up)
   mcp__codebase-memory-mcp__index_repository   (full reindex)
 
