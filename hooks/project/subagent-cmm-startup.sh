@@ -6,7 +6,7 @@
 #
 # Install: cp hooks/project/subagent-cmm-startup.sh .claude/hooks/ && chmod +x .claude/hooks/subagent-cmm-startup.sh
 # Register in .claude/settings.json under SubagentStart (see rules/project-settings-example.json)
-# Matcher: dev|scout|lead|qa
+# Matcher: * (all subagents)
 
 # --- Stable Sentinel Path Computation ---
 # Walk the git superproject chain to find the outermost project root.

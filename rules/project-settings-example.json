@@ -103,12 +103,12 @@
     ],
     "SubagentStart": [
       {
-        "matcher": "dev|scout|lead|qa",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
             "command": "bash .claude/hooks/subagent-cmm-startup.sh",
-            "_comment": "Injects CMM index state into subagent via additionalContext JSON when VBW agent starts"
+            "_comment": "Injects CMM index state into all subagents via additionalContext JSON at startup"
           }
         ]
       }
