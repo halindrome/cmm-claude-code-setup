@@ -13,11 +13,30 @@
 #
 # IMPORTANT: PreCompact hooks MUST exit 0. Never exit 2 — blocking compaction is unsafe.
 
+# --- Stable Project Root Computation ---
+# Walk the git superproject chain to find the outermost project root.
+# Handles arbitrarily nested submodules — each iteration climbs one level until there is
+# no further superproject. Falls back to BASH_SOURCE traversal for non-git environments.
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$PROJECT_ROOT" ]; then
+    _WALK="$PROJECT_ROOT"
+    while true; do
+        _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_PARENT" ] && break
+        _WALK="$_PARENT"
+    done
+    PROJECT_ROOT="$_WALK"
+fi
+if [ -z "$PROJECT_ROOT" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+fi
+
 # --- Context Mode Presence Check ---
 command -v context-mode >/dev/null 2>&1 || exit 0
 
 # --- DB Existence Check ---
-DB=".claude/context-mode.db"
+DB="${PROJECT_ROOT}/.claude/context-mode.db"
 [ -f "$DB" ] || exit 0
 
 # --- sqlite3 Availability Check ---
