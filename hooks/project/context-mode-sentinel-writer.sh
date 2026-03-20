@@ -8,7 +8,7 @@
 # Install: cp hooks/project/context-mode-sentinel-writer.sh .claude/hooks/
 #          chmod +x .claude/hooks/context-mode-sentinel-writer.sh
 # Register in .claude/settings.json:
-#   PostToolUse matcher: mcp__context-mode__ctx_execute|...|mcp__context-mode__ctx_stats
+#   PostToolUse matcher: mcp__context-mode__ctx_execute|...|mcp__context-mode__ctx_search|...|mcp__context-mode__ctx_stats
 
 # --- Stable Sentinel Path Computation ---
 # Walk the git superproject chain to find the outermost project root.

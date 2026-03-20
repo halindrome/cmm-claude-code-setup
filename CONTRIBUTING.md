@@ -150,7 +150,7 @@ hooks:
 
 ### SubagentStart Advisory
 
-The `SubagentStart` hook in `.claude/settings.json` fires in the **parent session** (not inside the subagent) when any `dev|scout|lead|qa` agent starts. It runs `subagent-cmm-startup.sh`, which injects CMM index state into the subagent via `additionalContext` JSON output — telling the agent whether the index is ready or stale before it begins work. This is informational only — it never blocks the agent.
+The `SubagentStart` hook in `.claude/settings.json` fires in the **parent session** (not inside the subagent) when any subagent starts. It runs `subagent-cmm-startup.sh`, which injects CMM index state into the subagent via `additionalContext` JSON output — telling the agent whether the index is ready or stale before it begins work. This is informational only — it never blocks the agent.
 
 SubagentStart hooks cannot intercept tool calls inside the subagent. Use agent frontmatter hooks (`.claude/agents/<name>.md`) for ongoing per-tool enforcement.
 
