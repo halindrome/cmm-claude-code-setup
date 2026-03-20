@@ -1,7 +1,8 @@
 #!/bin/bash
-# subagent-cmm-startup.sh — SubagentStart hook (CMM stale advisory before subagent starts)
-# Fires in the PARENT session when a VBW subagent starts. Prints advisory if CMM index
-# is stale or uninitialized so the user knows before the agent begins work.
+# subagent-cmm-startup.sh — SubagentStart hook (CMM state context injection)
+# Fires in the PARENT session when a VBW subagent starts. Injects CMM index state
+# into the subagent's context via additionalContext JSON output so the agent knows
+# whether to call index_repository before querying the graph.
 #
 # Install: cp hooks/project/subagent-cmm-startup.sh .claude/hooks/ && chmod +x .claude/hooks/subagent-cmm-startup.sh
 # Register in .claude/settings.json under SubagentStart (see rules/project-settings-example.json)
@@ -47,11 +48,17 @@ fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
 
-# --- Stale Check ---
-# If the sentinel is absent or contains "stale", print advisory to stderr.
+# --- Context Injection ---
+# Inject CMM index state into the subagent via additionalContext JSON.
+# SubagentStart hooks output: {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": "..."}}
 # Always exit 0 — this hook is advisory only, never blocking.
 if [ ! -f "$CMM_SENTINEL" ] || grep -q '^stale$' "$CMM_SENTINEL"; then
-    echo "CMM index is stale or uninitialized. Remind the subagent to run index_repository before querying." >&2
+    ADVISORY="⚠ CMM index is stale or uninitialized. Call index_repository before using search_graph, get_code_snippet, trace_call_path, or query_graph — results will be incomplete or absent until the graph is rebuilt."
+else
+    ADVISORY="CMM index is ready. Use search_graph, get_code_snippet, trace_call_path, and query_graph as the primary method for code exploration."
 fi
+
+printf '{"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":"%s"}}\n' \
+    "$(printf '%s' "$ADVISORY" | sed 's/"/\\"/g')"
 
 exit 0
