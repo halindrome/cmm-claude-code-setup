@@ -1,19 +1,18 @@
 #!/bin/bash
-# cmm-sentinel-writer.sh — PostToolUse hook (index_repository OR index_status)
-# NON-BLOCKING: always exits 0 (writes sentinel to unblock session gate)
+# subagent-cmm-startup.sh — SubagentStart hook (CMM state context injection)
+# Fires in the PARENT session when a VBW subagent starts. Injects CMM index state
+# into the subagent's context via additionalContext JSON output so the agent knows
+# whether to call index_repository before querying the graph.
 #
-# Purpose: Writes the session sentinel file after index_repository or index_status
-#          completes, unblocking all tools gated by session-gate.sh.
-#
-# Install: cp hooks/project/cmm-sentinel-writer.sh .claude/hooks/
-#          chmod +x .claude/hooks/cmm-sentinel-writer.sh
-# Register in .claude/settings.json:
-#   "hooks": { "PostToolUse": [{ "matcher": "mcp__codebase-memory-mcp__index_repository|mcp__codebase-memory-mcp__index_status", "hooks": [{"type": "command", "command": "bash .claude/hooks/cmm-sentinel-writer.sh"}] }] }
+# Install: cp hooks/project/subagent-cmm-startup.sh .claude/hooks/ && chmod +x .claude/hooks/subagent-cmm-startup.sh
+# Register in .claude/settings.json under SubagentStart (see rules/project-settings-example.json)
+# Matcher: * (all subagents)
 
 # --- Stable Sentinel Path Computation ---
 # Walk the git superproject chain to find the outermost project root.
 # Handles arbitrarily nested submodules — each iteration climbs one level until there is
 # no further superproject. Falls back to BASH_SOURCE traversal for non-git environments.
+# Git worktrees are handled separately below (they are not submodules).
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 if [ -n "$PROJECT_ROOT" ]; then
     _WALK="$PROJECT_ROOT"
@@ -46,26 +45,20 @@ if [ -n "$PROJECT_ROOT" ]; then
     fi
 fi
 
-# --- Path Integrity Check ---
-_SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P 2>/dev/null)"
-if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PROJECT_ROOT" ]; then
-    echo "cmm-hooks: path mismatch — hooks registered for '$_SCRIPT_ROOT' but git root is '$PROJECT_ROOT'." >&2
-    echo "Project was moved or cloned. Re-run: bash setup.sh --project --force" >&2
-fi
-
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
-SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
+CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
 
-# Write sentinel to unblock session gate.
-# index_status only confirms the server is running — it does not trigger a reindex.
-# If the sentinel is already stale (written after a commit), preserve the stale marker
-# so the advisory remains until the user calls index_repository to actually reindex.
-INPUT=$(cat 2>/dev/null)
-TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
-if [ "$TOOL" = "mcp__codebase-memory-mcp__index_status" ] && grep -q '^stale$' "$SENTINEL" 2>/dev/null; then
-  # index_status called while stale — do not clear; reindex hasn't happened yet
-  exit 0
+# --- Context Injection ---
+# Inject CMM index state into the subagent via additionalContext JSON.
+# SubagentStart hooks output: {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": "..."}}
+# Always exit 0 — this hook is advisory only, never blocking.
+if [ ! -f "$CMM_SENTINEL" ] || grep -q '^stale$' "$CMM_SENTINEL"; then
+    ADVISORY="⚠ CMM index is stale or uninitialized. Call index_repository before using search_graph, get_code_snippet, trace_call_path, or query_graph — results will be incomplete or absent until the graph is rebuilt."
+else
+    ADVISORY="CMM index is ready. Use search_graph, get_code_snippet, trace_call_path, and query_graph as the primary method for code exploration."
 fi
-echo "ready" > "$SENTINEL"
+
+printf '{"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":"%s"}}\n' \
+    "$(printf '%s' "$ADVISORY" | sed 's/"/\\"/g')"
 
 exit 0
