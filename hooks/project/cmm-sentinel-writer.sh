@@ -56,7 +56,16 @@ fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
 
-# Write sentinel to unblock session gate
+# Write sentinel to unblock session gate.
+# index_status only confirms the server is running — it does not trigger a reindex.
+# If the sentinel is already stale (written after a commit), preserve the stale marker
+# so the advisory remains until the user calls index_repository to actually reindex.
+INPUT=$(cat 2>/dev/null)
+TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
+if [ "$TOOL" = "mcp__codebase-memory-mcp__index_status" ] && grep -q '^stale$' "$SENTINEL" 2>/dev/null; then
+  # index_status called while stale — do not clear; reindex hasn't happened yet
+  exit 0
+fi
 echo "ready" > "$SENTINEL"
 
 exit 0

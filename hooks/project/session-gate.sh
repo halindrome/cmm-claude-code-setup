@@ -83,7 +83,7 @@ esac
 case "$TOOL" in
   mcp__codebase-memory-mcp__*)  # all CMM tools bypass CMM sentinel check unconditionally
     exit 0 ;;
-  mcp__context-mode__*)         # Context Mode tools bypass CMM gate (handled in Phase 3)
+  mcp__context-mode__*)         # Context Mode tools: full bypass (both CMM and CM gates)
     exit 0 ;;
   Bash|Read|Grep|Glob)          # read-only tools; safe to run in parallel with index_status
     exit 0 ;;
@@ -166,10 +166,9 @@ esac
 # Check Context Mode sentinel
 CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
 
-if [ ! -f "$CONTEXT_MODE_SENTINEL" ] || grep -q '^stale$' "$CONTEXT_MODE_SENTINEL"; then
+if [ ! -f "$CONTEXT_MODE_SENTINEL" ]; then
   cat >&2 <<BLOCKED
 BLOCKED: Context Mode is installed but not yet initialized for this session.
-(The Context Mode sentinel is absent or marked STALE.)
 
 Run one of these to initialize:
   ctx_stats          (fast check — initializes Context Mode for this session)
@@ -179,6 +178,12 @@ If you want to bypass the gate temporarily, create the sentinel in your terminal
   touch "/tmp/context-mode-ready-${PROJECT_HASH}"
 BLOCKED
   exit 2
+fi
+
+# Stale Context Mode sentinel: warn only (consistent with CMM stale behavior).
+# Nothing currently writes "stale" to the CM sentinel, but guard defensively.
+if grep -q '^stale$' "$CONTEXT_MODE_SENTINEL" 2>/dev/null; then
+  echo "Context Mode note: sentinel is stale. Run ctx_stats to reinitialize." >&2
 fi
 
 exit 0

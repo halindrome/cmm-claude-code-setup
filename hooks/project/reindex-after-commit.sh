@@ -1,7 +1,7 @@
 #!/bin/bash
 # reindex-after-commit.sh — PostToolUse:Bash hook (marks CMM sentinel stale after git commit)
 # Detects successful git commit calls and writes "stale" to the CMM sentinel file, prompting
-# the session-gate.sh to block non-CMM tools until the user refreshes the index.
+# a stale-index advisory in session-gate.sh until the user refreshes the index.
 # In VBW team mode the hook skips writing stale to prevent cascade-stalling parallel agents.
 #
 # Install: cp hooks/project/reindex-after-commit.sh .claude/hooks/ && chmod +x .claude/hooks/reindex-after-commit.sh

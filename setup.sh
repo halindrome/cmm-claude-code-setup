@@ -382,6 +382,21 @@ detect_context_mode() {
   fi
   [ -z "$_project_root" ] && _project_root="$PWD"
 
+  # Git worktree detection: worktrees share the main repo but show-superproject-working-tree
+  # returns empty (they are not submodules). Detect via git-common-dir so DB detection
+  # resolves to the main repo root, not the worktree path.
+  if [ -n "$_project_root" ]; then
+      local _git_dir _git_common _main_root
+      _git_dir="$(git -C "$_project_root" rev-parse --git-dir 2>/dev/null)"
+      _git_common="$(git -C "$_project_root" rev-parse --git-common-dir 2>/dev/null)"
+      [ "${_git_dir:0:1}" != "/" ]    && _git_dir="$_project_root/$_git_dir"
+      [ "${_git_common:0:1}" != "/" ] && _git_common="$_project_root/$_git_common"
+      if [ "$_git_dir" != "$_git_common" ]; then
+          _main_root="$(cd "$_git_common/.." 2>/dev/null && pwd -P)"
+          [ -n "$_main_root" ] && _project_root="$_main_root"
+      fi
+  fi
+
   # Step 2: Detect binary or db (binary on PATH or existing db in project)
   local context_mode_available=false
   if command -v context-mode >/dev/null 2>&1 || [ -f "${_project_root}/.claude/context-mode.db" ]; then
