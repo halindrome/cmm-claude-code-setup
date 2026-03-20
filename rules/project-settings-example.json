@@ -100,6 +100,18 @@
           }
         ]
       }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "dev|scout|lead|qa",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/subagent-cmm-startup.sh",
+            "_comment": "Prints CMM stale advisory in parent session when VBW agent starts"
+          }
+        ]
+      }
     ]
   }
 }

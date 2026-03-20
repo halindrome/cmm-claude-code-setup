@@ -668,7 +668,12 @@ install_project() {
   shopt -s nullglob
   # Copies all hooks/project/*.sh to .claude/hooks/, including:
   #   reindex-after-commit.sh — PostToolUse:Bash hook that marks CMM sentinel stale after git commits
-  # Registration of reindex-after-commit.sh in PostToolUse is handled via rules/project-settings-example.json.
+  #   subagent-cmm-startup.sh — SubagentStart advisory hook (prints stale warning before VBW agents start)
+  # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
+  #
+  # NOTE: .claude/agents/dev.md (Dev agent override with SUBAGENT_COMMIT=1 bypass) is NOT copied by
+  # setup.sh — it is specific to this repo's VBW setup. Users installing this hook layer into their
+  # own project should create their own .claude/agents/ overrides if they want agent-level hook behavior.
   for file in "$SCRIPT_DIR/hooks/project/"*.sh; do
     copy_file "$file" ".claude/hooks/$(basename "$file")"
     set_executable ".claude/hooks/$(basename "$file")"

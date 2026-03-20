@@ -71,12 +71,18 @@ esac
 # VBW team agents detect they are running inside a team context and skip marking stale.
 # This prevents a commit in one agent's worktree from cascade-stalling all parallel agents.
 # The main session (TEAM_MODE=0) is responsible for marking stale and reindexing.
-TEAM_MODE=0
-for d in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/teams/vbw-*; do
-  [ -d "$d" ] && TEAM_MODE=1 && break
-done
-if [ "$TEAM_MODE" -eq 1 ]; then
-  exit 0
+#
+# Bypass team-mode check when running inside a Dev subagent making a commit.
+# Dev agent commits SHOULD mark sentinel stale so Scout/QA know to reindex.
+# Set SUBAGENT_COMMIT=1 in the agent frontmatter hook command to enable this bypass.
+if [ "${SUBAGENT_COMMIT:-0}" != "1" ]; then
+  TEAM_MODE=0
+  for d in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/teams/vbw-*; do
+    [ -d "$d" ] && TEAM_MODE=1 && break
+  done
+  if [ "$TEAM_MODE" -eq 1 ]; then
+    exit 0
+  fi
 fi
 
 # --- Write Stale Marker ---
@@ -84,14 +90,9 @@ echo "stale" > "$CMM_SENTINEL"
 
 # --- Informational Message ---
 cat <<'EOF' >&2
-CMM note: Commit detected in this session.
-The codebase-memory-mcp index is now STALE relative to your commit.
-
-To refresh the index, run one of these:
-  mcp__codebase-memory-mcp__index_status       (fast — checks if server is responsive)
-  mcp__codebase-memory-mcp__index_repository   (full reindex)
-
-Until you refresh, CMM tools will return results based on pre-commit state.
+CMM note: Commit detected. The CMM server watcher will reindex automatically within 5–60s.
+Graph queries will return pre-commit results until then. To reindex immediately:
+  mcp__codebase-memory-mcp__index_repository
 EOF
 
 exit 0
