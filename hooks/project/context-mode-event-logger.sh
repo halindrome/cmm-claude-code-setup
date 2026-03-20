@@ -10,11 +10,30 @@
 #   "hooks": { "PostToolUse": [{ "matcher": "*", "hooks": [{"type": "command", "command": "bash .claude/hooks/context-mode-event-logger.sh"}] }] }
 # Matcher: PostToolUse:*
 
+# --- Stable Project Root Computation ---
+# Walk the git superproject chain to find the outermost project root.
+# Handles arbitrarily nested submodules — each iteration climbs one level until there is
+# no further superproject. Falls back to BASH_SOURCE traversal for non-git environments.
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -n "$PROJECT_ROOT" ]; then
+    _WALK="$PROJECT_ROOT"
+    while true; do
+        _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_PARENT" ] && break
+        _WALK="$_PARENT"
+    done
+    PROJECT_ROOT="$_WALK"
+fi
+if [ -z "$PROJECT_ROOT" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+fi
+
 # --- Context Mode Presence Check ---
 # No-op gracefully if Context Mode binary is not installed and no DB exists yet.
 CONTEXT_MODE_INSTALLED=0
 command -v context-mode >/dev/null 2>&1 && CONTEXT_MODE_INSTALLED=1
-[ -f ".claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
+[ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
 if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
   exit 0
@@ -35,7 +54,7 @@ TOOL_RESULT=$(echo "$INPUT" | python3 -c "import sys,json; print(str(json.load(s
 
 SESSION_ID="${CLAUDE_SESSION_ID:-unknown}"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-DB=".claude/context-mode.db"
+DB="${PROJECT_ROOT}/.claude/context-mode.db"
 
 # --- DB Schema Initialization ---
 sqlite3 "$DB" <<'SQL' 2>/dev/null || exit 0
