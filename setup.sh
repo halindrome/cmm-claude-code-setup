@@ -367,9 +367,39 @@ detect_context_mode() {
     return 0
   fi
 
+  # Compute monorepo root so DB detection works from sub-module directories
+  local _project_root
+  _project_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+  if [ -n "$_project_root" ]; then
+      local _walk="$_project_root"
+      while true; do
+          local _parent
+          _parent="$(git -C "$_walk" rev-parse --show-superproject-working-tree 2>/dev/null)"
+          [ -z "$_parent" ] && break
+          _walk="$_parent"
+      done
+      _project_root="$_walk"
+  fi
+  [ -z "$_project_root" ] && _project_root="$PWD"
+
+  # Git worktree detection: worktrees share the main repo but show-superproject-working-tree
+  # returns empty (they are not submodules). Detect via git-common-dir so DB detection
+  # resolves to the main repo root, not the worktree path.
+  if [ -n "$_project_root" ]; then
+      local _git_dir _git_common _main_root
+      _git_dir="$(git -C "$_project_root" rev-parse --git-dir 2>/dev/null)"
+      _git_common="$(git -C "$_project_root" rev-parse --git-common-dir 2>/dev/null)"
+      [ "${_git_dir:0:1}" != "/" ]    && _git_dir="$_project_root/$_git_dir"
+      [ "${_git_common:0:1}" != "/" ] && _git_common="$_project_root/$_git_common"
+      if [ "$_git_dir" != "$_git_common" ]; then
+          _main_root="$(cd "$_git_common/.." 2>/dev/null && pwd -P)"
+          [ -n "$_main_root" ] && _project_root="$_main_root"
+      fi
+  fi
+
   # Step 2: Detect binary or db (binary on PATH or existing db in project)
   local context_mode_available=false
-  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ]; then
+  if command -v context-mode >/dev/null 2>&1 || [ -f "${_project_root}/.claude/context-mode.db" ]; then
     context_mode_available=true
   fi
 
@@ -651,6 +681,14 @@ install_project() {
   fi
 
   shopt -s nullglob
+  # Copies all hooks/project/*.sh to .claude/hooks/, including:
+  #   reindex-after-commit.sh — PostToolUse:Bash hook that marks CMM sentinel stale after git commits
+  #   subagent-cmm-startup.sh — SubagentStart advisory hook (injects CMM state into all subagents via additionalContext)
+  # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
+  #
+  # NOTE: .claude/agents/dev.md (Dev agent override with SUBAGENT_COMMIT=1 bypass) is NOT copied by
+  # setup.sh — it is specific to this repo's VBW setup. Users installing this hook layer into their
+  # own project should create their own .claude/agents/ overrides if they want agent-level hook behavior.
   for file in "$SCRIPT_DIR/hooks/project/"*.sh; do
     copy_file "$file" ".claude/hooks/$(basename "$file")"
     set_executable ".claude/hooks/$(basename "$file")"

@@ -81,13 +81,11 @@ esac
 # --- Phase 2: CMM Gate ---
 # Allow-list: CMM bootstrap tools and read-only tools
 case "$TOOL" in
-  mcp__codebase-memory-mcp__index_repository)  # creates sentinel via cmm-sentinel-writer.sh
+  mcp__codebase-memory-mcp__*)  # all CMM tools bypass CMM sentinel check unconditionally
     exit 0 ;;
-  mcp__codebase-memory-mcp__index_status)      # fast check; sentinel writer fires on success
+  mcp__context-mode__*)         # Context Mode tools: full bypass (both CMM and CM gates)
     exit 0 ;;
-  mcp__codebase-memory-mcp__delete_project)    # safe pre-index; needed for forced re-index
-    exit 0 ;;
-  Bash|Read|Grep|Glob)                         # read-only tools; safe to run in parallel with index_status
+  Bash|Read|Grep|Glob)          # read-only tools; safe to run in parallel with index_status
     exit 0 ;;
 esac
 
@@ -96,14 +94,28 @@ if [ ! -f "$CMM_SENTINEL" ]; then
   cat >&2 <<BLOCKED
 BLOCKED: CMM index not refreshed for this session.
 
-Run one of these first:
+Run one of these to open the gate:
   mcp__codebase-memory-mcp__index_status       (fast check — opens gate if server is up)
   mcp__codebase-memory-mcp__index_repository   (full reindex)
+
+You can still use these tools without opening the gate:
+  mcp__codebase-memory-mcp__*  Bash, Read, Grep, Glob, ToolSearch, Agent, SendMessage
 
 If the CMM server is unavailable, create the bypass sentinel in your terminal:
   touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
 BLOCKED
   exit 2
+fi
+
+# Stale sentinel: warn but do not block. The CMM server's file watcher will
+# auto-reindex after a commit (typically within 5–60s). Blocking here adds
+# friction without improving correctness — index_status doesn't trigger a
+# reindex, only the watcher does.
+if grep -q '^stale$' "$CMM_SENTINEL"; then
+  cat >&2 <<WARN
+CMM note: index may lag recent commit. The server watcher will reindex automatically (5–60s).
+Call mcp__codebase-memory-mcp__index_repository now if you need graph data to be current immediately.
+WARN
 fi
 
 # --- Phase 3: Context Mode Gate (only if installed) ---
@@ -166,6 +178,12 @@ If you want to bypass the gate temporarily, create the sentinel in your terminal
   touch "/tmp/context-mode-ready-${PROJECT_HASH}"
 BLOCKED
   exit 2
+fi
+
+# Stale Context Mode sentinel: warn only (consistent with CMM stale behavior).
+# Nothing currently writes "stale" to the CM sentinel, but guard defensively.
+if grep -q '^stale$' "$CONTEXT_MODE_SENTINEL" 2>/dev/null; then
+  echo "Context Mode note: sentinel is stale. Run ctx_stats to reinitialize." >&2
 fi
 
 exit 0

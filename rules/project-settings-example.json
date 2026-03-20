@@ -41,7 +41,7 @@
         ]
       },
       {
-        "matcher": "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_stats|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index|mcp__context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute_file",
+        "matcher": "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_stats|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index|mcp__context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_search",
         "hooks": [
           {
             "type": "command",
@@ -51,11 +51,31 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/reindex-after-commit.sh",
+            "_comment": "Marks CMM sentinel stale after git commit, unless running in VBW team mode"
+          }
+        ]
+      },
+      {
         "matcher": "mcp__codebase-memory-mcp__*",
         "hooks": [
           {
             "type": "command",
             "command": "bash .claude/hooks/track-cmm-calls.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__codebase-memory-mcp__search_graph|mcp__codebase-memory-mcp__get_code_snippet|mcp__codebase-memory-mcp__trace_call_path|mcp__codebase-memory-mcp__query_graph",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/cmm-query-stale-advisory.sh",
+            "_comment": "Prints advisory to stderr if CMM index is stale after recent commit"
           }
         ]
       },
@@ -77,6 +97,18 @@
             "type": "command",
             "command": "bash .claude/hooks/context-mode-pre-compact.sh",
             "_comment": "optional: Context Mode MCP pre-compaction snapshot (no-ops if not installed)"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/subagent-cmm-startup.sh",
+            "_comment": "Injects CMM index state into all subagents via additionalContext JSON at startup"
           }
         ]
       }

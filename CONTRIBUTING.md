@@ -127,6 +127,38 @@ feature/my-work
 
    **Proving your work:** Paste each round's QA report as a separate comment on the PR. Reviewers will cross-reference the reports against the fix commits in the PR history.
 
+## Subagent Hook Behavior
+
+Claude Code project-level hooks (defined in `.claude/settings.json`) fire inside subagents automatically. This means `session-gate.sh`, `cmm-query-stale-advisory.sh`, `track-cmm-calls.sh`, and `reindex-after-commit.sh` all run inside Dev, Scout, QA, and Lead agents without any extra configuration.
+
+### The SUBAGENT_COMMIT Bypass
+
+`reindex-after-commit.sh` skips writing the stale sentinel when running inside a VBW team session (detected via `$CLAUDE_CONFIG_DIR/teams/vbw-*` directories). This prevents a commit in one worktree from cascade-stalling parallel agents.
+
+The Dev agent is the exception: Dev commits **should** mark the sentinel stale, because Scout and QA agents need to know the graph is outdated. `.claude/agents/dev.md` adds a PostToolUse:Bash frontmatter hook that sets `SUBAGENT_COMMIT=1` before invoking `reindex-after-commit.sh`. When this env var is set, the team-mode check is skipped and the stale marker is written.
+
+If you add a new agent that makes commits, create `.claude/agents/<name>.md` with the same `SUBAGENT_COMMIT=1` hook:
+
+```yaml
+hooks:
+  PostToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: "SUBAGENT_COMMIT=1 bash .claude/hooks/reindex-after-commit.sh"
+```
+
+### SubagentStart Advisory
+
+The `SubagentStart` hook in `.claude/settings.json` fires in the **parent session** (not inside the subagent) when any subagent starts. It runs `subagent-cmm-startup.sh`, which injects CMM index state into the subagent via `additionalContext` JSON output — telling the agent whether the index is ready or stale before it begins work. This is informational only — it never blocks the agent.
+
+SubagentStart hooks cannot intercept tool calls inside the subagent. Use agent frontmatter hooks (`.claude/agents/<name>.md`) for ongoing per-tool enforcement.
+
+### Requirements
+
+- Agent frontmatter hooks require **Claude Code v1.0.33+**. On older versions, hooks in `.claude/agents/` are silently ignored. The agent still works; only the `SUBAGENT_COMMIT=1` bypass is lost.
+- `.claude/agents/dev.md` is project-specific and **not copied by `setup.sh`**. Users installing this hook layer into their own project should create their own `.claude/agents/` overrides if needed.
+
 ## Reporting Bugs
 
 Open an issue with:
