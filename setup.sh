@@ -367,9 +367,24 @@ detect_context_mode() {
     return 0
   fi
 
+  # Compute monorepo root so DB detection works from sub-module directories
+  local _project_root
+  _project_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+  if [ -n "$_project_root" ]; then
+      local _walk="$_project_root"
+      while true; do
+          local _parent
+          _parent="$(git -C "$_walk" rev-parse --show-superproject-working-tree 2>/dev/null)"
+          [ -z "$_parent" ] && break
+          _walk="$_parent"
+      done
+      _project_root="$_walk"
+  fi
+  [ -z "$_project_root" ] && _project_root="$PWD"
+
   # Step 2: Detect binary or db (binary on PATH or existing db in project)
   local context_mode_available=false
-  if command -v context-mode >/dev/null 2>&1 || [ -f ".claude/context-mode.db" ]; then
+  if command -v context-mode >/dev/null 2>&1 || [ -f "${_project_root}/.claude/context-mode.db" ]; then
     context_mode_available=true
   fi
 
