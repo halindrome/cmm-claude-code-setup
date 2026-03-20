@@ -83,29 +83,39 @@ esac
 case "$TOOL" in
   mcp__codebase-memory-mcp__*)  # all CMM tools bypass CMM sentinel check unconditionally
     exit 0 ;;
+  mcp__context-mode__*)         # Context Mode tools bypass CMM gate (handled in Phase 3)
+    exit 0 ;;
   Bash|Read|Grep|Glob)          # read-only tools; safe to run in parallel with index_status
     exit 0 ;;
 esac
 
 # Check CMM sentinel
-if [ ! -f "$CMM_SENTINEL" ] || grep -q '^stale$' "$CMM_SENTINEL"; then
+if [ ! -f "$CMM_SENTINEL" ]; then
   cat >&2 <<BLOCKED
 BLOCKED: CMM index not refreshed for this session.
-(The CMM sentinel is absent or marked STALE — a commit was detected since last reindex.)
-
-You can still use these tools:
-  mcp__codebase-memory-mcp__*  (all CMM tools bypass this check; use index_status to open the gate)
-  Bash, Read, Grep, Glob       (read-only file tools)
-  ToolSearch, Agent, SendMessage
 
 Run one of these to open the gate:
   mcp__codebase-memory-mcp__index_status       (fast check — opens gate if server is up)
   mcp__codebase-memory-mcp__index_repository   (full reindex)
 
+You can still use these tools without opening the gate:
+  mcp__codebase-memory-mcp__*  Bash, Read, Grep, Glob, ToolSearch, Agent, SendMessage
+
 If the CMM server is unavailable, create the bypass sentinel in your terminal:
   touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
 BLOCKED
   exit 2
+fi
+
+# Stale sentinel: warn but do not block. The CMM server's file watcher will
+# auto-reindex after a commit (typically within 5–60s). Blocking here adds
+# friction without improving correctness — index_status doesn't trigger a
+# reindex, only the watcher does.
+if grep -q '^stale$' "$CMM_SENTINEL"; then
+  cat >&2 <<WARN
+CMM note: index may lag recent commit. The server watcher will reindex automatically (5–60s).
+Call mcp__codebase-memory-mcp__index_repository now if you need graph data to be current immediately.
+WARN
 fi
 
 # --- Phase 3: Context Mode Gate (only if installed) ---
