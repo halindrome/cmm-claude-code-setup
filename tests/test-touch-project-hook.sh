@@ -1,7 +1,7 @@
 #!/bin/bash
-# test-touch-project-hook.sh — Tests for touch_project project name resolution in reindex-after-commit.sh
+# test-touch-project-hook.sh — Tests for touch_project hook in reindex-after-commit.sh
 # Tests run against the ephemeral fixture from setup-test-monorepo.sh.
-# Does NOT require a live CMM server — stubs touch_project with a spy function.
+# Does NOT require a live CMM server — stubs codebase-memory-mcp CLI with a spy.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -104,6 +104,30 @@ else
     _fail "debug log should not be written when debug_logging=false"
 fi
 rm -rf "$FAKE_CONFIG_DIR2"
+
+echo "--- Test 8: hook invokes codebase-memory-mcp CLI (stubbed) ---"
+# Create a stub that records calls instead of invoking the real CMM server
+STUB_DIR=$(mktemp -d)
+STUB_LOG="$STUB_DIR/touch-calls.log"
+cat > "$STUB_DIR/codebase-memory-mcp" <<STUBEOF
+#!/bin/bash
+# Spy: record all arguments
+echo "\$@" >> "$STUB_LOG"
+echo '{"status":"ok"}'
+STUBEOF
+chmod +x "$STUB_DIR/codebase-memory-mcp"
+
+# Run the hook with stub in PATH, feeding it a fake git commit tool_input/output
+HOOK_SCRIPT="$SCRIPT_DIR/../hooks/project/reindex-after-commit.sh"
+FAKE_INPUT='{"tool_input":{"command":"git commit -m test"},"tool_output":{"stdout":"[main abc1234] test\n 1 file changed"}}'
+# Run from monorepo root so sentinel/project resolution works; export PATH so it propagates through pipe
+(cd "$CMM_TEST_MONOREPO_ROOT" && export PATH="$STUB_DIR:$PATH" && echo "$FAKE_INPUT" | bash "$HOOK_SCRIPT" 2>/dev/null)
+if [ -f "$STUB_LOG" ] && grep -q "cli touch_project" "$STUB_LOG"; then
+    _pass "hook calls codebase-memory-mcp cli touch_project"
+else
+    _fail "hook did not call codebase-memory-mcp cli touch_project (log: $(cat "$STUB_LOG" 2>/dev/null || echo 'empty'))"
+fi
+rm -rf "$STUB_DIR"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
