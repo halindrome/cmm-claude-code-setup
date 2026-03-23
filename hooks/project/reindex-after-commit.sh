@@ -88,9 +88,24 @@ fi
 # --- Write Stale Marker ---
 echo "stale" > "$CMM_SENTINEL"
 
+# --- Nudge CMM Watcher via touch_project ---
+# Resolve the project name from the superproject root path.
+# PROJECT_ROOT is already resolved to the outermost superproject root by the sentinel logic above.
+# Pass basename of that root as the project name (parent-only indexing model).
+_CMM_PROJECT_NAME="$(basename "$PROJECT_ROOT")"
+
+# Capture output silently; touch_project is fire-and-forget
+_CMM_TOUCH_OUTPUT=$(mcp__codebase-memory-mcp__touch_project '{"project":"'"$_CMM_PROJECT_NAME"'"}' 2>/dev/null) || true
+
+# Debug logging (only when debug_logging=true in config)
+_CMM_CONFIG="$PROJECT_ROOT/.vbw-planning/config.json"
+if [ -f "$_CMM_CONFIG" ] && python3 -c "import sys,json; d=json.load(open('$_CMM_CONFIG')); sys.exit(0 if d.get('debug_logging') else 1)" 2>/dev/null; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] touch_project project=$_CMM_PROJECT_NAME output=$_CMM_TOUCH_OUTPUT cwd=$(pwd)" >> /tmp/cmm-touch-project.log 2>/dev/null || true
+fi
+
 # --- Informational Message ---
 cat <<'EOF' >&2
-CMM note: Commit detected. The CMM server watcher will reindex automatically within 5–60s.
+CMM note: Commit detected. touch_project nudged the CMM watcher — reindex in 5–60s.
 Graph queries will return pre-commit results until then. To reindex immediately:
   mcp__codebase-memory-mcp__index_repository
 EOF
