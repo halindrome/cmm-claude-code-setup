@@ -280,6 +280,7 @@ chmod +x .claude/hooks/*.sh
 | `cmm-sentinel-writer.sh` | PostToolUse | Writes a sentinel file after `index_repository` completes, unblocking the session gate |
 | `agent-cmm-gate.sh` | PreToolUse:Agent | Blocks subagent spawning unless the prompt includes CMM tool instructions |
 | `track-cmm-calls.sh` | PostToolUse | Tracks call counts per CMM tool to `~/.cache/codebase-memory-mcp/_call-counts.json` |
+| `reindex-after-commit.sh` | PostToolUse:Bash | Marks CMM sentinel stale after a `git commit` and calls `touch_project` to nudge the watcher for faster reindexing (5–60s) |
 
 > **Note:** These hooks will be created in Phases 2 and 3 of this project. The names and purposes are documented here for reference.
 
@@ -401,6 +402,26 @@ Session starts
 ```
 
 > **Auto-sync:** After the initial `index_repository` call, the server keeps the graph fresh automatically via background polling. You don't need to manually re-index — the server detects file changes (mtime + size) and triggers incremental re-indexing within seconds. You can still call `index_repository` manually to force an immediate reindex (e.g., after a large `git pull`).
+
+### Post-Commit Reindexing
+
+When Claude Code runs a `git commit`, the `reindex-after-commit.sh` PostToolUse hook fires automatically. It:
+
+1. Marks the CMM sentinel as **stale** — the session gate will warn (non-blocking) until the index is refreshed.
+2. Calls `touch_project` to nudge the CMM watcher, so the next poll cycle runs immediately rather than waiting up to 60 seconds.
+
+**Timing:** The CMM watcher reindexes within **5–60 seconds** depending on project size (adaptive interval). Graph queries made immediately after a commit will return pre-commit results during this window.
+
+**Manual override:** To reindex immediately (blocking), call:
+```
+mcp__codebase-memory-mcp__index_repository
+```
+
+**Debug logging:** If `debug_logging: true` is set in `.vbw-planning/config.json`, each `touch_project` call is logged to `/tmp/cmm-touch-project.log` with timestamp, project name, and result.
+
+**Troubleshooting:**
+- If the watcher is not running (CMM server restarted), `touch_project` fails silently. The stale sentinel remains as a fallback — the session gate will prompt you to reindex at the start of the next session.
+- To verify the watcher is running: call `mcp__codebase-memory-mcp__index_status` and check the response.
 
 ---
 
@@ -551,6 +572,14 @@ Fetch the ADR before planning to validate against ARCHITECTURE, PATTERNS, STACK,
 - The sentinel file is session-scoped — it resets on each new session
 - As a temporary workaround, you can manually create the sentinel file (location will be documented when the hook is created in Phase 2)
 
+### Post-commit reindex not happening / touch_project silent failure
+
+- If `touch_project` returns "watcher not running", the CMM server's watcher thread is not active. This can happen after a server restart.
+- The stale sentinel acts as a fallback — the session gate will prompt you to run `index_repository` at the start of the next session.
+- To check watcher status: call `mcp__codebase-memory-mcp__index_status` — if the server responds, the watcher is likely running.
+- To force an immediate reindex: call `mcp__codebase-memory-mcp__index_repository`.
+- To enable debug logging: set `"debug_logging": true` in `.vbw-planning/config.json`. Each `touch_project` call will be logged to `/tmp/cmm-touch-project.log`.
+
 ### MCP server not connecting
 
 - Run `codebase-memory-mcp --help` to verify the binary works
@@ -580,6 +609,7 @@ Here's the full picture of all hooks, where they live, and what they do:
 | PreToolUse | Agent | `agent-cmm-gate.sh` | command | Blocks agents without CMM instructions |
 | PostToolUse | — | `cmm-sentinel-writer.sh` | command | Marks session as ready after index completes |
 | PostToolUse | — | `track-cmm-calls.sh` | command | Tracks call counts per CMM tool |
+| PostToolUse | Bash | `reindex-after-commit.sh` | command | Marks sentinel stale after `git commit`; calls `touch_project` to nudge watcher |
 
 ---
 

@@ -95,6 +95,7 @@ hooks/
     cmm-session-start.sh                # SessionStart — injects index refresh prompt (agent-aware)
     cmm-session-gate.sh                 # PreToolUse:* — blocks all tools until CMM index ready
     cmm-sentinel-writer.sh              # PostToolUse — marks index as refreshed
+    reindex-after-commit.sh             # PostToolUse:Bash — marks sentinel stale after git commit; calls touch_project to nudge watcher (5–60s reindex)
     agent-cmm-gate.sh                   # PreToolUse:Agent — blocks agents without MCP instructions
     track-cmm-calls.sh                  # PostToolUse — tracks call counts per CMM tool
     context-mode-session-gate.sh        # PreToolUse:* — gates tools until Context Mode ready (no-op if not installed)
