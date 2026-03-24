@@ -88,11 +88,38 @@ fi
 # --- Write Stale Marker ---
 echo "stale" > "$CMM_SENTINEL"
 
+# --- Nudge CMM Watcher via touch_project ---
+# Resolve the project name from the superproject root path.
+# PROJECT_ROOT is already resolved to the outermost superproject root by the sentinel logic above.
+# CMM derives project names from the full absolute path: strip leading /, replace / with -.
+# e.g. /Users/ahby/Sources/my-project -> Users-ahby-Sources-my-project
+_CMM_PROJECT_NAME="${PROJECT_ROOT#/}"
+_CMM_PROJECT_NAME="${_CMM_PROJECT_NAME//\//-}"
+
+# Capture output silently; touch_project is fire-and-forget.
+# Use the CLI interface (not MCP tool name) since this runs in a shell hook, not Claude's agent runtime.
+_CMM_TOUCH_JSON=$(python3 -c "import json; print(json.dumps({'project': '$_CMM_PROJECT_NAME'.replace(chr(39), '')}))" 2>/dev/null || echo '{"project":"'"$_CMM_PROJECT_NAME"'"}')
+_CMM_TOUCH_OUTPUT=$(codebase-memory-mcp cli touch_project "$_CMM_TOUCH_JSON" 2>/dev/null) && _CMM_TOUCH_OK=1 || _CMM_TOUCH_OK=0
+
+# Debug logging (only when debug_logging=true in config)
+_CMM_CONFIG="$PROJECT_ROOT/.vbw-planning/config.json"
+if [ -f "$_CMM_CONFIG" ] && python3 -c "import sys,json; d=json.load(open('$_CMM_CONFIG')); sys.exit(0 if d.get('debug_logging') else 1)" 2>/dev/null; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] touch_project project=$_CMM_PROJECT_NAME output=$_CMM_TOUCH_OUTPUT cwd=$(pwd)" >> /tmp/cmm-touch-project.log 2>/dev/null || true
+fi
+
 # --- Informational Message ---
-cat <<'EOF' >&2
-CMM note: Commit detected. The CMM server watcher will reindex automatically within 5–60s.
+if [ "$_CMM_TOUCH_OK" -eq 1 ]; then
+  cat <<'EOF' >&2
+CMM note: Commit detected. touch_project nudged the CMM watcher — reindex expected in 5–60s.
 Graph queries will return pre-commit results until then. To reindex immediately:
   mcp__codebase-memory-mcp__index_repository
 EOF
+else
+  cat <<'EOF' >&2
+CMM note: Commit detected. Sentinel marked stale (touch_project unavailable — CMM CLI not in PATH or server not running).
+Graph queries may return pre-commit results. To reindex:
+  mcp__codebase-memory-mcp__index_repository
+EOF
+fi
 
 exit 0

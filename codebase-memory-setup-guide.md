@@ -102,7 +102,7 @@ Add a SessionStart hook to `~/.claude/settings.json` so the index is always fres
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "If codebase-memory-mcp tools are available (mcp__codebase-memory-mcp__*), run mcp__codebase-memory-mcp__index_status to check the current index. If not indexed or stale, run mcp__codebase-memory-mcp__index_repository to build/refresh the code graph. If the server is not available, skip silently."
+            "prompt": "If codebase-memory-mcp tools are available (mcp__codebase-memory-mcp__*), run mcp__codebase-memory-mcp__index_repository to ensure the code graph is current. Incremental indexing skips unchanged files, so this is fast when already indexed. If the server is not available, skip silently."
           }
         ]
       }
