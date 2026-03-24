@@ -43,10 +43,16 @@ resolve_cmm_project_name() {
         main_root="$(cd "$_git_common/.." 2>/dev/null && pwd -P)"
         [ -n "$main_root" ] && project_root="$main_root"
     fi
-    basename "$project_root"
+    # CMM derives project names from full path: strip leading /, replace / with -
+    local name="${project_root#/}"
+    echo "${name//\//-}"
 }
 
-MONO_NAME="$(basename "$CMM_TEST_MONOREPO_ROOT")"
+# CMM project name = full resolved path with leading / stripped, remaining / replaced by -
+# Use pwd -P to resolve symlinks (macOS /tmp -> /private/tmp)
+_resolved_root="$(cd "$CMM_TEST_MONOREPO_ROOT" && pwd -P)"
+_tmp="${_resolved_root#/}"
+MONO_NAME="${_tmp//\//-}"
 
 echo "--- Test 1: project name from monorepo root ---"
 got=$(resolve_cmm_project_name "$CMM_TEST_MONOREPO_ROOT")
@@ -119,7 +125,7 @@ chmod +x "$STUB_DIR/codebase-memory-mcp"
 
 # Run the hook with stub in PATH, feeding it a fake git commit tool_input/output
 HOOK_SCRIPT="$SCRIPT_DIR/../hooks/project/reindex-after-commit.sh"
-FAKE_INPUT='{"tool_input":{"command":"git commit -m test"},"tool_output":{"stdout":"[main abc1234] test\n 1 file changed"}}'
+FAKE_INPUT='{"tool_input":{"command":"git commit -m test"},"tool_output":{"stdout":"[main abc1234] test 1 file changed"}}'
 # Run from monorepo root so sentinel/project resolution works; export PATH so it propagates through pipe
 (cd "$CMM_TEST_MONOREPO_ROOT" && export PATH="$STUB_DIR:$PATH" && echo "$FAKE_INPUT" | bash "$HOOK_SCRIPT" 2>/dev/null)
 if [ -f "$STUB_LOG" ] && grep -q "cli touch_project" "$STUB_LOG"; then

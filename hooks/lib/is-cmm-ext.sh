@@ -21,7 +21,7 @@ is_cmm_ext() {
     *.clj|*.cljs|*.cljc|*.fs|*.fsx|*.fsi|*.jl|*.vim|*.vimrc|*.nix|*.lisp|*.cl|*.lsp|*.elm|*.el|*.lean|\
     *.f90|*.f95|*.f03|*.f08|*.cu|*.cuh|*.cob|*.cbl|*.v|*.sv|*.frm|*.prc|*.wl|*.wls|\
     *.mag|*.magma|*.matlab|*.mlx|*.mk|*.meson|*.dockerfile|\
-    *.md|*.mdx|*.html|*.htm|*.css|*.scss|*.yaml|*.yml|*.toml|*.hcl|*.tf|*.sql|*.vue|*.svelte|\
+    *.md|*.mdx|*.html|*.htm|*.css|*.scss|*.sass|*.yaml|*.yml|*.toml|*.hcl|*.tf|*.sql|*.vue|*.svelte|\
     *.graphql|*.gql|*.proto|*.cmake|*.glsl|*.frag|*.vert|*.ini|*.cfg|*.conf|\
     *.json|*.xml|*.xsd|*.xsl|*.svg)
       return 0 ;;

@@ -91,8 +91,10 @@ echo "stale" > "$CMM_SENTINEL"
 # --- Nudge CMM Watcher via touch_project ---
 # Resolve the project name from the superproject root path.
 # PROJECT_ROOT is already resolved to the outermost superproject root by the sentinel logic above.
-# Pass basename of that root as the project name (parent-only indexing model).
-_CMM_PROJECT_NAME="$(basename "$PROJECT_ROOT")"
+# CMM derives project names from the full absolute path: strip leading /, replace / with -.
+# e.g. /Users/ahby/Sources/my-project -> Users-ahby-Sources-my-project
+_CMM_PROJECT_NAME="${PROJECT_ROOT#/}"
+_CMM_PROJECT_NAME="${_CMM_PROJECT_NAME//\//-}"
 
 # Capture output silently; touch_project is fire-and-forget.
 # Use the CLI interface (not MCP tool name) since this runs in a shell hook, not Claude's agent runtime.
