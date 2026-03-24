@@ -6,6 +6,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Version
 
 ---
 
+## [1.2.0] — 2026-03-24
+
+### Added
+- `hooks/lib/is-cmm-ext.sh` — shared extension-check library (67 built-in languages + user-defined extensions from CMM config) replacing duplicated inline case lists in global hooks; cached per repo root via `/tmp/cmm-user-ext-<hash>`
+- `touch_project` call in `reindex-after-commit.sh` — nudges the CMM file watcher after every commit so reindexing starts within seconds instead of waiting for the next poll cycle
+- `tests/test-touch-project-hook.sh` — 8-test suite covering project name resolution across monorepo submodules, debug logging, and end-to-end CLI invocation with stubbed CMM server
+- `tests/setup-test-monorepo.sh` — ephemeral monorepo fixture script for submodule testing
+- `tests/test-agent-gate-blocking.sh` — 9-test suite for `agent-cmm-gate.sh` keyword blocking and exemption logic
+- `tests/test-team-mode-bypass.sh` — 3-test suite for team-mode sentinel bypass and `SUBAGENT_COMMIT=1` override
+- "Agent Hook Reliability and Known Limitations" section in `docs/setup-guide.md` documenting 5 known Claude Code issues (#7881, #20221, #16047, #19225, agent-sdk-ts#58) with recommended patterns
+- "Adding Custom Subagent Hooks" guidance in `CONTRIBUTING.md` covering PostToolUse:Agent vs SubagentStop tradeoffs, frontmatter hooks, and exit code table
+
+### Changed
+- `cmm-nudge.sh` and `reindex-after-edit.sh` refactored to source `hooks/lib/is-cmm-ext.sh` instead of maintaining separate inline extension lists
+- `cmm-session-start.sh` and `session-gate.sh` simplified to use `index_repository` directly (drop two-step `index_status` → `index_repository` flow; incremental indexing is fast when already current)
+- Language count updated from 64 to 67 across README, setup-guide, and rules
+- `setup.sh` updated to install `hooks/lib/` directory during global installation
+- `touch_project` project name derivation uses CMM convention (full path with `/` → `-`) instead of `basename`
+
+### Fixed
+- Missing `*.sass` extension restored in shared extension library (regression from inline list extraction)
+- Test 8 FAKE_INPUT invalid JSON escape corrected (literal `\n` in single-quoted string)
+- Test helper symlink resolution for macOS (`/tmp` → `/private/tmp`)
+
+---
+
 ## [1.1.0] — 2026-03-20
 
 ### Added
