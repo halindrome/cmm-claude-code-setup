@@ -159,6 +159,102 @@ SubagentStart hooks cannot intercept tool calls inside the subagent. Use agent f
 - Agent frontmatter hooks require **Claude Code v1.0.33+**. On older versions, hooks in `.claude/agents/` are silently ignored. The agent still works; only the `SUBAGENT_COMMIT=1` bypass is lost.
 - `.claude/agents/dev.md` is project-specific and **not copied by `setup.sh`**. Users installing this hook layer into their own project should create their own `.claude/agents/` overrides if needed.
 
+### Adding Custom Subagent Hooks
+
+#### Why PostToolUse:Agent Instead of SubagentStop
+
+Claude Code's `SubagentStop` lifecycle event has several reliability gaps that make it unsuitable for critical hook logic (see `docs/setup-guide.md` for full issue details):
+
+- **SubagentStop doesn't fire on `maxTurns`** — the last tool call's hook is silently skipped.
+- **SubagentStop doesn't fire on session degradation** — connections that time out after ~2.5h don't trigger cleanup.
+- **SubagentStop can't identify which agent stopped** — no `subagent_type` field is available in the event.
+- **Prompt-based SubagentStop hooks can't prevent termination** — the subagent receives feedback but gets no turn to respond ([#20221](https://github.com/anthropics/claude-code/issues/20221), closed as "not planned").
+
+**For any logic that must run when a subagent completes, use `PostToolUse:Agent` instead.** This event fires in the parent session after the Agent tool returns, regardless of how the subagent terminated. It receives the full tool result, including `session_id` and exit status.
+
+#### Adding a Hook to settings.json
+
+Register a PostToolUse:Agent hook in `.claude/settings.json`:
+
+```json
+{
+  "PostToolUse": [
+    {
+      "matcher": "Agent",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash /absolute/path/to/your-hook.sh",
+          "_comment": "Describe what this hook does"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Requires Claude Code **v1.0.33** or later.
+
+The hook script receives the PostToolUse:Agent event JSON on stdin. Key fields:
+
+| Field | Description |
+|-------|-------------|
+| `session_id` | Session identifier (correlate with SubagentStart records) |
+| `tool_result` | Output returned by the subagent |
+| `tool_result.stop_reason` | How the agent stopped: `end_turn`, `error_max_turns`, etc. |
+
+Example hook to detect Dev agent maxTurns:
+
+```bash
+#!/bin/bash
+EVENT=$(cat)
+STOP_REASON=$(echo "$EVENT" | jq -r '.tool_result.stop_reason // empty')
+if [ "$STOP_REASON" = "error_max_turns" ]; then
+    echo "Warning: Dev agent hit maxTurns — graph may not be marked stale." >&2
+fi
+exit 0
+```
+
+#### Adding a Hook via Agent Frontmatter
+
+Agent-specific hooks can be defined in the agent's `.claude/agents/<name>.md` frontmatter. This is how the Dev agent bypasses team-mode suppression:
+
+```yaml
+---
+name: dev
+hooks:
+  PostToolUse:
+    - matcher: Bash
+      command: "SUBAGENT_COMMIT=1 bash .claude/hooks/reindex-after-commit.sh"
+---
+```
+
+Step-by-step to add a custom PostToolUse:Agent hook to an agent:
+
+1. Open `.claude/agents/<your-agent>.md`
+2. Add a `hooks` block to the YAML frontmatter:
+   ```yaml
+   hooks:
+     PostToolUse:
+       - matcher: Agent
+         command: "bash .claude/hooks/your-custom-hook.sh"
+   ```
+3. Create `.claude/hooks/your-custom-hook.sh` — must exit 0 for advisory hooks, exit 2 only if you want to block (block applies to the tool call, not to agent termination)
+4. Copy the hook to `hooks/project/` as the canonical source:
+   ```bash
+   cp .claude/hooks/your-custom-hook.sh hooks/project/your-custom-hook.sh
+   ```
+5. Both copies must be kept in sync. The `hooks/project/` directory is the source of truth for version control.
+
+#### Hook Exit Codes
+
+| Exit Code | Effect |
+|-----------|--------|
+| `0` | Advisory — hook ran, no action taken |
+| `2` | Block — prevents the tool call (PreToolUse only; PostToolUse exit 2 is ignored) |
+
+For SubagentStop quality gates: **only command-based hooks that exit 2 can gate agent termination.** Prompt-based hooks returning `{"ok": false}` do not prevent termination (Issue #20221).
+
 ## Reporting Bugs
 
 Open an issue with:
