@@ -644,6 +644,140 @@ Claude edits a file
 
 ---
 
+## Agent Hook Reliability and Known Limitations
+
+Claude Code's agent lifecycle hooks (`SubagentStop`, `TeammateIdle`, `TaskCompleted`) have several confirmed reliability gaps. This project deliberately avoids using these hooks for any critical logic and instead relies on `PostToolUse:Agent` fallback hooks.
+
+### Known Issues
+
+**Issue #1 — SubagentStop doesn't fire when maxTurns is reached**
+When a subagent hits the `maxTurns` limit, the last tool call's PostToolUse hook is skipped and the agent terminates with `error_max_turns`. Hooks for turns 1 through N−1 fire normally, but the final turn's hook is lost.
+- Severity: HIGH
+- Reference: [anthropics/claude-agent-sdk-typescript#58](https://github.com/anthropics/claude-agent-sdk-typescript/issues/58)
+- Workaround: `subagent-end-track.sh` (PostToolUse:Agent) marks the CMM sentinel stale at the **Agent tool level** — it fires regardless of how the subagent terminated.
+
+**Issue #2 — SubagentStop cannot identify which subagent finished**
+When multiple subagents share a session, `SubagentStop` receives only the `session_id` — no `subagent_type` field is propagated. There is no way to distinguish which agent (Dev, Scout, QA) completed.
+- Severity: MEDIUM
+- Reference: [anthropics/claude-code#7881](https://github.com/anthropics/claude-code/issues/7881)
+- Workaround: `subagent-start-track.sh` writes `session_id → subagent_type` to a state file at spawn time; `subagent-end-track.sh` looks up the type at completion time.
+
+**Issue #3 — Prompt-based SubagentStop hooks don't prevent termination**
+If a SubagentStop prompt hook returns `{"ok": false, "reason": "..."}`, the subagent receives the feedback message but is given no additional turn to respond — the session terminates anyway.
+- Severity: MEDIUM
+- Reference: [anthropics/claude-code#20221](https://github.com/anthropics/claude-code/issues/20221)
+- Closed as "not planned" (February 2026)
+- **Recommendation: Only use command-based (bash script) hooks for SubagentStop gates. Do not use prompt-based SubagentStop hooks for quality enforcement.**
+
+**Issue #4 — SubagentStop doesn't fire on session degradation (~2.5h)**
+After approximately 2.5 hours, session protocol timeouts can terminate a subagent without firing SubagentStop. Affects background subagents especially.
+- Severity: HIGH
+- Reference: claude-code issue #16047
+- Workaround: The session-gate.sh PreToolUse hook catches stale sentinels on the next tool call, providing a safety net even when cleanup hooks don't fire.
+
+**Issue #5 — Skills stop hooks never fire**
+Claude Code skills (`type: "command"` in settings.json) do not trigger SubagentStop or Stop events when they finish. Not currently applicable to this project (which uses the Agent tool, not skills), but worth noting for future work.
+- Reference: claude-code issue #19225
+
+### Recommended Pattern: PostToolUse:Agent Fallbacks
+
+Instead of SubagentStop, this project uses two hooks that fire on every Agent tool invocation:
+
+| Hook | Event | Purpose |
+|------|-------|---------|
+| `subagent-start-track.sh` | PreToolUse:Agent | Records `session_id`, `subagent_type`, and timestamp to `/tmp/subagent-tracking-<hash>` |
+| `subagent-end-track.sh` | PostToolUse:Agent | Correlates end event, logs execution time, marks sentinel stale if Dev agent completed |
+
+This pattern reliably provides start+end tracking and Dev-agent sentinel marking, even when SubagentStop doesn't fire.
+
+#### Example: State File Tracking
+
+```bash
+# /tmp/subagent-tracking-<project-hash> — newline-delimited JSON
+{"session_id":"abc-123","subagent_type":"dev","started_at":"2026-03-24T14:30:45Z","project_root":"/path/to/project"}
+{"session_id":"def-456","subagent_type":"scout","started_at":"2026-03-24T14:35:10Z","project_root":"/path/to/project"}
+```
+
+#### Adding a Custom PostToolUse:Agent Hook
+
+To add your own agent completion logic, create a bash hook and register it in `.claude/settings.json`:
+
+```json
+{
+  "PostToolUse": [
+    {
+      "matcher": "Agent",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash /path/to/your-agent-end-hook.sh"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Requires Claude Code v1.0.33+.
+
+### Team-Mode Detection and SUBAGENT_COMMIT Bypass
+
+In VBW team sessions, multiple subagents run in parallel. To prevent one subagent's commit from stalling others, `reindex-after-commit.sh` skips writing the stale sentinel when running inside a VBW team session.
+
+**Detection logic:**
+```bash
+# reindex-after-commit.sh checks for VBW team directories
+if ls "${CLAUDE_CONFIG_DIR}/teams/vbw-"* >/dev/null 2>&1; then
+    # In team mode: skip sentinel stale write
+    exit 0
+fi
+```
+
+**Dev agent override:**
+The `dev.md` agent frontmatter sets `SUBAGENT_COMMIT=1`, which bypasses the team-mode check so Dev's commits still mark the sentinel stale (triggering Scout/QA awareness):
+
+```yaml
+# .claude/agents/dev.md frontmatter
+hooks:
+  PostToolUse:
+    - matcher: Bash
+      command: "SUBAGENT_COMMIT=1 bash .claude/hooks/reindex-after-commit.sh"
+```
+
+To replicate this bypass for a custom agent, add the same `SUBAGENT_COMMIT=1` prefix to the hook command in your agent's frontmatter.
+
+### Troubleshooting Agent Lifecycle Issues
+
+**Stale graph after maxTurns termination**
+
+If a Dev subagent hits maxTurns and the graph is stale:
+1. Check if `subagent-end-track.sh` ran: `cat /tmp/cmm-subagent-track.log` (only populated when `CMM_DEBUG_TRACKING=1`)
+2. Manually mark the sentinel stale: `echo stale > /tmp/cmm-session-ready-<hash>`
+3. Run `index_repository` at the start of the next session
+
+**touch_project failures**
+
+If the CMM watcher isn't being nudged after commits:
+1. Check `/tmp/cmm-touch-project.log` for errors (only populated when `debug_logging: true` in `.vbw-planning/config.json`)
+2. Verify the CMM server is running: `mcp__codebase-memory-mcp__index_status`
+
+**SubagentStart advisory not appearing**
+
+If the "index is stale" advisory isn't appearing at subagent startup:
+1. Verify `subagent-cmm-startup.sh` is registered in `.claude/settings.json` under `SubagentStart`
+2. Check the sentinel file exists: `ls /tmp/cmm-session-ready-*`
+3. If no sentinel exists, run `index_repository` to initialize it
+
+**Enable debug tracking**
+
+To log all subagent start/end events to file:
+```bash
+export CMM_DEBUG_TRACKING=1
+# Then start your Claude Code session; events log to /tmp/cmm-subagent-track.log
+```
+
+---
+
 ## setup.sh Installer Flags
 
 `setup.sh` automates Steps 1–6 above. Run from the repo root after cloning:
