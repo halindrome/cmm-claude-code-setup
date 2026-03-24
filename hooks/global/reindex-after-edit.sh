@@ -3,7 +3,7 @@
 # NON-BLOCKING: always exits 0 (advisory only, never blocks)
 # Debounce: 60 seconds between prompts
 #
-# Install: cp hooks/global/reindex-after-edit.sh ~/.claude/hooks/
+# Install: cp -r hooks/lib ~/.claude/hooks/ && cp hooks/global/reindex-after-edit.sh ~/.claude/hooks/
 #          chmod +x ~/.claude/hooks/reindex-after-edit.sh
 # Register in ~/.claude/settings.json:
 #   "hooks": { "PostToolUse": [{ "matcher": "Write|Edit", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/reindex-after-edit.sh"}] }] }
@@ -30,18 +30,12 @@ case "$FILE" in
   */.vbw-planning/*|*/.claude/*|*/.git/*) exit 0 ;;
 esac
 
-# Only trigger for CMM-indexed file types (64 languages)
-case "$FILE" in
-  *.py|*.go|*.js|*.jsx|*.ts|*.tsx|*.rs|*.java|*.cpp|*.cc|*.cxx|*.c|*.h|*.hpp|\
-*.cs|*.php|*.lua|*.scala|*.kt|*.kts|*.rb|*.sh|*.bash|*.zsh|*.zig|*.ex|*.exs|\
-*.hs|*.ml|*.mli|*.m|*.mm|*.swift|*.dart|*.pl|*.pm|*.groovy|*.erl|*.hrl|\
-*.r|*.R|*.clj|*.cljs|*.cljc|*.fs|*.fsx|*.fsi|*.jl|*.vim|*.nix|*.lisp|*.cl|\
-*.elm|*.f90|*.f95|*.f03|*.cu|*.cuh|*.cob|*.cbl|*.v|*.sv|*.el|*.lean|*.frm|\
-*.wl|*.wls|*.html|*.css|*.scss|*.sass|*.yaml|*.yml|*.toml|*.hcl|*.tf|*.sql|\
-*.vue|*.svelte|*.graphql|*.gql|*.proto|*.cmake|*.glsl|*.ini|*.cfg)
-    ;; # matched — continue
-  *) exit 0 ;; # not a CMM-indexed file type
-esac
+# Only trigger for CMM-indexed file types (67 built-in + user-defined)
+source "${BASH_SOURCE[0]%/*}/../lib/is-cmm-ext.sh" 2>/dev/null \
+  || source "${BASH_SOURCE[0]%/*}/lib/is-cmm-ext.sh" 2>/dev/null \
+  || { exit 0; }
+
+is_cmm_ext "$FILE" || exit 0
 
 # Debounce: skip if we prompted within the last 60 seconds
 STAMP="/tmp/cmm-reindex-stamp-$(id -u)"

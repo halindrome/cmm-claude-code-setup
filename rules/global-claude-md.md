@@ -2,7 +2,7 @@
 
 ## codebase-memory-mcp — Code Navigation (MANDATORY)
 
-[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) builds a persistent code knowledge graph across 64 languages. Use its tools as the PRIMARY method for code exploration — they return precise structural results in a single call instead of reading entire files. NEVER fall back to Grep or Read for navigating source code when the graph is indexed.
+[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) builds a persistent code knowledge graph across 67 languages. Use its tools as the PRIMARY method for code exploration — they return precise structural results in a single call instead of reading entire files. NEVER fall back to Grep or Read for navigating source code when the graph is indexed.
 
 ### Tool Reference
 

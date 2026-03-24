@@ -2,7 +2,7 @@
 # cmm-nudge.sh — PreToolUse:Read hook (non-blocking CMM nudge)
 # NON-BLOCKING: always exits 0 (advisory only, never blocks)
 #
-# Install: cp hooks/global/cmm-nudge.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/cmm-nudge.sh
+# Install: cp -r hooks/lib ~/.claude/hooks/ && cp hooks/global/cmm-nudge.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/cmm-nudge.sh
 # Register in ~/.claude/settings.json:
 #   "hooks": { "PreToolUse": [{ "matcher": "Read", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-nudge.sh"}] }] }
 
@@ -25,20 +25,14 @@ case "$FILE_PATH" in
   */.vbw-planning/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
 esac
 
-# --- Extension Check: CMM Supported Languages (64 languages) ---
-# Update this list if CMM adds new language support
-case "$FILE_PATH" in
-  *.py|*.go|*.js|*.jsx|*.ts|*.tsx|*.rs|*.java|*.cpp|*.cc|*.cxx|*.c|*.h|*.hpp|*.cs|\
-  *.php|*.lua|*.scala|*.kt|*.kts|*.rb|*.sh|*.bash|*.zsh|*.zig|*.ex|*.exs|*.hs|\
-  *.ml|*.mli|*.m|*.mm|*.swift|*.dart|*.pl|*.pm|*.groovy|*.erl|*.hrl|*.r|*.R|\
-  *.clj|*.cljs|*.cljc|*.fs|*.fsx|*.fsi|*.jl|*.vim|*.nix|*.lisp|*.cl|*.elm|\
-  *.f90|*.f95|*.f03|*.cu|*.cuh|*.cob|*.cbl|*.v|*.sv|*.el|*.lean|*.frm|*.wl|*.wls|\
-  *.html|*.css|*.scss|*.sass|*.yaml|*.yml|*.toml|*.hcl|*.tf|*.sql|*.vue|*.svelte|\
-  *.graphql|*.gql|*.proto|*.cmake|*.glsl|*.ini|*.cfg)
-    ;; # matched — continue to checks below
-  *)
-    exit 0 ;; # not a CMM-indexed file type
-esac
+# --- Extension Check: CMM Supported Languages (67 built-in + user-defined) ---
+# Built-in list + user config from ~/.config/codebase-memory-mcp/config.json
+# and {repo}/.codebase-memory.json (extra_extensions). Cached per session.
+source "${BASH_SOURCE[0]%/*}/../lib/is-cmm-ext.sh" 2>/dev/null \
+  || source "${BASH_SOURCE[0]%/*}/lib/is-cmm-ext.sh" 2>/dev/null \
+  || { exit 0; } # if lib missing, don't block
+
+is_cmm_ext "$FILE_PATH" || exit 0
 
 # --- Exception: Small Files (<50 lines) ---
 if [ -f "$FILE_PATH" ] && [ "$(wc -l < "$FILE_PATH" 2>/dev/null)" -lt 50 ]; then
