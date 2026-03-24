@@ -110,14 +110,13 @@ if [ "$IS_AGENT" -eq 1 ]; then
 
 `session-gate.sh` (PreToolUse:*) blocks write/network tools until the CMM index sentinel is created.
 CMM tools, Bash, Read, Grep, and Glob bypass the gate — but Edit, Write, WebFetch, etc. are blocked.
-Run `index_status` or `index_repository` first to create the sentinel and unblock everything.
+Run `index_repository` first to create the sentinel and unblock everything.
 
 If the sentinel is marked STALE (after a recent git commit): tools remain open — you are NOT blocked.
 You may see an advisory note after CMM query calls. Call `index_repository` when you need current graph data.
 
-**Step 1 — Open the gate (choose one):**
-- `index_status` — fast check; opens gate automatically if CMM server is up
-- `index_repository` — full re-index; call this to clear a stale advisory and get current graph data
+**Step 1 — Open the gate:**
+- `index_repository` — ensures graph is current (incremental, fast when already indexed); opens gate automatically
 
 **Allow-listed tools (bypass gate before sentinel exists):**
 - `mcp__codebase-memory-mcp__*` — ALL CMM tools pass Phase 2 unconditionally
@@ -151,9 +150,9 @@ else
   cat <<'PROMPT'
 **MANDATORY FIRST ACTION — Do this before responding to the user:**
 
-1. Run `index_status` to check if the codebase-memory-mcp graph is current.
-2. If the index is stale, missing, or has never been built, run `index_repository` to refresh it.
-3. Only after the index is confirmed current, proceed with the user's request.
+1. Run `index_repository` to ensure the codebase-memory-mcp graph is current.
+   (Incremental — skips unchanged files via content hashing, so this is fast when already indexed.)
+2. Only after the index is confirmed current, proceed with the user's request.
 
 Do NOT skip this step. Until the sentinel is created, write and network tools are blocked (Edit, Write, WebFetch, etc.).
 A stale index (after a recent commit) does not block tools — you'll see an advisory note on CMM queries.

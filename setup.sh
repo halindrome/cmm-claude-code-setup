@@ -649,11 +649,18 @@ install_global() {
 
   if [ "$DRY_RUN" = true ]; then
     echo "  [DRY RUN] Would create ${config_dir}/hooks/"
+    echo "  [DRY RUN] Would create ${config_dir}/hooks/lib/"
   else
     mkdir -p "${config_dir}/hooks"
+    mkdir -p "${config_dir}/hooks/lib"
   fi
 
+  # Install shared libraries first (sourced by hooks at runtime)
   shopt -s nullglob
+  for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
+    copy_file "$file" "${config_dir}/hooks/lib/$(basename "$file")"
+  done
+
   for file in "$SCRIPT_DIR/hooks/global/"*.sh; do
     copy_file "$file" "${config_dir}/hooks/$(basename "$file")"
     set_executable "${config_dir}/hooks/$(basename "$file")"

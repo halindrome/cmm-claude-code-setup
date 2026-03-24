@@ -17,7 +17,7 @@ This lets Claude navigate code by relationships (who calls what, what implements
 - **Change detection** — map git diffs to affected graph symbols and blast radius
 - **Architecture Decision Records** — persistent, section-based architectural summaries
 - **Cypher queries** — arbitrary graph queries for complex relationship patterns
-- **64 languages** — Python, Go, JavaScript, TypeScript, Rust, Java, C++, C#, Ruby, and many more
+- **67 languages** — Python, Go, JavaScript, TypeScript, Rust, Java, C++, C#, Ruby, and many more
 
 ---
 
@@ -355,7 +355,7 @@ The session lifecycle hooks (Steps 5-6) work together to ensure the code graph i
 Session starts
   -> cmm-session-start.sh injects "check index and refresh" prompt
   -> cmm-session-gate.sh blocks ALL tools until index is ready
-  -> Claude runs index_status, then index_repository if needed
+  -> Claude runs index_repository (incremental — fast when already indexed)
   -> cmm-sentinel-writer.sh detects index_repository completion, writes sentinel file
   -> cmm-session-gate.sh reads sentinel, unblocks all tools
   -> Session is ready — all tools available
@@ -371,8 +371,8 @@ Session starts
          ▼
 ┌─────────────────────────────────────┐
 │  cmm-session-start.sh              │
-│  Injects: "Run index_status, then  │
-│  index_repository if stale/missing" │
+│  Injects: "Run index_repository    │
+│  to ensure graph is current"        │
 └────────┬────────────────────────────┘
          │
          ▼

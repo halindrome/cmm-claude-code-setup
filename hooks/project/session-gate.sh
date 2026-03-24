@@ -94,9 +94,8 @@ if [ ! -f "$CMM_SENTINEL" ]; then
   cat >&2 <<BLOCKED
 BLOCKED: CMM index not refreshed for this session.
 
-Run one of these to open the gate:
-  mcp__codebase-memory-mcp__index_status       (fast check — opens gate if server is up)
-  mcp__codebase-memory-mcp__index_repository   (full reindex)
+Run this to open the gate:
+  mcp__codebase-memory-mcp__index_repository   (incremental — fast when already indexed)
 
 You can still use these tools without opening the gate:
   mcp__codebase-memory-mcp__*  Bash, Read, Grep, Glob, ToolSearch, Agent, SendMessage
