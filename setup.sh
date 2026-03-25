@@ -114,7 +114,7 @@ scan_drift_summary() {
   if [ "$#" -eq 0 ]; then
     return
   fi
-  local unchanged=0 changed=0 new_files=0
+  local unchanged=0 changed=0 new_files=0 src
   for src in "$@"; do
     local dest="${dest_dir}/$(basename "$src")"
     if [ ! -e "$dest" ]; then
@@ -711,6 +711,7 @@ install_global() {
   # Pre-scan: report drift summary before per-file prompts
   # shellcheck disable=SC2046
   scan_drift_summary "${config_dir}/hooks/lib" $( ls "$SCRIPT_DIR/hooks/lib/"*.sh 2>/dev/null )
+  # shellcheck disable=SC2046
   scan_drift_summary "${config_dir}/hooks" $( ls "$SCRIPT_DIR/hooks/global/"*.sh 2>/dev/null )
 
   # Install shared libraries first (sourced by hooks at runtime)
@@ -748,6 +749,7 @@ install_project() {
   # Pre-scan: report drift summary before per-file prompts
   # shellcheck disable=SC2046
   scan_drift_summary ".claude/hooks" $( ls "$SCRIPT_DIR/hooks/project/"*.sh 2>/dev/null )
+  # shellcheck disable=SC2046
   scan_drift_summary ".claude/rules" $( ls "$SCRIPT_DIR/rules/"* 2>/dev/null )
 
   shopt -s nullglob
