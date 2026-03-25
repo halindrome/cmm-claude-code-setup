@@ -69,12 +69,15 @@ copy_file() {
     echo "  [warn] $(basename "$dest") differs from source"
     if [ "$src" -nt "$dest" ]; then
       echo "         (source is newer — upstream update available)"
-    else
+    elif [ "$dest" -nt "$src" ]; then
       echo "         (installed is newer — local modifications present)"
+    else
+      echo "         (same timestamp — content differs)"
     fi
     # Interactive per-file prompt gated on tty
     if [ -t 0 ]; then
       printf "  Overwrite %s? [y/N]: " "$(basename "$dest")"
+      local _drift_choice
       read -r _drift_choice || true
       case "${_drift_choice:-}" in
         y|Y) ;;
@@ -106,6 +109,9 @@ scan_drift_summary() {
   local dest_dir="$1"
   shift
   if [ "$FORCE" = true ] || [ "$DRY_RUN" = true ]; then
+    return
+  fi
+  if [ "$#" -eq 0 ]; then
     return
   fi
   local unchanged=0 changed=0 new_files=0
