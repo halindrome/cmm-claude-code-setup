@@ -11,7 +11,7 @@ set -euo pipefail
 #   --project         Install project hooks to .claude/hooks/, rules to .claude/rules/,
 #                     create .mcp.json, and merge into .claude/settings.json
 #   --all             Install both global and project hooks
-#   --force           Overwrite existing files (default: skip existing)
+#   --force           Overwrite existing files without prompting (default: detect drift and prompt)
 #   --dry-run         Show what would be done without making changes
 #   --skip-mcp-check  Bypass all MCP availability checks (CMM binary, registration,
 #                     tool allowlist, context-mode). Useful for CI/automation.
@@ -60,8 +60,33 @@ copy_file() {
     return
   fi
   if [ -e "$dest" ] && [ "$FORCE" != true ]; then
-    echo "  [skip] $(basename "$dest") already exists (use --force to overwrite)"
-    return
+    # Drift detection: compare content first
+    if cmp -s "$src" "$dest"; then
+      echo "  [ok] $(basename "$dest") unchanged"
+      return
+    fi
+    # Files differ — show mtime direction context
+    echo "  [warn] $(basename "$dest") differs from source"
+    if [ "$src" -nt "$dest" ]; then
+      echo "         (source is newer — upstream update available)"
+    elif [ "$dest" -nt "$src" ]; then
+      echo "         (installed is newer — local modifications present)"
+    else
+      echo "         (same timestamp — content differs)"
+    fi
+    # Interactive per-file prompt gated on tty
+    if [ -t 0 ]; then
+      printf "  Overwrite %s? [y/N]: " "$(basename "$dest")"
+      local _drift_choice
+      read -r _drift_choice || true
+      case "${_drift_choice:-}" in
+        y|Y) ;;
+        *) echo "  [skip] Kept existing $(basename "$dest")"; return ;;
+      esac
+    else
+      echo "  [skip] Non-interactive — kept existing $(basename "$dest")"
+      return
+    fi
   fi
   cp "$src" "$dest"
   echo "  [ok] Copied $(basename "$dest")"
@@ -74,6 +99,34 @@ set_executable() {
     return
   fi
   chmod +x "$file"
+}
+
+# scan_drift_summary — Read-only pre-scan of copy_file-managed files.
+# Prints a single summary line: "  Scanning N file(s): X unchanged, Y changed, Z new"
+# Args: dest_dir src_file [src_file ...]
+# Only runs when FORCE!=true and DRY_RUN!=true.
+scan_drift_summary() {
+  local dest_dir="$1"
+  shift
+  if [ "$FORCE" = true ] || [ "$DRY_RUN" = true ]; then
+    return
+  fi
+  if [ "$#" -eq 0 ]; then
+    return
+  fi
+  local unchanged=0 changed=0 new_files=0 src
+  for src in "$@"; do
+    local dest="${dest_dir}/$(basename "$src")"
+    if [ ! -e "$dest" ]; then
+      new_files=$((new_files + 1))
+    elif cmp -s "$src" "$dest"; then
+      unchanged=$((unchanged + 1))
+    else
+      changed=$((changed + 1))
+    fi
+  done
+  local total=$((unchanged + changed + new_files))
+  echo "  Scanning ${total} file(s): ${unchanged} unchanged, ${changed} changed, ${new_files} new"
 }
 
 # ---------------------------------------------------------------------------
@@ -655,6 +708,12 @@ install_global() {
     mkdir -p "${config_dir}/hooks/lib"
   fi
 
+  # Pre-scan: report drift summary before per-file prompts
+  # shellcheck disable=SC2046
+  scan_drift_summary "${config_dir}/hooks/lib" $( ls "$SCRIPT_DIR/hooks/lib/"*.sh 2>/dev/null )
+  # shellcheck disable=SC2046
+  scan_drift_summary "${config_dir}/hooks" $( ls "$SCRIPT_DIR/hooks/global/"*.sh 2>/dev/null )
+
   # Install shared libraries first (sourced by hooks at runtime)
   shopt -s nullglob
   for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
@@ -686,6 +745,12 @@ install_project() {
     mkdir -p .claude/hooks
     mkdir -p .claude/rules
   fi
+
+  # Pre-scan: report drift summary before per-file prompts
+  # shellcheck disable=SC2046
+  scan_drift_summary ".claude/hooks" $( ls "$SCRIPT_DIR/hooks/project/"*.sh 2>/dev/null )
+  # shellcheck disable=SC2046
+  scan_drift_summary ".claude/rules" $( ls "$SCRIPT_DIR/rules/"* 2>/dev/null )
 
   shopt -s nullglob
   # Copies all hooks/project/*.sh to .claude/hooks/, including:
@@ -1247,7 +1312,7 @@ Flags:
   --project         Install project hooks to .claude/hooks/, rules to .claude/rules/,
                     create .mcp.json, and merge into .claude/settings.json
   --all             Install both global and project hooks
-  --force           Overwrite existing files (default: skip existing)
+  --force           Overwrite existing files without prompting (default: detect drift and prompt)
   --dry-run         Show what would be done without making changes
   --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
   --skip-statusline Skip the CMM statusline installation offer
@@ -1265,10 +1330,11 @@ no-op when Context Mode is not present — you can enable it later without
 re-running setup.
 
 Examples:
-  bash setup.sh --project             # Install project hooks into current directory
+  bash setup.sh --project             # Install project hooks; on re-run, drifted files prompt to overwrite
   bash setup.sh --global              # Install global hooks for all projects
   bash setup.sh --all --force         # Install everything, overwriting existing files
   bash setup.sh --dry-run --project   # Preview project install without making changes
+  bash setup.sh --project --force     # Re-install everything, overwriting all existing files
   bash setup.sh --project --skip-mcp-check  # Install without MCP availability checks
 HELP
         exit 0
