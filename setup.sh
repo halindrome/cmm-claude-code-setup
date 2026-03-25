@@ -60,8 +60,30 @@ copy_file() {
     return
   fi
   if [ -e "$dest" ] && [ "$FORCE" != true ]; then
-    echo "  [skip] $(basename "$dest") already exists (use --force to overwrite)"
-    return
+    # Drift detection: compare content first
+    if cmp -s "$src" "$dest"; then
+      echo "  [ok] $(basename "$dest") unchanged"
+      return
+    fi
+    # Files differ — show mtime direction context
+    echo "  [warn] $(basename "$dest") differs from source"
+    if [ "$src" -nt "$dest" ]; then
+      echo "         (source is newer — upstream update available)"
+    else
+      echo "         (installed is newer — local modifications present)"
+    fi
+    # Interactive per-file prompt gated on tty
+    if [ -t 0 ]; then
+      printf "  Overwrite %s? [y/N]: " "$(basename "$dest")"
+      read -r _drift_choice || true
+      case "${_drift_choice:-}" in
+        y|Y) ;;
+        *) echo "  [skip] Kept existing $(basename "$dest")"; return ;;
+      esac
+    else
+      echo "  [skip] Non-interactive — kept existing $(basename "$dest")"
+      return
+    fi
   fi
   cp "$src" "$dest"
   echo "  [ok] Copied $(basename "$dest")"
