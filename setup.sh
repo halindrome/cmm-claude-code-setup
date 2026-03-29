@@ -977,7 +977,10 @@ except Exception:
       cat > "$script_path" <<'STATUSLINE_SCRIPT'
 #!/bin/bash
 # statusline-cmm.sh — Display CMM call stats in Claude Code statusline
-CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
+[ -z "$PROJECT_HASH" ] && CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
 if [ ! -f "$CACHE" ]; then echo "CMM:0"; exit 0; fi
 TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
 SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
@@ -1018,7 +1021,10 @@ done
 
 # --- CMM stats ---
 CMM_OUTPUT=""
-CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
+[ -z "$PROJECT_HASH" ] && CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
 if [ -f "$CACHE" ]; then
   TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
   SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
