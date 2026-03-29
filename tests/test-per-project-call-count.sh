@@ -63,10 +63,13 @@ mkdir -p "$REPO_A" "$REPO_B"
 
 git -C "$REPO_A" init -q
 git -C "$REPO_B" init -q
+# Use canonical paths (pwd -P) to match what the hook computes at runtime
+REPO_A_REAL="$(cd "$REPO_A" && pwd -P)"
+REPO_B_REAL="$(cd "$REPO_B" && pwd -P)"
 
 # Compute expected hashes (same logic as the hook)
-HASH_A=$(echo "$REPO_A" | md5 -q 2>/dev/null || echo "$REPO_A" | md5sum | awk '{print $1}')
-HASH_B=$(echo "$REPO_B" | md5 -q 2>/dev/null || echo "$REPO_B" | md5sum | awk '{print $1}')
+HASH_A=$(echo "$REPO_A_REAL" | md5 -q 2>/dev/null || echo "$REPO_A_REAL" | md5sum | awk '{print $1}')
+HASH_B=$(echo "$REPO_B_REAL" | md5 -q 2>/dev/null || echo "$REPO_B_REAL" | md5sum | awk '{print $1}')
 
 COUNTER_DIR="$FAKE_HOME/.cache/codebase-memory-mcp"
 COUNTER_A="${COUNTER_DIR}/_call-counts-${HASH_A}.json"
@@ -131,8 +134,10 @@ else
   REPO_S="$TMPDIR_STATUS/repo-s"
   mkdir -p "$REPO_S"
   git -C "$REPO_S" init -q
+  # Use the canonical path (pwd -P) to match what the statusline computes at runtime
+  REPO_S_REAL="$(cd "$REPO_S" && pwd -P)"
 
-  HASH_S=$(echo "$REPO_S" | md5 -q 2>/dev/null || echo "$REPO_S" | md5sum | awk '{print $1}')
+  HASH_S=$(echo "$REPO_S_REAL" | md5 -q 2>/dev/null || echo "$REPO_S_REAL" | md5sum | awk '{print $1}')
   COUNTER_S="$FAKE_HOME_S/.cache/codebase-memory-mcp/_call-counts-${HASH_S}.json"
 
   # Write known counter with total_calls=99
