@@ -28,6 +28,16 @@
             "command": "bash .claude/hooks/agent-cmm-gate.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ctx-execute-enforcer.sh",
+            "_comment": "Blocks raw Bash commands that produce large output; redirects to ctx_execute (no-ops if Context Mode not installed)"
+          }
+        ]
       }
     ],
     "PostToolUse": [
