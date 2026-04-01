@@ -726,6 +726,13 @@ install_global() {
   done
   shopt -u nullglob
 
+  # Copy track-hook-blocks.sh alongside global hooks — cmm-nudge.sh calls it
+  # via BASH_SOURCE dirname resolution when running from the global hooks dir
+  if [ -f "$SCRIPT_DIR/hooks/project/track-hook-blocks.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/project/track-hook-blocks.sh" "${config_dir}/hooks/track-hook-blocks.sh"
+    set_executable "${config_dir}/hooks/track-hook-blocks.sh"
+  fi
+
   merge_settings_json "${config_dir}/settings.json" "global"
 
   echo ""
@@ -777,6 +784,13 @@ install_project() {
   if [ -f "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ]; then
     copy_file "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ".claude/hooks/cmm-nudge.sh"
     set_executable ".claude/hooks/cmm-nudge.sh"
+  fi
+
+  # Copy track-hook-blocks.sh to .claude/hooks/ — both cmm-nudge.sh and
+  # ctx-execute-enforcer.sh call it via BASH_SOURCE dirname resolution
+  if [ -f "$SCRIPT_DIR/hooks/project/track-hook-blocks.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/project/track-hook-blocks.sh" ".claude/hooks/track-hook-blocks.sh"
+    set_executable ".claude/hooks/track-hook-blocks.sh"
   fi
 
   # --- Agent override files (frontmatter hooks for VBW subagents) ---
