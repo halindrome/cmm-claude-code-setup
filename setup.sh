@@ -1029,7 +1029,17 @@ TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
 SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
 SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
 TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
-echo "CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+# --- Block counts ---
+BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
+if [ -f "$BLOCK_CACHE" ]; then
+  READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  fi
+fi
+echo "$CMM_OUTPUT"
 STATUSLINE_SCRIPT
     else
       # PROJECT MODE — Generate wrapper statusline-cmm.sh
