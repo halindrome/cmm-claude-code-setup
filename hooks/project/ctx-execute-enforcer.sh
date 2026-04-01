@@ -180,6 +180,9 @@ esac
 
 # --- Block Decision ---
 if [ "$SHOULD_BLOCK" -eq 1 ]; then
+  # --- Block Counter ---
+  bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash" 2>/dev/null || true
+
   cat >&2 <<BLOCKED
 BLOCKED: This command produces large output. Use ctx_execute to run it in the sandbox.
 
