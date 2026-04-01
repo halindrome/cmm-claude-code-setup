@@ -211,7 +211,7 @@ with open('$FAKE_HOME_T5/.cache/codebase-memory-mcp/_call-counts-${HASH_T5}.json
 # (This is the source of truth -- the installed copy may lag)
 STATUSLINE_TMP="$TMPDIR_T5/statusline-test.sh"
 sed -n "/cat > \"\$script_path\" <<'STATUSLINE_SCRIPT'/,/^STATUSLINE_SCRIPT$/p" "$SETUP_SH" \
-  | tail -n +2 | head -n -1 > "$STATUSLINE_TMP"
+  | tail -n +2 | sed '$d' > "$STATUSLINE_TMP"
 chmod +x "$STATUSLINE_TMP"
 
 # Run the extracted statusline from the test repo
@@ -261,7 +261,7 @@ with open('$FAKE_HOME_T6/.cache/codebase-memory-mcp/_call-counts-${HASH_T6}.json
 # Use the same extracted global statusline heredoc
 STATUSLINE_TMP6="$TMPDIR_T6/statusline-test.sh"
 sed -n "/cat > \"\$script_path\" <<'STATUSLINE_SCRIPT'/,/^STATUSLINE_SCRIPT$/p" "$SETUP_SH" \
-  | tail -n +2 | head -n -1 > "$STATUSLINE_TMP6"
+  | tail -n +2 | sed '$d' > "$STATUSLINE_TMP6"
 chmod +x "$STATUSLINE_TMP6"
 
 OUTPUT6=$(cd "$REPO_T6" && HOME="$FAKE_HOME_T6" bash "$STATUSLINE_TMP6" 2>/dev/null) || OUTPUT6=""
