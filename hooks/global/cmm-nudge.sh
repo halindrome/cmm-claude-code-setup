@@ -104,4 +104,7 @@ BLOCKED: Use CMM graph tools instead of Read for '$BASENAME'.
     - non-code files (JSON, YAML, Markdown, config)
 EOF
 
+# --- Block Counter ---
+bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "read" 2>/dev/null || true
+
 exit 2
