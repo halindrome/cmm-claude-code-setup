@@ -126,13 +126,31 @@ _assert_exit "Test 10: no .mcp.json allowed" 0 \
     "{\"tool_input\":{\"file_path\":\"$PROJ_NO_MCP/big.py\"}}" \
     "CLAUDE_CONFIG_DIR=$FAKE_CONFIG"
 
-echo "--- Test 11: cmm-exempt bypass marker -> allowed (exit 0) ---"
+echo "--- Test 11: cmm-exempt bypass marker in description -> allowed (exit 0) ---"
 _assert_exit "Test 11: cmm-exempt bypass" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"_comment\":\"# cmm-exempt\"}}"
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"description\":\"reading for context # cmm-exempt\"}}"
 
 echo "--- Test 12: Top-level file_path fallback (exit 2) ---"
 _assert_exit "Test 12: top-level file_path blocked" 2 \
     "{\"file_path\":\"$PROJ/big.py\"}"
+
+echo "--- Test 13: Targeted Read with offset+limit -> allowed (exit 0) ---"
+_assert_exit "Test 13: offset+limit allowed" 0 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":100,\"limit\":20}}"
+
+echo "--- Test 14: Non-existent file -> allowed (exit 0) ---"
+_assert_exit "Test 14: non-existent file allowed" 0 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/does-not-exist.py\"}}"
+
+echo "--- Test 15: cmm-exempt in file path does NOT bypass (exit 2) ---"
+# Create a file with cmm-exempt in its name — should still be blocked
+for i in $(seq 1 60); do echo "line $i"; done > "$PROJ/cmm-exempt-handler.py"
+_assert_exit "Test 15: cmm-exempt in path still blocked" 2 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/cmm-exempt-handler.py\"}}"
+
+echo "--- Test 16: Large offset+limit (>100 lines) -> blocked (exit 2) ---"
+_assert_exit "Test 16: large limit still blocked" 2 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":0,\"limit\":500}}"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

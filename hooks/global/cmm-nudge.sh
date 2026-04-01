@@ -8,12 +8,42 @@
 
 # --- Input Parsing (dual-form: tool_input.file_path + top-level fallback) ---
 INPUT=$(cat)
-FILE_PATH=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path','') or d.get('file_path',''))" 2>/dev/null)
+PARSED=$(echo "$INPUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+ti=d.get('tool_input',{})
+fp=ti.get('file_path','') or d.get('file_path','')
+has_offset='1' if (ti.get('offset') is not None and ti.get('limit') is not None) else '0'
+limit=str(ti.get('limit',0))
+print(fp)
+print(has_offset)
+print(limit)
+" 2>/dev/null)
+
+FILE_PATH=$(echo "$PARSED" | sed -n '1p')
+HAS_OFFSET=$(echo "$PARSED" | sed -n '2p')
+READ_LIMIT=$(echo "$PARSED" | sed -n '3p')
 
 [ -z "$FILE_PATH" ] && exit 0
 
-# --- Bypass marker: # cmm-exempt ---
-echo "$INPUT" | grep -q 'cmm-exempt' && exit 0
+# --- Bypass marker: cmm-exempt (checked in description field, not file_path) ---
+# Parse description separately to avoid matching cmm-exempt in file paths
+BYPASS=$(echo "$INPUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+ti=d.get('tool_input',{})
+desc=ti.get('description','')
+if 'cmm-exempt' in desc:
+    print('1')
+else:
+    print('0')
+" 2>/dev/null || echo "0")
+[ "$BYPASS" = "1" ] && exit 0
+
+# --- Exception: Targeted Read with offset+limit (sliced edit workflow) ---
+if [ "$HAS_OFFSET" = "1" ] && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
+  exit 0
+fi
 
 # --- Exception: Meta/Config Files (check BEFORE extension match) ---
 BASENAME=$(basename "$FILE_PATH")
@@ -62,8 +92,11 @@ case "$FILE_PATH" in
     exit 0 ;; # non-code extension — allow Read
 esac
 
+# --- Exception: Non-existent files (CMM can't index them either) ---
+[ ! -f "$FILE_PATH" ] && exit 0
+
 # --- Exception: Small Files (<50 lines) ---
-if [ -f "$FILE_PATH" ] && [ "$(wc -l < "$FILE_PATH" 2>/dev/null)" -lt 50 ]; then
+if [ "$(wc -l < "$FILE_PATH" 2>/dev/null)" -lt 50 ]; then
   exit 0
 fi
 
