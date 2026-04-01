@@ -977,7 +977,28 @@ except Exception:
       cat > "$script_path" <<'STATUSLINE_SCRIPT'
 #!/bin/bash
 # statusline-cmm.sh — Display CMM call stats in Claude Code statusline
-CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+if [ -n "$PROJECT_ROOT" ]; then
+    _WALK="$PROJECT_ROOT"
+    while true; do
+        _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_PARENT" ] && break
+        _WALK="$_PARENT"
+    done
+    PROJECT_ROOT="$_WALK"
+fi
+if [ -n "$PROJECT_ROOT" ]; then
+    _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
+    _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
+    [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
+    [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
+    if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
+        _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
+        [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
+    fi
+fi
+PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
 if [ ! -f "$CACHE" ]; then echo "CMM:0"; exit 0; fi
 TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
 SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
@@ -1018,7 +1039,28 @@ done
 
 # --- CMM stats ---
 CMM_OUTPUT=""
-CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+if [ -n "$PROJECT_ROOT" ]; then
+    _WALK="$PROJECT_ROOT"
+    while true; do
+        _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_PARENT" ] && break
+        _WALK="$_PARENT"
+    done
+    PROJECT_ROOT="$_WALK"
+fi
+if [ -n "$PROJECT_ROOT" ]; then
+    _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
+    _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
+    [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
+    [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
+    if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
+        _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
+        [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
+    fi
+fi
+PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
 if [ -f "$CACHE" ]; then
   TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
   SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
