@@ -1105,6 +1105,15 @@ if [ -f "$CACHE" ]; then
 else
   CMM_OUTPUT="CMM:0"
 fi
+# --- Block counts ---
+BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
+if [ -f "$BLOCK_CACHE" ]; then
+  READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  fi
+fi
 
 # --- Combine: run global statusline, append CMM stats ---
 # Skip if the global command is itself a CMM statusline (avoids double output with --all)
