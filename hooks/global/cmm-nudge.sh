@@ -3,6 +3,7 @@
 # BLOCKING: exits 2 for code files when CMM is available, redirecting to graph tools.
 #
 # Install: cp hooks/global/cmm-nudge.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/cmm-nudge.sh
+#   (or: setup.sh --project also copies to .claude/hooks/cmm-nudge.sh for agent frontmatter hooks)
 # Register in ~/.claude/settings.json:
 #   "hooks": { "PreToolUse": [{ "matcher": "Read", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-nudge.sh"}] }] }
 
