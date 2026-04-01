@@ -149,6 +149,11 @@ case "$COMMAND" in
   wc\ *|head\ *|tail\ -[0-9]*|tail\ -n\ [0-9]*)      exit 0 ;;
 esac
 
+# Remote commands (output belongs to remote context, not local CTX store)
+case "$COMMAND" in
+  ssh\ *|scp\ *|rsync\ *|sftp\ *)                              exit 0 ;;
+esac
+
 # --- Block Patterns (redirect to ctx_execute) ---
 SHOULD_BLOCK=0
 
