@@ -152,6 +152,14 @@ echo "--- Test 16: Large offset+limit (>100 lines) -> blocked (exit 2) ---"
 _assert_exit "Test 16: large limit still blocked" 2 \
     "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":0,\"limit\":500}}"
 
+echo "--- Test 17: Offset only (no limit) -> blocked (exit 2) ---"
+_assert_exit "Test 17: offset-only still blocked" 2 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":10}}"
+
+echo "--- Test 18: Limit only (no offset) -> blocked (exit 2) ---"
+_assert_exit "Test 18: limit-only still blocked" 2 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"limit\":20}}"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

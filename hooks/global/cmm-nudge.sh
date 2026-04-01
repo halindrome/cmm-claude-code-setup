@@ -26,17 +26,22 @@ READ_LIMIT=$(echo "$PARSED" | sed -n '3p')
 
 [ -z "$FILE_PATH" ] && exit 0
 
-# --- Bypass marker: cmm-exempt (checked in description field, not file_path) ---
-# Parse description separately to avoid matching cmm-exempt in file paths
+# --- Bypass marker: cmm-exempt ---
+# Check for cmm-exempt in tool_input fields OTHER than file_path.
+# Read tool has no description param, but Claude may add extra fields or
+# use _comment. Also check top-level fields outside tool_input.
 BYPASS=$(echo "$INPUT" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 ti=d.get('tool_input',{})
-desc=ti.get('description','')
-if 'cmm-exempt' in desc:
-    print('1')
-else:
-    print('0')
+# Check all tool_input fields except file_path
+for k,v in ti.items():
+    if k != 'file_path' and isinstance(v, str) and 'cmm-exempt' in v:
+        print('1'); sys.exit(0)
+# Check top-level description (if present)
+if 'cmm-exempt' in d.get('description',''):
+    print('1'); sys.exit(0)
+print('0')
 " 2>/dev/null || echo "0")
 [ "$BYPASS" = "1" ] && exit 0
 
@@ -108,11 +113,11 @@ BLOCKED: Use CMM graph tools instead of Read for '$BASENAME'.
   - Trace callers: mcp__codebase-memory-mcp__trace_call_path
   - Edit workflow: search_graph -> get_code_snippet (line range) -> Read(offset=N, limit=M) -> Edit
   Full Read is allowed when:
+    - targeted read with offset+limit (up to 100 lines)
     - editing 6+ functions in same file
     - need imports/globals/module-level init
     - file < 50 lines
     - non-code files (JSON, YAML, Markdown, config)
-    - add '# cmm-exempt' comment to bypass
 EOF
 
 exit 2
