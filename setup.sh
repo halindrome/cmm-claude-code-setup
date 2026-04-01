@@ -758,14 +758,39 @@ install_project() {
   #   subagent-cmm-startup.sh — SubagentStart advisory hook (injects CMM state into all subagents via additionalContext)
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
-  # NOTE: .claude/agents/dev.md (Dev agent override with SUBAGENT_COMMIT=1 bypass) is NOT copied by
-  # setup.sh — it is specific to this repo's VBW setup. Users installing this hook layer into their
-  # own project should create their own .claude/agents/ overrides if they want agent-level hook behavior.
+  # NOTE: VBW agent override files (agents/*.md) ARE copied by setup.sh --project to
+  # .claude/agents/. These shadow VBW plugin agents to inject CMM enforcement hooks
+  # via frontmatter (the only mechanism that fires inside subagents).
+  # The existing .claude/agents/dev.md is project-specific and NOT managed by setup.sh.
+  # Users installing this hook layer into their own project should create their own
+  # .claude/agents/ overrides if they want agent-level hook behavior.
   for file in "$SCRIPT_DIR/hooks/project/"*.sh; do
     copy_file "$file" ".claude/hooks/$(basename "$file")"
     set_executable ".claude/hooks/$(basename "$file")"
   done
   shopt -u nullglob
+
+  # Copy cmm-nudge.sh from hooks/global/ to .claude/hooks/ — needed by agent frontmatter
+  # hooks (in .claude/agents/) that reference cmm-nudge.sh via project-relative paths
+  # (e.g., "bash .claude/hooks/cmm-nudge.sh"). Without this, project installs that skip
+  # --global would lack the file at the expected location.
+  if [ -f "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ".claude/hooks/cmm-nudge.sh"
+    set_executable ".claude/hooks/cmm-nudge.sh"
+  fi
+
+  # --- Agent override files (frontmatter hooks for VBW subagents) ---
+  # Project-level .claude/agents/ overrides shadow VBW plugin agent definitions
+  # to inject CMM enforcement hooks (cmm-nudge.sh, ctx-execute-enforcer.sh,
+  # track-cmm-calls.sh) into subagent execution contexts. Plugin agents ignore
+  # hooks: fields, so this override is the only enforcement path.
+  if [ -d "$SCRIPT_DIR/agents" ]; then
+    mkdir -p ".claude/agents"
+    for agent_file in "$SCRIPT_DIR"/agents/*.md; do
+      [ -f "$agent_file" ] || continue
+      copy_file "$agent_file" ".claude/agents/$(basename "$agent_file")"
+    done
+  fi
 
   # Purge deprecated hook files and their settings.json entries (unconditional).
   # When hooks are renamed or merged, stale files in .claude/hooks/ that remain
