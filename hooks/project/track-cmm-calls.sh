@@ -45,11 +45,7 @@ fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 
 COUNTER_DIR="$HOME/.cache/codebase-memory-mcp"
-if [ -n "$PROJECT_HASH" ]; then
-    COUNTER_FILE="${COUNTER_DIR}/_call-counts-${PROJECT_HASH}.json"
-else
-    COUNTER_FILE="$COUNTER_DIR/_call-counts.json"
-fi
+COUNTER_FILE="${COUNTER_DIR}/_call-counts-${PROJECT_HASH}.json"
 mkdir -p "$COUNTER_DIR" 2>/dev/null
 
 TEMP=$(mktemp)

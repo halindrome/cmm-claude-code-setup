@@ -81,10 +81,10 @@ echo '{"total_calls": 20, "by_tool": {}}' > "$COUNTER_B"
 
 # Run the hook from REPO_A with mocked HOME, simulating a CMM tool call
 MOCK_INPUT='{"tool_name":"mcp__codebase-memory-mcp__search_graph","tool_input":{},"tool_response":{}}'
-(cd "$REPO_A" && HOME="$FAKE_HOME" echo "$MOCK_INPUT" | bash "$TRACK_HOOK") 2>/dev/null || true
+echo "$MOCK_INPUT" | (cd "$REPO_A" && HOME="$FAKE_HOME" bash "$TRACK_HOOK") 2>/dev/null || true
 
 # Run the hook from REPO_B with mocked HOME
-(cd "$REPO_B" && HOME="$FAKE_HOME" echo "$MOCK_INPUT" | bash "$TRACK_HOOK") 2>/dev/null || true
+echo "$MOCK_INPUT" | (cd "$REPO_B" && HOME="$FAKE_HOME" bash "$TRACK_HOOK") 2>/dev/null || true
 
 # Assert each counter file exists independently
 if [ -f "$COUNTER_A" ]; then
@@ -156,7 +156,7 @@ with open('$COUNTER_S', 'w') as f:
 "
 
   # Run statusline from REPO_S with mocked HOME
-  OUTPUT=$(cd "$REPO_S" && HOME="$FAKE_HOME_S" bash "$STATUSLINE_HOOK" 2>/dev/null) || OUTPUT=""
+  OUTPUT=$(cd "$REPO_S" && export HOME="$FAKE_HOME_S" && bash "$STATUSLINE_HOOK" 2>/dev/null) || OUTPUT=""
 
   if echo "$OUTPUT" | grep -q 'CMM:99'; then
     pass "Statusline output contains 'CMM:99' (correct per-project counter read)"
