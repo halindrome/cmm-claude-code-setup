@@ -767,6 +767,15 @@ install_project() {
   done
   shopt -u nullglob
 
+  # Copy cmm-nudge.sh from hooks/global/ to .claude/hooks/ — needed by agent frontmatter
+  # hooks (in .claude/agents/) that reference cmm-nudge.sh via project-relative paths
+  # (e.g., "bash .claude/hooks/cmm-nudge.sh"). Without this, project installs that skip
+  # --global would lack the file at the expected location.
+  if [ -f "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ".claude/hooks/cmm-nudge.sh"
+    set_executable ".claude/hooks/cmm-nudge.sh"
+  fi
+
   # Purge deprecated hook files and their settings.json entries (unconditional).
   # When hooks are renamed or merged, stale files in .claude/hooks/ that remain
   # registered in settings.json can deadlock the session (e.g. old cmm-session-gate.sh
