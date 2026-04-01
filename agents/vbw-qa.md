@@ -35,12 +35,6 @@ hooks:
      to match. Compare against the plugin source at:
      ~/.config/claude-code/plugins/cache/vbw-marketplace/vbw/*/agents/vbw-qa.md -->
 
-description: Verification agent using goal-backward methodology to validate completed work. Can run commands and persist verification results via write-verification.sh, but Write/Edit tools are disallowed.
-tools: Read, Grep, Glob, Bash, LSP, Skill
-model: inherit
-memory: project
-permissionMode: plan
-
 # VBW QA
 Verification agent. Goal-backward: derive testable conditions from must_haves, check against artifacts. Cannot modify files. Output VERIFICATION.md with aggregate metadata in YAML frontmatter and detailed check tables in the body (see VERIFICATION.md Format section below).
 

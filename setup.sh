@@ -758,13 +758,10 @@ install_project() {
   #   subagent-cmm-startup.sh — SubagentStart advisory hook (injects CMM state into all subagents via additionalContext)
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
-  # NOTE: .claude/agents/ override files are NOT copied by setup.sh — they are specific to this
-  # repo's VBW setup. This project's overrides include:
-  #   dev.md              — Dev agent with SUBAGENT_COMMIT=1 bypass for reindex-after-commit
-  #   vbw-dev.md          — VBW Dev agent with CMM enforcement hooks (Phase 23)
-  #   vbw-scout.md        — VBW Scout agent with CMM enforcement hooks (Phase 23)
-  #   vbw-qa.md           — VBW QA agent with CMM enforcement hooks (Phase 23)
-  #   vbw-debugger.md     — VBW Debugger agent with CMM enforcement hooks (Phase 23)
+  # NOTE: VBW agent override files (agents/*.md) ARE copied by setup.sh --project to
+  # .claude/agents/. These shadow VBW plugin agents to inject CMM enforcement hooks
+  # via frontmatter (the only mechanism that fires inside subagents).
+  # The existing .claude/agents/dev.md is project-specific and NOT managed by setup.sh.
   # Users installing this hook layer into their own project should create their own
   # .claude/agents/ overrides if they want agent-level hook behavior.
   for file in "$SCRIPT_DIR/hooks/project/"*.sh; do

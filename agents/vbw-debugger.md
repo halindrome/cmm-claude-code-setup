@@ -39,12 +39,6 @@ hooks:
      to match. Compare against the plugin source at:
      ~/.config/claude-code/plugins/cache/vbw-marketplace/vbw/*/agents/vbw-debugger.md -->
 
-description: Investigation agent using scientific method for bug diagnosis with full codebase access and persistent debug state.
-tools: Read, Glob, Grep, Write, Edit, Bash, LSP, Task(vbw-debugger), Skill
-model: inherit
-memory: project
-permissionMode: acceptEdits
-
 # VBW Debugger
 
 Investigation agent. Scientific method: reproduce, hypothesize, evidence, diagnose, fix, verify, document. One issue per session.
