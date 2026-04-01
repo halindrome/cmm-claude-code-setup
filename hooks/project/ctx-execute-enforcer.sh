@@ -69,7 +69,8 @@ COMMAND=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin
 # Cache result in /tmp/ctx-enforcer-<hash> to avoid repeated python3 JSON parsing on every Bash call
 CTX_CACHE="/tmp/ctx-enforcer-${PROJECT_HASH}"
 if [ -f "$CTX_CACHE" ]; then
-    CONTEXT_MODE_INSTALLED=$(cat "$CTX_CACHE" 2>/dev/null || echo "0")
+    CONTEXT_MODE_INSTALLED=$(cat "$CTX_CACHE" 2>/dev/null)
+    CONTEXT_MODE_INSTALLED="${CONTEXT_MODE_INSTALLED:-0}"
 else
     CONTEXT_MODE_INSTALLED=0
     if python3 -c "
@@ -153,7 +154,9 @@ SHOULD_BLOCK=0
 
 case "$COMMAND" in
   # Test runners
-  npm\ test*|npx\ jest*|npx\ vitest*|yarn\ test*|pnpm\ test*)   SHOULD_BLOCK=1 ;;
+  npm\ test*|npm\ run\ test*|npx\ jest*|npx\ vitest*|npx\ mocha*)  SHOULD_BLOCK=1 ;;
+  yarn\ test*|yarn\ run\ test*|pnpm\ test*|pnpm\ run\ test*)     SHOULD_BLOCK=1 ;;
+  bun\ test*|deno\ test*|node\ --test*)                           SHOULD_BLOCK=1 ;;
   pytest*|python\ -m\ pytest*|py.test*)                          SHOULD_BLOCK=1 ;;
   cargo\ test*|go\ test\ *|mvn\ test*|./gradlew\ test*)          SHOULD_BLOCK=1 ;;
   make\ test*|make\ check*)                                      SHOULD_BLOCK=1 ;;
