@@ -8,7 +8,7 @@
 
 - **`get_architecture`**: ALWAYS run first when exploring an unfamiliar codebase or starting a new task. Returns language breakdown, top packages, entry points, routes, hotspots, and cross-service boundaries. Use `aspects` parameter to narrow output.
 
-- **`search_graph`**: ALWAYS use to find functions, classes, or modules by name pattern. Supports regex (`.*Handler$`), degree filters, label filters. NEVER use Grep to search for function/class definitions — `search_graph` is faster and returns connectivity metadata.
+- **`search_graph`**: ALWAYS use to find functions, classes, or modules by name pattern. Supports regex (`.*Handler$`), degree filters, label filters. Do NOT pass the `project` parameter — CMM auto-detects the project from the current repo. NEVER use Grep to search for function/class definitions — `search_graph` is faster and returns connectivity metadata.
 
 - **`get_code_snippet`**: Use to retrieve source code for a specific function or class by qualified name. Returns source, signature, complexity, callers, callees. NEVER read an entire file to get one function — use this instead.
 
@@ -20,7 +20,7 @@
 
 - **`detect_changes`**: Run BEFORE committing to assess blast radius. Maps git diff hunks to affected graph symbols and traces inbound callers with risk classification (CRITICAL/HIGH/MEDIUM/LOW).
 
-- **`index_repository`**: Run at session start and after batch edits. Supports incremental reindex via content hashing. Auto-sync handles updates after initial indexing.
+- **`index_repository`**: Run at session start and after batch edits. Requires `repo_path` parameter with the full filesystem path (e.g., `/Users/name/project`). Do NOT pass `project` — that is not a valid parameter. Supports incremental reindex via content hashing.
 
 - **`manage_adr`**: Read/update the Architecture Decision Record. ALWAYS check ADR before making architectural changes. Fixed sections: PURPOSE, STACK, ARCHITECTURE, PATTERNS, TRADEOFFS, PHILOSOPHY.
 
