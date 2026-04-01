@@ -69,6 +69,27 @@ _assert_exit "eslint command blocked" 2 \
 _assert_exit "tail -f command blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"tail -f /var/log/syslog"}}'
 
+_assert_exit "npm run test blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"npm run test"}}'
+
+_assert_exit "yarn run test blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"yarn run test"}}'
+
+_assert_exit "npx mocha blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"npx mocha"}}'
+
+_assert_exit "bun test blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"bun test"}}'
+
+_assert_exit "deno test blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"deno test"}}'
+
+_assert_exit "node --test blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"node --test"}}'
+
+_assert_exit "pnpm run test blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"pnpm run test"}}'
+
 # --- Exempt command tests (expect exit 0, sentinels present) ---
 echo ""
 echo "--- Exempt command tests (sentinels present, expect exit 0) ---"
