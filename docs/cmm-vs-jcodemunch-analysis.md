@@ -69,12 +69,14 @@ Both setup repos use nearly identical hook patterns (the CMM setup is adapted fr
 | Hook | **cmm-claude-code-setup** | **jmunch-claude-code-setup** |
 |------|--------------------------|------------------------------|
 | Session gate | Blocks all tools until index ready | Same pattern |
-| Read nudge | Advisory only (exit 0) | **Blocking** (exit 2) on .py/.ts/.md |
+| Read nudge | **Blocking** (exit 2) on 50+ code extensions | **Blocking** (exit 2) on .py/.ts/.md |
 | Agent gate | Blocks spawn without CMM keywords | Same pattern |
 | Reindex after edit | Not implemented | Debounced (30s) nudge |
 | Reindex after commit | Not implemented | Hard block (marks sentinel stale) |
 | Savings tracking | Call counter only (no genuine/optimistic split) | Genuine savings filter + JSONL history |
 | Statusline | Call counts (`CMM:87 sg:32 cs:19`) | Token savings (`JCM:920.376K today:45.2K`) |
+
+> **Note on Read blocking scope:** The CMM version blocks Read calls on pure code file extensions only (`.py`, `.ts`, `.go`, `.rs`, etc.) and allows config, data, and documentation files through. jmunch splits blocking across two hooks: jcodemunch-nudge.sh blocks code files, while jdocmunch-nudge.sh blocks documentation files (`.md`, `.mdx`, `.rst`). Both exit 0 (allow) when their respective tools are not installed.
 
 ## Tool Sets
 
