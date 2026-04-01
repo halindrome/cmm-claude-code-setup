@@ -25,9 +25,9 @@ _assert_exit() {
 # Compute the same PROJECT_HASH the hook uses: md5 of canonical project root path
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 if command -v md5 >/dev/null 2>&1; then
-    PROJECT_HASH="$(echo -n "$PROJECT_ROOT" | md5 -q)"
+    PROJECT_HASH="$(echo "$PROJECT_ROOT" | md5 -q)"
 else
-    PROJECT_HASH="$(echo -n "$PROJECT_ROOT" | md5sum | awk '{print $1}')"
+    PROJECT_HASH="$(echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')"
 fi
 
 CM_CACHE="/tmp/ctx-enforcer-${PROJECT_HASH}"
@@ -109,11 +109,10 @@ touch "$CM_SENTINEL"
 echo ""
 echo "--- Context Mode not installed test (expect exit 0) ---"
 
-# Remove CM detection cache and set PROJECT_ROOT env to /tmp (no .mcp.json with context-mode)
-rm -f "$CM_CACHE"
+# Write "0" to cache to simulate Context Mode not detected
+echo "0" > "$CM_CACHE"
 
-# Override PROJECT_ROOT so the hook's mcp.json check finds nothing
-PROJECT_ROOT_OVERRIDE=/tmp _assert_exit "no CM install allows npm test" 0 \
+_assert_exit "no CM install allows npm test" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
 
 # Restore cache for any subsequent tests
