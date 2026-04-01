@@ -26,24 +26,7 @@ READ_LIMIT=$(echo "$PARSED" | sed -n '3p')
 
 [ -z "$FILE_PATH" ] && exit 0
 
-# --- Bypass marker: cmm-exempt ---
-# Check for cmm-exempt in tool_input fields OTHER than file_path.
-# Read tool has no description param, but Claude may add extra fields or
-# use _comment. Also check top-level fields outside tool_input.
-BYPASS=$(echo "$INPUT" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-ti=d.get('tool_input',{})
-# Check all tool_input fields except file_path
-for k,v in ti.items():
-    if k != 'file_path' and isinstance(v, str) and 'cmm-exempt' in v:
-        print('1'); sys.exit(0)
-# Check top-level description (if present)
-if 'cmm-exempt' in d.get('description',''):
-    print('1'); sys.exit(0)
-print('0')
-" 2>/dev/null || echo "0")
-[ "$BYPASS" = "1" ] && exit 0
+
 
 # --- Exception: Targeted Read with offset+limit (sliced edit workflow) ---
 if [ "$HAS_OFFSET" = "1" ] && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
