@@ -782,6 +782,19 @@ install_project() {
     set_executable ".claude/hooks/cmm-nudge.sh"
   fi
 
+  # --- Agent override files (frontmatter hooks for VBW subagents) ---
+  # Project-level .claude/agents/ overrides shadow VBW plugin agent definitions
+  # to inject CMM enforcement hooks (cmm-nudge.sh, ctx-execute-enforcer.sh,
+  # track-cmm-calls.sh) into subagent execution contexts. Plugin agents ignore
+  # hooks: fields, so this override is the only enforcement path.
+  if [ -d "$SCRIPT_DIR/agents" ]; then
+    mkdir -p ".claude/agents"
+    for agent_file in "$SCRIPT_DIR"/agents/*.md; do
+      [ -f "$agent_file" ] || continue
+      copy_file "$agent_file" ".claude/agents/$(basename "$agent_file")"
+    done
+  fi
+
   # Purge deprecated hook files and their settings.json entries (unconditional).
   # When hooks are renamed or merged, stale files in .claude/hooks/ that remain
   # registered in settings.json can deadlock the session (e.g. old cmm-session-gate.sh
