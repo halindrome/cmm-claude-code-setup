@@ -467,13 +467,13 @@ _e2e_create_sentinels "$PROJECT_HASH"
 _e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py")" 2 \
   "cmm-nudge blocks full Read on big_module.py (baseline)"
 
-# KNOWN BYPASS: targeted Read with offset=0, limit=100 is allowed through
-_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py" 0 100)" 0 \
-  "KNOWN-BYPASS: cmm-nudge allows targeted Read (offset=0, limit=100) on large code file"
+# FIXED (Phase 39): offset=0 + limit>30 on large code file is now blocked
+_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py" 0 100)" 2 \
+  "FIXED: cmm-nudge blocks targeted Read (offset=0, limit=100) on large code file"
 
-# KNOWN BYPASS: targeted Read with offset=0, limit=50 is allowed through
-_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py" 0 50)" 0 \
-  "KNOWN-BYPASS: cmm-nudge allows targeted Read (offset=0, limit=50) on large code file"
+# FIXED (Phase 39): offset=0 + limit>30 on large code file is now blocked
+_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py" 0 50)" 2 \
+  "FIXED: cmm-nudge blocks targeted Read (offset=0, limit=50) on large code file"
 
 # KNOWN GAP: Agents bypass cmm-nudge by adding offset/limit to Read calls on large code files
 # instead of switching to CMM tools (search_graph, get_code_snippet). See future phase: Harden CMM Nudge Hook
