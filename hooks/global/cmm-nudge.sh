@@ -32,8 +32,13 @@ READ_OFFSET=$(echo "$PARSED" | sed -n '4p')
 
 
 
-# --- Exception: Targeted Read with offset+limit (sliced edit workflow) ---
-if [ "$HAS_OFFSET" = "1" ] && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
+# --- Exception: Targeted Read with offset+limit (two-tier check) ---
+# Tier 1: offset > 0 with limit <= 100 — post-graph targeted read (e.g., search_graph found line N)
+if [ "$HAS_OFFSET" = "1" ] && [ "${READ_OFFSET:-0}" -gt 0 ] 2>/dev/null && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
+  exit 0
+fi
+# Tier 2: offset = 0 with limit <= 30 — imports/headers read (small window from top of file)
+if [ "$HAS_OFFSET" = "1" ] && [ "${READ_OFFSET:-0}" -eq 0 ] 2>/dev/null && [ "${READ_LIMIT:-0}" -le 30 ] 2>/dev/null; then
   exit 0
 fi
 
