@@ -205,4 +205,29 @@ BLOCKED
 fi
 
 # Default: allow everything not explicitly blocked
+#
+# --- Known allowlist gaps (by design) ---
+# The following commands fall through to this default allow. They are NOT blocked
+# because blocking them would break common agent workflows. This is by design.
+#
+# Commands that fall through (not in block list, not in allow list):
+#   cat, ls, find, grep, sed, awk   — content reading / filesystem queries
+#   git log (full)                   — git log --oneline -N IS allowlisted above,
+#                                      but full git log falls through here
+#   git diff (full)                  — git diff --stat IS allowlisted above,
+#                                      but full git diff falls through here
+#   git show (without --stat)        — git show --stat IS allowlisted above
+#   bash tests/*.sh                  — custom test scripts (only named runners
+#                                      like pytest/jest are blocked)
+#   python3 -c "...", node -e "..."  — inline interpreter evaluation
+#   curl, wget                       — HTTP requests
+#
+# These gaps produce potentially large output in context. If this becomes a problem,
+# agents should route through ctx_execute instead:
+#   mcp__context-mode__ctx_execute(language="shell", code="<command>")
+# Or use "# ctx-exempt" for explicit bypass when raw Bash output is needed.
+#
+# Expanding the block list to cover these is not recommended — it risks breaking
+# essential agent workflows (e.g., reading small files with cat, listing directories
+# with ls, running project-specific test scripts).
 exit 0
