@@ -54,3 +54,40 @@ _e2e_remove_ctx_sentinel() {
   local hash="$1"
   rm -f "/tmp/context-mode-ready-${hash}"
 }
+
+# ─── JSON Payload Generators ────────────────────────────────────────────
+# Generate PreToolUse Read JSON payload.
+# Usage: json=$(_e2e_read_payload "/path/to/file")
+#        json=$(_e2e_read_payload "/path/to/file" 10 50)  # with offset and limit
+_e2e_read_payload() {
+  local file_path="$1"
+  local offset="${2:-}"
+  local limit="${3:-}"
+  if [[ -n "$offset" && -n "$limit" ]]; then
+    printf '{"tool_name":"Read","tool_input":{"file_path":"%s","offset":%s,"limit":%s}}' \
+      "$file_path" "$offset" "$limit"
+  else
+    printf '{"tool_name":"Read","tool_input":{"file_path":"%s"}}' "$file_path"
+  fi
+}
+
+# Generate PreToolUse Bash JSON payload.
+# Usage: json=$(_e2e_bash_payload "npm test")
+_e2e_bash_payload() {
+  local command="$1"
+  # Use python3 with stdin for safe JSON encoding of arbitrary command strings
+  echo "$command" | python3 -c "
+import json, sys
+cmd = sys.stdin.read().rstrip('\n')
+print(json.dumps({'tool_name':'Bash','tool_input':{'command':cmd}}))" 2>/dev/null \
+    || printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$command"
+}
+
+# Generate PreToolUse JSON for an arbitrary tool.
+# Usage: json=$(_e2e_tool_payload "Edit")
+#        json=$(_e2e_tool_payload "Edit" '{"file_path":"/tmp/f","old_string":"a","new_string":"b"}')
+_e2e_tool_payload() {
+  local tool_name="$1"
+  local input_json="${2:-"{}"}"
+  printf '{"tool_name":"%s","tool_input":%s}' "$tool_name" "$input_json"
+}
