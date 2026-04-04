@@ -37,7 +37,7 @@ FAKE_CONFIG="$TMPDIR_ROOT/fake-claude-config"
 mkdir -p "$FAKE_CONFIG"
 echo '{}' > "$FAKE_CONFIG/settings.json"
 
-# Run setup.sh --project from inside the fixture
+# Run setup.sh --project --skip-mcp-check --skip-statusline --force from inside the fixture
 echo "=== Running setup.sh --project ==="
 INSTALL_OUTPUT=$(cd "$FIXTURE" && echo "n" | env CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash "$SETUP_SH" --project --skip-mcp-check --skip-statusline --force 2>&1) || {
   echo "FATAL: setup.sh --project failed (exit $?)"
@@ -317,6 +317,11 @@ for agent in "${AGENT_NAMES[@]}"; do
 done
 
 echo ""
+
+# ─── Hook Blocking Tests (added by Plan 03) ──────────────────────────
+# Section 4: Sentinel + session-gate blocking
+# Section 5: cmm-nudge.sh blocking
+# Section 6: ctx-execute-enforcer.sh blocking
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
