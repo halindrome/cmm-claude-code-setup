@@ -231,6 +231,93 @@ done < "$SETTINGS_RESULTS"
 
 echo ""
 
+# ─── Section 3: Agent Override Content Validation ────────────────────────
+echo "=== Section 3: Agent Override Content ==="
+
+# All 7 agents with correct name: field
+AGENT_NAMES=(vbw-dev vbw-debugger vbw-qa vbw-scout vbw-architect vbw-lead vbw-docs)
+
+for agent in "${AGENT_NAMES[@]}"; do
+  file="$FIXTURE/.claude/agents/${agent}.md"
+  [ ! -f "$file" ] && continue
+
+  # Correct name: field
+  if grep -q "^name: ${agent}$" "$file"; then
+    pass "$agent has correct name: field"
+  else
+    fail "$agent missing or incorrect name: field"
+  fi
+
+  # cmm-nudge.sh reference (all agents should have it)
+  if grep -q "cmm-nudge.sh" "$file"; then
+    pass "$agent has cmm-nudge.sh reference"
+  else
+    fail "$agent missing cmm-nudge.sh reference"
+  fi
+done
+
+# Agents WITH Bash access should have ctx-execute-enforcer.sh
+BASH_AGENTS=(vbw-dev vbw-debugger vbw-qa vbw-lead vbw-docs)
+for agent in "${BASH_AGENTS[@]}"; do
+  file="$FIXTURE/.claude/agents/${agent}.md"
+  [ ! -f "$file" ] && continue
+  if grep -q "ctx-execute-enforcer.sh" "$file"; then
+    pass "$agent has ctx-execute-enforcer.sh (has Bash access)"
+  else
+    fail "$agent missing ctx-execute-enforcer.sh (should have it — has Bash access)"
+  fi
+done
+
+# Agents WITHOUT Bash access should NOT have ctx-execute-enforcer.sh
+NO_BASH_AGENTS=(vbw-scout vbw-architect)
+for agent in "${NO_BASH_AGENTS[@]}"; do
+  file="$FIXTURE/.claude/agents/${agent}.md"
+  [ ! -f "$file" ] && continue
+  if grep -q "ctx-execute-enforcer.sh" "$file"; then
+    fail "$agent has ctx-execute-enforcer.sh (should NOT — no Bash access)"
+  else
+    pass "$agent correctly lacks ctx-execute-enforcer.sh (no Bash access)"
+  fi
+done
+
+# dev and debugger have SUBAGENT_COMMIT=1
+COMMIT_AGENTS=(vbw-dev vbw-debugger)
+for agent in "${COMMIT_AGENTS[@]}"; do
+  file="$FIXTURE/.claude/agents/${agent}.md"
+  [ ! -f "$file" ] && continue
+  if grep -q "SUBAGENT_COMMIT" "$file"; then
+    pass "$agent has SUBAGENT_COMMIT marker"
+  else
+    fail "$agent missing SUBAGENT_COMMIT marker"
+  fi
+done
+
+# qa, scout, architect, lead, docs should NOT have SUBAGENT_COMMIT
+NO_COMMIT_AGENTS=(vbw-qa vbw-scout vbw-architect vbw-lead vbw-docs)
+for agent in "${NO_COMMIT_AGENTS[@]}"; do
+  file="$FIXTURE/.claude/agents/${agent}.md"
+  [ ! -f "$file" ] && continue
+  if grep -q "SUBAGENT_COMMIT" "$file"; then
+    fail "$agent has SUBAGENT_COMMIT (should NOT)"
+  else
+    pass "$agent correctly lacks SUBAGENT_COMMIT"
+  fi
+done
+
+# All hook commands in agent frontmatter use project-relative paths (bash .claude/hooks/)
+for agent in "${AGENT_NAMES[@]}"; do
+  file="$FIXTURE/.claude/agents/${agent}.md"
+  [ ! -f "$file" ] && continue
+  # Check for absolute paths in hook commands — should not exist
+  if grep -E 'command:.*(/Users|/home|/tmp).*\.claude/hooks/' "$file" >/dev/null 2>&1; then
+    fail "$agent agent has absolute paths in hook commands"
+  else
+    pass "$agent agent uses project-relative hook paths"
+  fi
+done
+
+echo ""
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
