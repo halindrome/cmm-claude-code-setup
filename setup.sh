@@ -726,6 +726,13 @@ install_global() {
   done
   shopt -u nullglob
 
+  # Copy track-hook-blocks.sh alongside global hooks — cmm-nudge.sh calls it
+  # via BASH_SOURCE dirname resolution when running from the global hooks dir
+  if [ -f "$SCRIPT_DIR/hooks/project/track-hook-blocks.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/project/track-hook-blocks.sh" "${config_dir}/hooks/track-hook-blocks.sh"
+    set_executable "${config_dir}/hooks/track-hook-blocks.sh"
+  fi
+
   merge_settings_json "${config_dir}/settings.json" "global"
 
   echo ""
@@ -778,6 +785,7 @@ install_project() {
     copy_file "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ".claude/hooks/cmm-nudge.sh"
     set_executable ".claude/hooks/cmm-nudge.sh"
   fi
+
 
   # --- Agent override files (frontmatter hooks for VBW subagents) ---
   # Project-level .claude/agents/ overrides shadow VBW plugin agent definitions
@@ -1029,7 +1037,17 @@ TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
 SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
 SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
 TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
-echo "CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+# --- Block counts ---
+BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
+if [ -f "$BLOCK_CACHE" ]; then
+  READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  fi
+fi
+echo "$CMM_OUTPUT"
 STATUSLINE_SCRIPT
     else
       # PROJECT MODE — Generate wrapper statusline-cmm.sh
@@ -1094,6 +1112,15 @@ if [ -f "$CACHE" ]; then
   CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
 else
   CMM_OUTPUT="CMM:0"
+fi
+# --- Block counts ---
+BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
+if [ -f "$BLOCK_CACHE" ]; then
+  READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  fi
 fi
 
 # --- Combine: run global statusline, append CMM stats ---
