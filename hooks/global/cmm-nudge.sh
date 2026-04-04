@@ -16,14 +16,17 @@ ti=d.get('tool_input',{})
 fp=ti.get('file_path','') or d.get('file_path','')
 has_offset='1' if (ti.get('offset') is not None and ti.get('limit') is not None) else '0'
 limit=str(ti.get('limit',0))
+offset=str(ti.get('offset',0) or 0)
 print(fp)
 print(has_offset)
 print(limit)
+print(offset)
 " 2>/dev/null)
 
 FILE_PATH=$(echo "$PARSED" | sed -n '1p')
 HAS_OFFSET=$(echo "$PARSED" | sed -n '2p')
 READ_LIMIT=$(echo "$PARSED" | sed -n '3p')
+READ_OFFSET=$(echo "$PARSED" | sed -n '4p')
 
 [ -z "$FILE_PATH" ] && exit 0
 
