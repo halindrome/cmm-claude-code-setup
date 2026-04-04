@@ -455,6 +455,51 @@ _e2e_create_sentinels "$PROJECT_HASH"
 
 echo ""
 
+# ─── Section 7: Known Bypass Documentation ─────────────────────────────
+echo "=== Section 7: Known Bypass Documentation ==="
+echo "  (Tests that document enforcement gaps agents exploit in practice)"
+
+# Ensure sentinels are present
+_e2e_create_sentinels "$PROJECT_HASH"
+
+# --- cmm-nudge bypass via targeted Read ---
+# Baseline: full Read on big_module.py is blocked
+_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py")" 2 \
+  "cmm-nudge blocks full Read on big_module.py (baseline)"
+
+# KNOWN BYPASS: targeted Read with offset=0, limit=100 is allowed through
+_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py" 0 100)" 0 \
+  "KNOWN-BYPASS: cmm-nudge allows targeted Read (offset=0, limit=100) on large code file"
+
+# KNOWN BYPASS: targeted Read with offset=0, limit=50 is allowed through
+_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py" 0 50)" 0 \
+  "KNOWN-BYPASS: cmm-nudge allows targeted Read (offset=0, limit=50) on large code file"
+
+# KNOWN GAP: Agents bypass cmm-nudge by adding offset/limit to Read calls on large code files
+# instead of switching to CMM tools (search_graph, get_code_snippet). See future phase: Harden CMM Nudge Hook
+
+# --- ctx-execute-enforcer bypass via allowlisted commands ---
+# KNOWN BYPASS: ls is not in any block list, falls through to default allow
+_e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "ls -la /tmp")" 0 \
+  "KNOWN-BYPASS: ctx-enforcer allows ls (not in block list)"
+
+# KNOWN BYPASS: git log is explicitly allowlisted
+_e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "git log --oneline -5")" 0 \
+  "KNOWN-BYPASS: ctx-enforcer allows git log (explicitly allowlisted)"
+
+# Document actual behavior: cat falls through to default allow (not blocked)
+_e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "cat /etc/hosts")" 0 \
+  "KNOWN-BYPASS: ctx-enforcer allows cat (falls through to default allow)"
+
+# Document actual behavior: echo is explicitly allowlisted in short queries
+_e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "echo hello")" 0 \
+  "KNOWN-BYPASS: ctx-enforcer allows echo (explicitly allowlisted)"
+
+# KNOWN GAP: Most agent Bash usage (ls, git, mkdir) falls within the allowlist
+# Only test runners (npm test, pytest) and package managers (pip install) are actually blocked
+
+echo ""
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
