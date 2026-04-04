@@ -52,12 +52,32 @@ echo "--- Test 7: detect_changes keyword -> allowed (exit 0) ---"
 _assert_exit "Test 7: detect_changes allowed" 0 \
     '{"tool_name":"Agent","tool_input":{"subagent_type":"dev","prompt":"Run detect_changes to see the blast radius before modifying the function"}}'
 
-echo "--- Test 8: Exempt subagent_type (Explore) -> allowed regardless (exit 0) ---"
-_assert_exit "Test 8: Explore type exempt" 0 \
+echo "--- Test 8: Explore with code signals but no CMM keywords -> blocked (exit 2) ---"
+_assert_exit "Test 8: Explore blocked without CMM keywords" 2 \
     '{"tool_name":"Agent","tool_input":{"subagent_type":"Explore","prompt":"Look at the function in this file and refactor the class method"}}'
 
-echo "--- Test 9: cmm-exempt marker -> allowed regardless (exit 0) ---"
-_assert_exit "Test 9: cmm-exempt marker bypasses gate" 0 \
+echo "--- Test 9: Plan with code signals but no CMM keywords -> blocked (exit 2) ---"
+_assert_exit "Test 9: Plan blocked without CMM keywords" 2 \
+    '{"tool_name":"Agent","tool_input":{"subagent_type":"Plan","prompt":"Plan the refactor of the function and class in this module"}}'
+
+echo "--- Test 10: Explore with CMM keywords -> allowed (exit 0) ---"
+_assert_exit "Test 10: Explore with get_architecture allowed" 0 \
+    '{"tool_name":"Agent","tool_input":{"subagent_type":"Explore","prompt":"Use get_architecture to understand the codebase structure and search_graph to find the function"}}'
+
+echo "--- Test 11: Plan with CMM keywords -> allowed (exit 0) ---"
+_assert_exit "Test 11: Plan with trace_call_path allowed" 0 \
+    '{"tool_name":"Agent","tool_input":{"subagent_type":"Plan","prompt":"Use trace_call_path and get_architecture to analyze dependencies before planning the refactor"}}'
+
+echo "--- Test 12: VBW agent type still exempt (exit 0) ---"
+_assert_exit "Test 12: vbw:vbw-dev exempt" 0 \
+    '{"tool_name":"Agent","tool_input":{"subagent_type":"vbw:vbw-dev","prompt":"Look at the function in this file and refactor the class method"}}'
+
+echo "--- Test 13: claude-code-guide still exempt (exit 0) ---"
+_assert_exit "Test 13: claude-code-guide exempt" 0 \
+    '{"tool_name":"Agent","tool_input":{"subagent_type":"claude-code-guide","prompt":"How do I configure hooks for this function in the file"}}'
+
+echo "--- Test 14: cmm-exempt marker -> allowed regardless (exit 0) ---"
+_assert_exit "Test 14: cmm-exempt marker bypasses gate" 0 \
     '{"tool_name":"Agent","tool_input":{"subagent_type":"dev","prompt":"Help me write a function to process the file class method # cmm-exempt"}}'
 
 echo ""

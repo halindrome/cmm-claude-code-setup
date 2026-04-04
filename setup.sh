@@ -11,7 +11,7 @@ set -euo pipefail
 #   --project         Install project hooks to .claude/hooks/, rules to .claude/rules/,
 #                     create .mcp.json, and merge into .claude/settings.json
 #   --all             Install both global and project hooks
-#   --force           Overwrite existing files (default: skip existing)
+#   --force           Overwrite existing files without prompting (default: detect drift and prompt)
 #   --dry-run         Show what would be done without making changes
 #   --skip-mcp-check  Bypass all MCP availability checks (CMM binary, registration,
 #                     tool allowlist, context-mode). Useful for CI/automation.
@@ -60,8 +60,33 @@ copy_file() {
     return
   fi
   if [ -e "$dest" ] && [ "$FORCE" != true ]; then
-    echo "  [skip] $(basename "$dest") already exists (use --force to overwrite)"
-    return
+    # Drift detection: compare content first
+    if cmp -s "$src" "$dest"; then
+      echo "  [ok] $(basename "$dest") unchanged"
+      return
+    fi
+    # Files differ — show mtime direction context
+    echo "  [warn] $(basename "$dest") differs from source"
+    if [ "$src" -nt "$dest" ]; then
+      echo "         (source is newer — upstream update available)"
+    elif [ "$dest" -nt "$src" ]; then
+      echo "         (installed is newer — local modifications present)"
+    else
+      echo "         (same timestamp — content differs)"
+    fi
+    # Interactive per-file prompt gated on tty
+    if [ -t 0 ]; then
+      printf "  Overwrite %s? [y/N]: " "$(basename "$dest")"
+      local _drift_choice
+      read -r _drift_choice || true
+      case "${_drift_choice:-}" in
+        y|Y) ;;
+        *) echo "  [skip] Kept existing $(basename "$dest")"; return ;;
+      esac
+    else
+      echo "  [skip] Non-interactive — kept existing $(basename "$dest")"
+      return
+    fi
   fi
   cp "$src" "$dest"
   echo "  [ok] Copied $(basename "$dest")"
@@ -74,6 +99,34 @@ set_executable() {
     return
   fi
   chmod +x "$file"
+}
+
+# scan_drift_summary — Read-only pre-scan of copy_file-managed files.
+# Prints a single summary line: "  Scanning N file(s): X unchanged, Y changed, Z new"
+# Args: dest_dir src_file [src_file ...]
+# Only runs when FORCE!=true and DRY_RUN!=true.
+scan_drift_summary() {
+  local dest_dir="$1"
+  shift
+  if [ "$FORCE" = true ] || [ "$DRY_RUN" = true ]; then
+    return
+  fi
+  if [ "$#" -eq 0 ]; then
+    return
+  fi
+  local unchanged=0 changed=0 new_files=0 src
+  for src in "$@"; do
+    local dest="${dest_dir}/$(basename "$src")"
+    if [ ! -e "$dest" ]; then
+      new_files=$((new_files + 1))
+    elif cmp -s "$src" "$dest"; then
+      unchanged=$((unchanged + 1))
+    else
+      changed=$((changed + 1))
+    fi
+  done
+  local total=$((unchanged + changed + new_files))
+  echo "  Scanning ${total} file(s): ${unchanged} unchanged, ${changed} changed, ${new_files} new"
 }
 
 # ---------------------------------------------------------------------------
@@ -655,6 +708,12 @@ install_global() {
     mkdir -p "${config_dir}/hooks/lib"
   fi
 
+  # Pre-scan: report drift summary before per-file prompts
+  # shellcheck disable=SC2046
+  scan_drift_summary "${config_dir}/hooks/lib" $( ls "$SCRIPT_DIR/hooks/lib/"*.sh 2>/dev/null )
+  # shellcheck disable=SC2046
+  scan_drift_summary "${config_dir}/hooks" $( ls "$SCRIPT_DIR/hooks/global/"*.sh 2>/dev/null )
+
   # Install shared libraries first (sourced by hooks at runtime)
   shopt -s nullglob
   for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
@@ -666,6 +725,13 @@ install_global() {
     set_executable "${config_dir}/hooks/$(basename "$file")"
   done
   shopt -u nullglob
+
+  # Copy track-hook-blocks.sh alongside global hooks — cmm-nudge.sh calls it
+  # via BASH_SOURCE dirname resolution when running from the global hooks dir
+  if [ -f "$SCRIPT_DIR/hooks/project/track-hook-blocks.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/project/track-hook-blocks.sh" "${config_dir}/hooks/track-hook-blocks.sh"
+    set_executable "${config_dir}/hooks/track-hook-blocks.sh"
+  fi
 
   merge_settings_json "${config_dir}/settings.json" "global"
 
@@ -687,25 +753,59 @@ install_project() {
     mkdir -p .claude/rules
   fi
 
+  # Pre-scan: report drift summary before per-file prompts
+  # shellcheck disable=SC2046
+  scan_drift_summary ".claude/hooks" $( ls "$SCRIPT_DIR/hooks/project/"*.sh 2>/dev/null )
+  # shellcheck disable=SC2046
+  scan_drift_summary ".claude/rules" $( ls "$SCRIPT_DIR/rules/"* 2>/dev/null )
+
   shopt -s nullglob
   # Copies all hooks/project/*.sh to .claude/hooks/, including:
   #   reindex-after-commit.sh — PostToolUse:Bash hook that marks CMM sentinel stale after git commits
   #   subagent-cmm-startup.sh — SubagentStart advisory hook (injects CMM state into all subagents via additionalContext)
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
-  # NOTE: .claude/agents/dev.md (Dev agent override with SUBAGENT_COMMIT=1 bypass) is NOT copied by
-  # setup.sh — it is specific to this repo's VBW setup. Users installing this hook layer into their
-  # own project should create their own .claude/agents/ overrides if they want agent-level hook behavior.
+  # NOTE: VBW agent override files (agents/*.md) ARE copied by setup.sh --project to
+  # .claude/agents/. These shadow VBW plugin agents to inject CMM enforcement hooks
+  # via frontmatter (the only mechanism that fires inside subagents).
+  # The existing .claude/agents/dev.md is project-specific and NOT managed by setup.sh.
+  # Users installing this hook layer into their own project should create their own
+  # .claude/agents/ overrides if they want agent-level hook behavior.
   for file in "$SCRIPT_DIR/hooks/project/"*.sh; do
     copy_file "$file" ".claude/hooks/$(basename "$file")"
     set_executable ".claude/hooks/$(basename "$file")"
   done
   shopt -u nullglob
 
-  # Purge deprecated hook files and their settings.json entries (--force only).
-  # When hooks are renamed or merged, a plain --force re-run otherwise leaves stale
-  # files in .claude/hooks/ that remain registered in settings.json and can deadlock
-  # the session (e.g. old cmm-session-gate.sh blocking Bash after session-gate.sh merge).
+  # Copy cmm-nudge.sh from hooks/global/ to .claude/hooks/ — needed by agent frontmatter
+  # hooks (in .claude/agents/) that reference cmm-nudge.sh via project-relative paths
+  # (e.g., "bash .claude/hooks/cmm-nudge.sh"). Without this, project installs that skip
+  # --global would lack the file at the expected location.
+  if [ -f "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ".claude/hooks/cmm-nudge.sh"
+    set_executable ".claude/hooks/cmm-nudge.sh"
+  fi
+
+
+  # --- Agent override files (frontmatter hooks for VBW subagents) ---
+  # Project-level .claude/agents/ overrides shadow VBW plugin agent definitions
+  # to inject CMM enforcement hooks (cmm-nudge.sh, ctx-execute-enforcer.sh,
+  # track-cmm-calls.sh) into subagent execution contexts. Plugin agents ignore
+  # hooks: fields, so this override is the only enforcement path.
+  if [ -d "$SCRIPT_DIR/agents" ]; then
+    mkdir -p ".claude/agents"
+    for agent_file in "$SCRIPT_DIR"/agents/*.md; do
+      [ -f "$agent_file" ] || continue
+      copy_file "$agent_file" ".claude/agents/$(basename "$agent_file")"
+    done
+  fi
+
+  # Purge deprecated hook files and their settings.json entries (unconditional).
+  # When hooks are renamed or merged, stale files in .claude/hooks/ that remain
+  # registered in settings.json can deadlock the session (e.g. old cmm-session-gate.sh
+  # blocking Context Mode tools after session-gate.sh merge). This runs on every
+  # --project install, not just --force, because leaving superseded hooks causes
+  # functional breakage (circular dependency between gate hooks).
   # IMPORTANT: Only delete hooks on this explicit list — never delete unknown hooks,
   # as they may be user-created or generated by other install steps (e.g. statusline-cmm.sh).
   deprecated_hooks=(
@@ -713,23 +813,22 @@ install_project() {
     "context-mode-session-gate.sh"
   )
 
-  if [ "$FORCE" = true ]; then
-    stale_hooks=()
-    for name in "${deprecated_hooks[@]}"; do
-      installed=".claude/hooks/$name"
-      if [ -f "$installed" ]; then
-        stale_hooks+=("$name")
-        if [ "$DRY_RUN" = true ]; then
-          echo "  [DRY RUN] Would remove deprecated hook: $name"
-        else
-          rm "$installed"
-          echo "  [removed] Deprecated hook: $name"
-        fi
+  stale_hooks=()
+  for name in "${deprecated_hooks[@]}"; do
+    installed=".claude/hooks/$name"
+    if [ -f "$installed" ]; then
+      stale_hooks+=("$name")
+      if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY RUN] Would remove deprecated hook: $name"
+      else
+        rm "$installed"
+        echo "  [removed] Deprecated hook: $name"
       fi
-    done
+    fi
+  done
 
-    if [ "${#stale_hooks[@]}" -gt 0 ] && [ "$DRY_RUN" = false ] && [ -f ".claude/settings.json" ]; then
-      python3 -c '
+  if [ "${#stale_hooks[@]}" -gt 0 ] && [ "$DRY_RUN" = false ] && [ -f ".claude/settings.json" ]; then
+    python3 -c '
 import json, os, sys
 target = sys.argv[1]
 stale = set(sys.argv[2].split())
@@ -758,7 +857,6 @@ if changed:
     os.replace(tmp, target)
     print("  [ok] Pruned deprecated hook entries from settings.json")
 ' ".claude/settings.json" "${stale_hooks[*]}"
-    fi
   fi
 
   shopt -s nullglob
@@ -912,13 +1010,44 @@ except Exception:
       cat > "$script_path" <<'STATUSLINE_SCRIPT'
 #!/bin/bash
 # statusline-cmm.sh — Display CMM call stats in Claude Code statusline
-CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+if [ -n "$PROJECT_ROOT" ]; then
+    _WALK="$PROJECT_ROOT"
+    while true; do
+        _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_PARENT" ] && break
+        _WALK="$_PARENT"
+    done
+    PROJECT_ROOT="$_WALK"
+fi
+if [ -n "$PROJECT_ROOT" ]; then
+    _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
+    _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
+    [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
+    [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
+    if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
+        _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
+        [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
+    fi
+fi
+PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
 if [ ! -f "$CACHE" ]; then echo "CMM:0"; exit 0; fi
 TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
 SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
 SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
 TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
-echo "CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+# --- Block counts ---
+BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
+if [ -f "$BLOCK_CACHE" ]; then
+  READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  fi
+fi
+echo "$CMM_OUTPUT"
 STATUSLINE_SCRIPT
     else
       # PROJECT MODE — Generate wrapper statusline-cmm.sh
@@ -953,7 +1082,28 @@ done
 
 # --- CMM stats ---
 CMM_OUTPUT=""
-CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts.json"
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+if [ -n "$PROJECT_ROOT" ]; then
+    _WALK="$PROJECT_ROOT"
+    while true; do
+        _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_PARENT" ] && break
+        _WALK="$_PARENT"
+    done
+    PROJECT_ROOT="$_WALK"
+fi
+if [ -n "$PROJECT_ROOT" ]; then
+    _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
+    _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
+    [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
+    [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
+    if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
+        _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
+        [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
+    fi
+fi
+PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
 if [ -f "$CACHE" ]; then
   TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
   SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
@@ -962,6 +1112,15 @@ if [ -f "$CACHE" ]; then
   CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
 else
   CMM_OUTPUT="CMM:0"
+fi
+# --- Block counts ---
+BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
+if [ -f "$BLOCK_CACHE" ]; then
+  READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  fi
 fi
 
 # --- Combine: run global statusline, append CMM stats ---
@@ -1247,7 +1406,7 @@ Flags:
   --project         Install project hooks to .claude/hooks/, rules to .claude/rules/,
                     create .mcp.json, and merge into .claude/settings.json
   --all             Install both global and project hooks
-  --force           Overwrite existing files (default: skip existing)
+  --force           Overwrite existing files without prompting (default: detect drift and prompt)
   --dry-run         Show what would be done without making changes
   --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
   --skip-statusline Skip the CMM statusline installation offer
@@ -1265,10 +1424,11 @@ no-op when Context Mode is not present — you can enable it later without
 re-running setup.
 
 Examples:
-  bash setup.sh --project             # Install project hooks into current directory
+  bash setup.sh --project             # Install project hooks; on re-run, drifted files prompt to overwrite
   bash setup.sh --global              # Install global hooks for all projects
   bash setup.sh --all --force         # Install everything, overwriting existing files
   bash setup.sh --dry-run --project   # Preview project install without making changes
+  bash setup.sh --project --force     # Re-install everything, overwriting all existing files
   bash setup.sh --project --skip-mcp-check  # Install without MCP availability checks
 HELP
         exit 0

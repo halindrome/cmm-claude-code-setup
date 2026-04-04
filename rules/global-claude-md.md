@@ -8,7 +8,7 @@
 
 - **`get_architecture`**: ALWAYS run first when exploring an unfamiliar codebase or starting a new task. Returns language breakdown, top packages, entry points, routes, hotspots, and cross-service boundaries. Use `aspects` parameter to narrow output.
 
-- **`search_graph`**: ALWAYS use to find functions, classes, or modules by name pattern. Supports regex (`.*Handler$`), degree filters, label filters. NEVER use Grep to search for function/class definitions — `search_graph` is faster and returns connectivity metadata.
+- **`search_graph`**: ALWAYS use to find functions, classes, or modules by name pattern. Supports regex (`.*Handler$`), degree filters, label filters. Do NOT pass the `project` parameter — CMM auto-detects the project from the current repo. NEVER use Grep to search for function/class definitions — `search_graph` is faster and returns connectivity metadata.
 
 - **`get_code_snippet`**: Use to retrieve source code for a specific function or class by qualified name. Returns source, signature, complexity, callers, callees. NEVER read an entire file to get one function — use this instead.
 
@@ -20,7 +20,7 @@
 
 - **`detect_changes`**: Run BEFORE committing to assess blast radius. Maps git diff hunks to affected graph symbols and traces inbound callers with risk classification (CRITICAL/HIGH/MEDIUM/LOW).
 
-- **`index_repository`**: Run at session start and after batch edits. Supports incremental reindex via content hashing. Auto-sync handles updates after initial indexing.
+- **`index_repository`**: Run at session start and after batch edits. Requires `repo_path` parameter with the full filesystem path (e.g., `/Users/name/project`). Do NOT pass `project` — that is not a valid parameter. Supports incremental reindex via content hashing.
 
 - **`manage_adr`**: Read/update the Architecture Decision Record. ALWAYS check ADR before making architectural changes. Fixed sections: PURPOSE, STACK, ARCHITECTURE, PATTERNS, TRADEOFFS, PHILOSOPHY.
 
@@ -73,14 +73,43 @@ Use `Read` directly when:
 - Use Grep for files NOT indexed by Context Mode (source code, config files, unindexed content).
 - Do NOT use `ctx_search` as a replacement for CMM `search_graph` — they serve different purposes.
 
+### Persisting CMM results across compaction
+
+CMM tool results called via MCP (`mcp__codebase-memory-mcp__*`) are NOT indexed by Context Mode — they vanish after context compaction. To preserve CMM results for later recall via `ctx_search`, route them through `ctx_batch_execute` using the CMM CLI:
+
+```
+ctx_batch_execute({
+  commands: [
+    { label: "search_graph: Handler", command: "codebase-memory-mcp cli search_graph '{\"name_pattern\": \".*Handler$\"}'" },
+    { label: "trace: processRequest", command: "codebase-memory-mcp cli trace_call_path '{\"function_name\": \"processRequest\", \"direction\": \"both\"}'" }
+  ],
+  queries: ["Handler classes", "processRequest callers"]
+})
+```
+
+This auto-indexes CMM output into Context Mode's FTS5 store, making it searchable via `ctx_search` even after compaction.
+
+**When to use this pattern:**
+- Orientation queries you'll reference later (architecture, call paths)
+- Research before refactoring (trace results for multiple functions)
+- Any CMM result you'd lose if the session compacts
+
+**When to use direct MCP calls instead:**
+- Quick one-off lookups during active editing
+- `detect_changes` (time-sensitive, not worth caching)
+- `index_repository` / `index_status` (operational, not query results)
+
+The CMM CLI mirrors every MCP tool: `codebase-memory-mcp cli <tool_name> '<json_args>'`.
+
 ### Session resume after compaction
 
 - After context compaction, `ctx_search` can query the event history: "what files were edited?"
+- Use `ctx_search` to recall CMM results that were routed through `ctx_batch_execute`.
 - Use `ctx_stats` to check session metrics and indexed content.
 
 ### Tool priority order (when Context Mode is installed)
 
-- Code exploration: CMM tools first (`search_graph`, `get_code_snippet`, `trace_call_path`)
+- Code exploration: CMM tools first (`search_graph`, `get_code_snippet`, `trace_call_path`). For results that must survive compaction, route through `ctx_batch_execute` with CMM CLI.
 - Bash execution with large output: `ctx_execute` or `ctx_batch_execute`
 - Web content: `ctx_fetch_and_index` → `ctx_search`
 - Indexed doc search: `ctx_search`
