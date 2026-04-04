@@ -23,10 +23,10 @@ AGENTS=(
   vbw-scout
   vbw-qa
   vbw-debugger
-  # Phase 37 (uncomment when override files are created):
-  # vbw-architect
-  # vbw-lead
-  # vbw-docs
+  # Phase 37:
+  vbw-architect
+  vbw-lead
+  vbw-docs
 )
 
 # ─── Hook Expectations ───────────────────────────────────────────────────
