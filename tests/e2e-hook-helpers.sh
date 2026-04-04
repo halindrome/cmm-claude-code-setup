@@ -91,3 +91,25 @@ _e2e_tool_payload() {
   local input_json="${2:-"{}"}"
   printf '{"tool_name":"%s","tool_input":%s}' "$tool_name" "$input_json"
 }
+
+# ─── Hook Assertion ──────────────────────────────────────────────────────
+# Invoke a hook with a JSON payload and assert its exit code.
+# Usage: _e2e_assert_hook "hook_path" "json_payload" expected_exit "description"
+#
+# Runs the hook from $E2E_FIXTURE_DIR with CLAUDE_CONFIG_DIR=$E2E_FAKE_CONFIG.
+# Suppresses stdout/stderr. Calls pass() or fail() based on exit code comparison.
+_e2e_assert_hook() {
+  local hook_path="$1"
+  local json_payload="$2"
+  local expected_exit="$3"
+  local description="$4"
+  local actual=0
+  # Run hook from inside the fixture dir so git rev-parse finds the repo
+  echo "$json_payload" | env CLAUDE_CONFIG_DIR="$E2E_FAKE_CONFIG" \
+    bash -c "cd '$E2E_FIXTURE_DIR' && bash '$hook_path'" >/dev/null 2>&1 || actual=$?
+  if [ "$actual" -eq "$expected_exit" ]; then
+    pass "$description"
+  else
+    fail "$description (expected exit $expected_exit, got $actual)"
+  fi
+}
