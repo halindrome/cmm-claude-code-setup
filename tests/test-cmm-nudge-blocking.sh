@@ -150,6 +150,26 @@ echo "--- Test 16: Limit only (no offset) -> blocked (exit 2) ---"
 _assert_exit "Test 16: limit-only still blocked" 2 \
     "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"limit\":20}}"
 
+echo "--- Test 17: offset=0, limit=100 on large .py -> blocked (primary bypass closed) ---"
+_assert_exit "Test 17: offset=0 limit=100 blocked" 2 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":0,\"limit\":100}}"
+
+echo "--- Test 18: offset=0, limit=50 on large .py -> blocked (secondary bypass closed) ---"
+_assert_exit "Test 18: offset=0 limit=50 blocked" 2 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":0,\"limit\":50}}"
+
+echo "--- Test 19: offset=0, limit=30 on large .py -> allowed (imports/headers) ---"
+_assert_exit "Test 19: offset=0 limit=30 allowed" 0 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":0,\"limit\":30}}"
+
+echo "--- Test 20: offset=50, limit=40 on large .py -> allowed (legitimate targeted read) ---"
+_assert_exit "Test 20: offset=50 limit=40 allowed" 0 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":50,\"limit\":40}}"
+
+echo "--- Test 21: offset=0, limit=5 on large .py -> allowed (shebang/header read) ---"
+_assert_exit "Test 21: offset=0 limit=5 allowed" 0 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":0,\"limit\":5}}"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
