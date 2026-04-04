@@ -346,6 +346,50 @@ SESSION_GATE="$FIXTURE/.claude/hooks/session-gate.sh"
 CMM_NUDGE="$FIXTURE/.claude/hooks/cmm-nudge.sh"
 CTX_ENFORCER="$FIXTURE/.claude/hooks/ctx-execute-enforcer.sh"
 
+# ─── Section 4: Sentinel + session-gate blocking ───────────────────────
+echo "=== Section 4: session-gate sentinel tests ==="
+
+# --- Without CMM sentinel: Edit and Write should be blocked ---
+_e2e_cleanup_sentinels "$PROJECT_HASH"
+
+_e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "Edit" '{"file_path":"/tmp/f","old_string":"a","new_string":"b"}')" 2 \
+  "session-gate blocks Edit without CMM sentinel"
+
+_e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "Write" '{"file_path":"/tmp/f","content":"x"}')" 2 \
+  "session-gate blocks Write without CMM sentinel"
+
+# --- With CMM sentinel: Edit and Write should be allowed ---
+_e2e_create_sentinels "$PROJECT_HASH"
+
+_e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "Edit" '{"file_path":"/tmp/f","old_string":"a","new_string":"b"}')" 0 \
+  "session-gate allows Edit with CMM sentinel"
+
+_e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "Write" '{"file_path":"/tmp/f","content":"x"}')" 0 \
+  "session-gate allows Write with CMM sentinel"
+
+# --- Bypass tools: should pass even WITHOUT sentinel ---
+_e2e_cleanup_sentinels "$PROJECT_HASH"
+
+_e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "Bash" '{"command":"echo hi"}')" 0 \
+  "session-gate allows Bash bypass (no sentinel)"
+
+_e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "Read" '{"file_path":"/tmp/f"}')" 0 \
+  "session-gate allows Read bypass (no sentinel)"
+
+_e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "Grep" '{"pattern":"foo"}')" 0 \
+  "session-gate allows Grep bypass (no sentinel)"
+
+_e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "Glob" '{"pattern":"*.sh"}')" 0 \
+  "session-gate allows Glob bypass (no sentinel)"
+
+_e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "Agent" '{"prompt":"hello"}')" 0 \
+  "session-gate allows Agent bypass (no sentinel)"
+
+_e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "mcp__codebase-memory-mcp__search_graph" '{"name_pattern":".*"}')" 0 \
+  "session-gate allows mcp__codebase-memory-mcp__search_graph bypass (no sentinel)"
+
+echo ""
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
