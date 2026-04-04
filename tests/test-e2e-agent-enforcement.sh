@@ -418,6 +418,43 @@ _e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/README.md")" 0 \
 
 echo ""
 
+# ─── Section 6: ctx-execute-enforcer Bash blocking ─────────────────────
+echo "=== Section 6: ctx-execute-enforcer Bash blocking ==="
+
+# --- With all sentinels present (CMM + Context Mode + ctx-enforcer cache) ---
+_e2e_create_sentinels "$PROJECT_HASH"
+
+# Test runner: blocked
+_e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "npm test")" 2 \
+  "ctx-enforcer blocks npm test (test runner)"
+
+# Package install: blocked
+_e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "pip install requests")" 2 \
+  "ctx-enforcer blocks pip install (package manager)"
+
+# Git operation: allowed
+_e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "git status")" 0 \
+  "ctx-enforcer allows git status"
+
+# Filesystem mutation: allowed
+_e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "mkdir -p /tmp/foo")" 0 \
+  "ctx-enforcer allows mkdir"
+
+# ctx-exempt marker: allowed
+_e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "npm test # ctx-exempt")" 0 \
+  "ctx-enforcer allows npm test with # ctx-exempt marker"
+
+# --- Without Context Mode sentinel: no blocking (deadlock prevention) ---
+_e2e_remove_ctx_sentinel "$PROJECT_HASH"
+
+_e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "npm test")" 0 \
+  "ctx-enforcer allows npm test without Context Mode sentinel (deadlock prevention)"
+
+# Restore sentinels for subsequent tests
+_e2e_create_sentinels "$PROJECT_HASH"
+
+echo ""
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
