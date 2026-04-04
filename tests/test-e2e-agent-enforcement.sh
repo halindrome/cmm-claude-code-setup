@@ -47,6 +47,98 @@ INSTALL_OUTPUT=$(cd "$FIXTURE" && echo "n" | env CLAUDE_CONFIG_DIR="$FAKE_CONFIG
 echo "  setup.sh --project completed successfully"
 echo ""
 
+# ─── Section 1: Installed File Existence ─────────────────────────────────
+echo "=== Section 1: Installed File Existence ==="
+
+# Hook files expected in .claude/hooks/ (13 from hooks/project/ + cmm-nudge.sh from hooks/global/)
+EXPECTED_HOOKS=(
+  session-gate.sh
+  agent-cmm-gate.sh
+  ctx-execute-enforcer.sh
+  cmm-sentinel-writer.sh
+  cmm-session-start.sh
+  subagent-cmm-startup.sh
+  reindex-after-commit.sh
+  track-cmm-calls.sh
+  cmm-query-stale-advisory.sh
+  context-mode-event-logger.sh
+  context-mode-sentinel-writer.sh
+  context-mode-pre-compact.sh
+  track-hook-blocks.sh
+  cmm-nudge.sh
+)
+
+for hook in "${EXPECTED_HOOKS[@]}"; do
+  if [ -f "$FIXTURE/.claude/hooks/$hook" ]; then
+    pass "hook exists: $hook"
+  else
+    fail "hook missing: $hook"
+  fi
+done
+
+# cmm-nudge.sh specifically — validates global hook was copied to project hooks dir
+if [ -f "$FIXTURE/.claude/hooks/cmm-nudge.sh" ]; then
+  pass "cmm-nudge.sh copied from global hooks"
+else
+  fail "cmm-nudge.sh not copied from global hooks"
+fi
+
+# Agent override files in .claude/agents/
+EXPECTED_AGENTS=(
+  vbw-dev.md
+  vbw-debugger.md
+  vbw-qa.md
+  vbw-scout.md
+  vbw-architect.md
+  vbw-lead.md
+  vbw-docs.md
+)
+
+for agent in "${EXPECTED_AGENTS[@]}"; do
+  if [ -f "$FIXTURE/.claude/agents/$agent" ]; then
+    pass "agent exists: $agent"
+  else
+    fail "agent missing: $agent"
+  fi
+done
+
+# Rules files in .claude/rules/
+EXPECTED_RULES=(
+  project-settings-example.json
+  mcp-example.json
+  allowed-tools.txt
+  global-claude-md.md
+)
+
+for rule in "${EXPECTED_RULES[@]}"; do
+  if [ -f "$FIXTURE/.claude/rules/$rule" ]; then
+    pass "rule exists: $rule"
+  else
+    fail "rule missing: $rule"
+  fi
+done
+
+# .mcp.json exists and contains codebase-memory-mcp
+if [ -f "$FIXTURE/.mcp.json" ]; then
+  pass ".mcp.json exists"
+  if grep -q "codebase-memory-mcp" "$FIXTURE/.mcp.json"; then
+    pass ".mcp.json contains codebase-memory-mcp"
+  else
+    fail ".mcp.json missing codebase-memory-mcp"
+  fi
+else
+  fail ".mcp.json missing"
+fi
+
+# .claude/settings.json exists
+if [ -f "$FIXTURE/.claude/settings.json" ]; then
+  pass "settings.json exists"
+else
+  fail "settings.json missing"
+fi
+
+echo ""
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
