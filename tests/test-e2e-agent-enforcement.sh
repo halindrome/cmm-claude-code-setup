@@ -456,6 +456,8 @@ _e2e_create_sentinels "$PROJECT_HASH"
 echo ""
 
 # ─── Section 7: Known Bypass Documentation ─────────────────────────────
+# cmm-nudge offset+limit bypass closed in Phase 39 (offset=0 + limit>30 now blocked).
+# ctx-execute-enforcer allowlist gaps documented but not changed (by design).
 echo "=== Section 7: Known Bypass Documentation ==="
 echo "  (Tests that document enforcement gaps agents exploit in practice)"
 
@@ -475,8 +477,8 @@ _e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py" 0 10
 _e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py" 0 50)" 2 \
   "FIXED: cmm-nudge blocks targeted Read (offset=0, limit=50) on large code file"
 
-# KNOWN GAP: Agents bypass cmm-nudge by adding offset/limit to Read calls on large code files
-# instead of switching to CMM tools (search_graph, get_code_snippet). See future phase: Harden CMM Nudge Hook
+# CLOSED (Phase 39): Agents can no longer bypass cmm-nudge by adding offset=0/limit to Read calls
+# on large code files. offset=0 + limit>30 is now blocked. offset>0 + limit<=100 still allowed.
 
 # --- ctx-execute-enforcer bypass via allowlisted commands ---
 # KNOWN BYPASS: ls is not in any block list, falls through to default allow
