@@ -319,9 +319,32 @@ done
 echo ""
 
 # ─── Hook Blocking Tests (added by Plan 03) ──────────────────────────
-# Section 4: Sentinel + session-gate blocking
-# Section 5: cmm-nudge.sh blocking
-# Section 6: ctx-execute-enforcer.sh blocking
+# Source the E2E helper library for _e2e_assert_hook, payload generators, sentinel mgmt
+source "$SCRIPT_DIR/e2e-hook-helpers.sh"
+
+# Set required variables for the helper library
+E2E_FIXTURE_DIR="$FIXTURE"
+E2E_FAKE_CONFIG="$FAKE_CONFIG"
+
+# Compute project hash (macOS-safe: resolves symlinks via pwd -P inside git repo)
+PROJECT_HASH=$(_e2e_compute_hash "$FIXTURE")
+
+# Create large code file (80+ lines) and small code file for cmm-nudge tests
+python3 -c "
+for i in range(85):
+    print(f'def func_{i}(): pass')
+" > "$FIXTURE/big_module.py"
+
+echo 'x = 1' > "$FIXTURE/tiny.py"
+echo '{"key": "value"}' > "$FIXTURE/config.json"
+
+# Update trap to also clean up sentinel files
+trap 'rm -rf "$TMPDIR_ROOT"; _e2e_cleanup_sentinels "$PROJECT_HASH"' EXIT
+
+# Hook path variables pointing to INSTALLED hooks inside the fixture
+SESSION_GATE="$FIXTURE/.claude/hooks/session-gate.sh"
+CMM_NUDGE="$FIXTURE/.claude/hooks/cmm-nudge.sh"
+CTX_ENFORCER="$FIXTURE/.claude/hooks/ctx-execute-enforcer.sh"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
