@@ -390,6 +390,34 @@ _e2e_assert_hook "$SESSION_GATE" "$(_e2e_tool_payload "mcp__codebase-memory-mcp_
 
 echo ""
 
+# ─── Section 5: cmm-nudge Read blocking ────────────────────────────────
+echo "=== Section 5: cmm-nudge Read blocking ==="
+
+# Ensure CMM sentinel exists (session-gate allows Read through; cmm-nudge evaluates it)
+_e2e_create_sentinels "$PROJECT_HASH"
+
+# Large code file (80+ lines, .py extension): blocked
+_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py")" 2 \
+  "cmm-nudge blocks Read on large code file (big_module.py)"
+
+# Small code file (<50 lines): allowed
+_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/tiny.py")" 0 \
+  "cmm-nudge allows Read on small code file (tiny.py)"
+
+# Non-code extension (.json): allowed
+_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/config.json")" 0 \
+  "cmm-nudge allows Read on non-code file (config.json)"
+
+# Targeted read with offset+limit (offset=1, limit=50): allowed
+_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/big_module.py" 1 50)" 0 \
+  "cmm-nudge allows targeted Read on large file (offset=1, limit=50)"
+
+# Exempt basename (README.md): allowed
+_e2e_assert_hook "$CMM_NUDGE" "$(_e2e_read_payload "$FIXTURE/README.md")" 0 \
+  "cmm-nudge allows Read on exempt basename (README.md)"
+
+echo ""
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
