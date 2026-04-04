@@ -155,6 +155,13 @@ case "$COMMAND" in
 esac
 
 # --- Block Patterns (redirect to ctx_execute) ---
+# Design philosophy: fail-open (default allow) to avoid blocking agent workflows.
+#   Block list: commands with large/unbounded output that should use ctx_execute
+#               (test runners, package managers, linters, build tools, log viewers).
+#   Allow list: commands with small/bounded output needed for normal workflow
+#               (git writes, git bounded reads, filesystem mutations, navigation).
+#   Default:    allow — anything not explicitly blocked passes through.
+# See "Known allowlist gaps" comment at end of file for documented fall-through cases.
 SHOULD_BLOCK=0
 
 case "$COMMAND" in
