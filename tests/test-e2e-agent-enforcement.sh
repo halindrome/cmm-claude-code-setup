@@ -91,6 +91,13 @@ else
   fail "cmm-grep-nudge.sh not copied from global hooks"
 fi
 
+# is-cmm-ext.sh — validates hooks/lib/ was deployed so cmm-grep-nudge can find it
+if [ -f "$FIXTURE/.claude/hooks/lib/is-cmm-ext.sh" ]; then
+  pass "is-cmm-ext.sh deployed to .claude/hooks/lib/"
+else
+  fail "is-cmm-ext.sh not deployed to .claude/hooks/lib/ (cmm-grep-nudge code-glob detection will degrade)"
+fi
+
 # Agent override files in .claude/agents/
 EXPECTED_AGENTS=(
   vbw-dev.md
@@ -555,6 +562,15 @@ _e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "foo" "$FIXTURE/big_modu
 # .vbw-planning path: allowed
 _e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "phase" "$FIXTURE/.vbw-planning")" 0 \
   "cmm-grep-nudge allows Grep inside .vbw-planning path"
+
+# is-cmm-ext.sh coverage: *.rb (Ruby) is a CMM language — blocked via shared lib
+# This exercises the installed .claude/hooks/lib/is-cmm-ext.sh path
+_e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "def " "" "*.rb")" 2 \
+  "cmm-grep-nudge blocks *.rb via is-cmm-ext.sh (installed lib path)"
+
+# is-cmm-ext.sh coverage: *.log is NOT a CMM language — allowed via shared lib
+_e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "ERROR" "" "*.log")" 0 \
+  "cmm-grep-nudge allows *.log via is-cmm-ext.sh (not a CMM language)"
 
 echo ""
 

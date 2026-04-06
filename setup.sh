@@ -793,6 +793,18 @@ install_project() {
     set_executable ".claude/hooks/cmm-grep-nudge.sh"
   fi
 
+  # Copy hooks/lib/ to .claude/hooks/lib/ — required by cmm-grep-nudge.sh at runtime.
+  # cmm-grep-nudge.sh sources is-cmm-ext.sh from $(dirname BASH_SOURCE[0])/lib/,
+  # which resolves to .claude/hooks/lib/ when invoked via agent frontmatter hooks.
+  if [ -d "$SCRIPT_DIR/hooks/lib" ]; then
+    mkdir -p ".claude/hooks/lib"
+    for lib_file in "$SCRIPT_DIR/hooks/lib"/*.sh; do
+      [ -f "$lib_file" ] || continue
+      lib_name=$(basename "$lib_file")
+      copy_file "$lib_file" ".claude/hooks/lib/$lib_name"
+      set_executable ".claude/hooks/lib/$lib_name"
+    done
+  fi
 
   # --- Agent override files (frontmatter hooks for VBW subagents) ---
   # Project-level .claude/agents/ overrides shadow VBW plugin agent definitions
