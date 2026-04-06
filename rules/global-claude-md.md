@@ -106,11 +106,22 @@ The CMM CLI mirrors every MCP tool: `codebase-memory-mcp cli <tool_name> '<json_
 - After context compaction, `ctx_search` can query the event history: "what files were edited?"
 - Use `ctx_search` to recall CMM results that were routed through `ctx_batch_execute`.
 - Use `ctx_stats` to check session metrics and indexed content.
+- Scout-produced RESEARCH.md files are indexed via `ctx_index` after writing. Use `ctx_search` to recall research findings in later pipeline stages (Lead, Dev, Docs) without re-reading the file.
+
+### Scout agent integration
+
+Scout agents cannot run Bash (it is in `disallowedTools`), so the shell-based Context Mode detection used by hooks like `ctx-execute-enforcer.sh` does not apply. Instead, Scout detects Context Mode availability by checking whether `mcp__context-mode__ctx_fetch_and_index` appears in its available tools.
+
+**Web fetches:** When Context Mode is available, Scout routes reference URL fetches (documentation pages, API specs, GitHub issues) through `ctx_fetch_and_index` instead of raw `WebFetch`. This indexes fetched content into the FTS5 store for later `ctx_search` queries. Scout falls back to raw `WebFetch` when Context Mode is not installed or for one-off live data validation URLs.
+
+**RESEARCH.md indexing:** After writing findings to the output path, Scout calls `mcp__context-mode__ctx_index` on the file to index it into the Context Mode store. This makes research findings searchable via `ctx_search` in later pipeline stages (Lead planning, Dev execution), even after context compaction. Scout only indexes when Context Mode is available and the Write succeeded.
+
+**Enforcement model:** This is text-instruction enforcement in the Scout agent body (`agents/vbw-scout.md`), not hook-based. There is no WebFetch hook equivalent to `ctx-execute-enforcer.sh` — hook-based interception is not feasible because Scout cannot run Bash and there is no mechanism to intercept MCP tool calls at the hook level.
 
 ### Tool priority order (when Context Mode is installed)
 
 - Code exploration: CMM tools first (`search_graph`, `get_code_snippet`, `trace_call_path`). For results that must survive compaction, route through `ctx_batch_execute` with CMM CLI.
 - Bash execution with large output: `ctx_execute` or `ctx_batch_execute`
-- Web content: `ctx_fetch_and_index` → `ctx_search`
+- Web content: `ctx_fetch_and_index` → `ctx_search`. Scout agents: `ctx_fetch_and_index` for reference URLs (docs, specs, issues), raw `WebFetch` for live data validation and one-off URLs.
 - Indexed doc search: `ctx_search`
 - File search (non-indexed): Grep/Glob
