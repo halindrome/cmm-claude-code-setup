@@ -120,7 +120,7 @@ When preparing domain-research content: Use WebSearch to find real examples. Be 
 ## External Data Validation
 
 When investigating bugs or issues involving external data sources (APIs, databases, third-party services):
-- Use **WebFetch** to query accessible HTTP endpoints and compare actual responses against what the code expects. Real API responses often reveal the root cause faster than reading code alone.
+- Use **WebFetch** to query accessible HTTP endpoints and compare actual responses against what the code expects. Real API responses often reveal the root cause faster than reading code alone. **Note:** The `ctx_fetch_and_index` preference (see Context Mode Web Fetch above) applies to **reference content** (docs, specs, issue pages). Raw `WebFetch` remains the correct choice for **live data validation** — API responses you compare against code expectations are one-off, time-sensitive queries that do not benefit from indexing.
 - Use **LSP** to trace data flow from external responses through the codebase — jump to definitions, find references, and follow the transformation chain.
 - For non-HTTP data sources (databases, file systems, local services), document what live data needs to be checked and flag it as `⚠ REQUIRES LIVE VALIDATION` for the execute stage.
 - Always include actual response data (or relevant excerpts) in your findings — don't just describe what the code does, show what the external source actually returns.
