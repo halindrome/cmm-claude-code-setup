@@ -2,7 +2,7 @@
 
 Hooks, rules, and enforcement layer for two complementary MCP servers:
 
-- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)** (by [DeusData](https://github.com/DeusData)) — persistent code knowledge graph across 64 languages; replaces file-reading with precise graph queries, saving ~99% of tokens on code exploration
+- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)** (by [DeusData](https://github.com/DeusData)) — persistent code knowledge graph across 67 languages; replaces file-reading with precise graph queries, saving ~99% of tokens on code exploration
 - **[Context Mode MCP](https://github.com/mksglu/context-mode)** *(optional)* — execution sandboxing + SQLite session persistence; routes tool outputs through isolated subprocesses to keep large outputs out of the context window (~98% context reduction)
 
 Together they eliminate the two main token sinks in long Claude Code sessions: redundant file reads (CMM) and bloated tool output (Context Mode).
@@ -13,7 +13,7 @@ Together they eliminate the two main token sinks in long Claude Code sessions: r
 
 ### codebase-memory-mcp (CMM)
 
-Indexes your codebase into a persistent knowledge graph so Claude fetches precise structural results — functions, call chains, architecture overviews — instead of reading entire files. Supports 64 languages, Cypher-like queries, dead code detection, cross-service HTTP linking, and git diff impact analysis. A single graph query returns what would take dozens of Grep/Read calls.
+Indexes your codebase into a persistent knowledge graph so Claude fetches precise structural results — functions, call chains, architecture overviews — instead of reading entire files. Supports 67 languages, Cypher-like queries, dead code detection, cross-service HTTP linking, and git diff impact analysis. A single graph query returns what would take dozens of Grep/Read calls.
 
 ### Context Mode MCP *(optional)*
 
@@ -95,6 +95,7 @@ hooks/
     cmm-session-start.sh                # SessionStart — injects index refresh prompt (agent-aware)
     cmm-session-gate.sh                 # PreToolUse:* — blocks all tools until CMM index ready
     cmm-sentinel-writer.sh              # PostToolUse — marks index as refreshed
+    reindex-after-commit.sh             # PostToolUse:Bash — marks sentinel stale after git commit; calls touch_project to nudge watcher (5–60s reindex)
     agent-cmm-gate.sh                   # PreToolUse:Agent — blocks agents without MCP instructions
     track-cmm-calls.sh                  # PostToolUse — tracks call counts per CMM tool
     context-mode-session-gate.sh        # PreToolUse:* — gates tools until Context Mode ready (no-op if not installed)

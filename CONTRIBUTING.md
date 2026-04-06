@@ -127,6 +127,134 @@ feature/my-work
 
    **Proving your work:** Paste each round's QA report as a separate comment on the PR. Reviewers will cross-reference the reports against the fix commits in the PR history.
 
+## Subagent Hook Behavior
+
+Claude Code project-level hooks (defined in `.claude/settings.json`) fire inside subagents automatically. This means `session-gate.sh`, `cmm-query-stale-advisory.sh`, `track-cmm-calls.sh`, and `reindex-after-commit.sh` all run inside Dev, Scout, QA, and Lead agents without any extra configuration.
+
+### The SUBAGENT_COMMIT Bypass
+
+`reindex-after-commit.sh` skips writing the stale sentinel when running inside a VBW team session (detected via `$CLAUDE_CONFIG_DIR/teams/vbw-*` directories). This prevents a commit in one worktree from cascade-stalling parallel agents.
+
+The Dev agent is the exception: Dev commits **should** mark the sentinel stale, because Scout and QA agents need to know the graph is outdated. `.claude/agents/dev.md` adds a PostToolUse:Bash frontmatter hook that sets `SUBAGENT_COMMIT=1` before invoking `reindex-after-commit.sh`. When this env var is set, the team-mode check is skipped and the stale marker is written.
+
+If you add a new agent that makes commits, create `.claude/agents/<name>.md` with the same `SUBAGENT_COMMIT=1` hook:
+
+```yaml
+hooks:
+  PostToolUse:
+    - matcher: Bash
+      hooks:
+        - type: command
+          command: "SUBAGENT_COMMIT=1 bash .claude/hooks/reindex-after-commit.sh"
+```
+
+### SubagentStart Advisory
+
+The `SubagentStart` hook in `.claude/settings.json` fires in the **parent session** (not inside the subagent) when any subagent starts. It runs `subagent-cmm-startup.sh`, which injects CMM index state into the subagent via `additionalContext` JSON output — telling the agent whether the index is ready or stale before it begins work. This is informational only — it never blocks the agent.
+
+SubagentStart hooks cannot intercept tool calls inside the subagent. Use agent frontmatter hooks (`.claude/agents/<name>.md`) for ongoing per-tool enforcement.
+
+### Requirements
+
+- Agent frontmatter hooks require **Claude Code v1.0.33+**. On older versions, hooks in `.claude/agents/` are silently ignored. The agent still works; only the `SUBAGENT_COMMIT=1` bypass is lost.
+- `.claude/agents/dev.md` is project-specific and **not copied by `setup.sh`**. Users installing this hook layer into their own project should create their own `.claude/agents/` overrides if needed.
+
+### Adding Custom Subagent Hooks
+
+#### Why PostToolUse:Agent Instead of SubagentStop
+
+Claude Code's `SubagentStop` lifecycle event has several reliability gaps that make it unsuitable for critical hook logic (see `docs/setup-guide.md` for full issue details):
+
+- **SubagentStop doesn't fire on `maxTurns`** — the last tool call's hook is silently skipped.
+- **SubagentStop doesn't fire on session degradation** — connections that time out after ~2.5h don't trigger cleanup.
+- **SubagentStop can't identify which agent stopped** — no `subagent_type` field is available in the event.
+- **Prompt-based SubagentStop hooks can't prevent termination** — the subagent receives feedback but gets no turn to respond ([#20221](https://github.com/anthropics/claude-code/issues/20221), closed as "not planned").
+
+**For any logic that must run when a subagent completes, use `PostToolUse:Agent` instead.** This event fires in the parent session after the Agent tool returns, regardless of how the subagent terminated. It receives the full tool result, including `session_id` and exit status.
+
+#### Adding a Hook to settings.json
+
+Register a PostToolUse:Agent hook in `.claude/settings.json`:
+
+```json
+{
+  "PostToolUse": [
+    {
+      "matcher": "Agent",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash /absolute/path/to/your-hook.sh",
+          "_comment": "Describe what this hook does"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Requires Claude Code **v1.0.33** or later.
+
+The hook script receives the PostToolUse:Agent event JSON on stdin. Key fields:
+
+| Field | Description |
+|-------|-------------|
+| `session_id` | Session identifier (correlate with SubagentStart records) |
+| `tool_result` | Output returned by the subagent |
+| `tool_result.stop_reason` | How the agent stopped: `end_turn`, `error_max_turns`, etc. |
+
+Example hook to detect Dev agent maxTurns:
+
+```bash
+#!/bin/bash
+EVENT=$(cat)
+STOP_REASON=$(echo "$EVENT" | jq -r '.tool_result.stop_reason // empty')
+if [ "$STOP_REASON" = "error_max_turns" ]; then
+    echo "Warning: Dev agent hit maxTurns — graph may not be marked stale." >&2
+fi
+exit 0
+```
+
+#### Adding a Hook via Agent Frontmatter
+
+Agent-specific hooks can be defined in the agent's `.claude/agents/<name>.md` frontmatter. This is how the Dev agent bypasses team-mode suppression:
+
+```yaml
+---
+name: dev
+hooks:
+  PostToolUse:
+    - matcher: Bash
+      command: "SUBAGENT_COMMIT=1 bash .claude/hooks/reindex-after-commit.sh"
+---
+```
+
+Step-by-step to add a custom PostToolUse:Agent hook to an agent:
+
+1. Open `.claude/agents/<your-agent>.md`
+2. Add a `hooks` block to the YAML frontmatter:
+   ```yaml
+   hooks:
+     PostToolUse:
+       - matcher: Agent
+         command: "bash .claude/hooks/your-custom-hook.sh"
+   ```
+3. Create `.claude/hooks/your-custom-hook.sh` — must exit 0 for advisory hooks, exit 2 only if you want to block (block applies to the tool call, not to agent termination)
+4. Copy the hook to `hooks/project/` as the canonical source:
+   ```bash
+   cp .claude/hooks/your-custom-hook.sh hooks/project/your-custom-hook.sh
+   ```
+5. Both copies must be kept in sync. The `hooks/project/` directory is the source of truth for version control.
+
+#### Hook Exit Codes
+
+| Exit Code | Effect |
+|-----------|--------|
+| `0` | Advisory — hook ran, no action taken |
+| `2` | Block — prevents the tool call (PreToolUse only; PostToolUse exit 2 is ignored) |
+
+For SubagentStop quality gates: **only command-based hooks that exit 2 can gate agent termination.** Prompt-based hooks returning `{"ok": false}` do not prevent termination (Issue #20221).
+
 ## Reporting Bugs
 
 Open an issue with:

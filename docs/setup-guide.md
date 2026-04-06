@@ -17,7 +17,7 @@ This lets Claude navigate code by relationships (who calls what, what implements
 - **Change detection** — map git diffs to affected graph symbols and blast radius
 - **Architecture Decision Records** — persistent, section-based architectural summaries
 - **Cypher queries** — arbitrary graph queries for complex relationship patterns
-- **64 languages** — Python, Go, JavaScript, TypeScript, Rust, Java, C++, C#, Ruby, and many more
+- **67 languages** — Python, Go, JavaScript, TypeScript, Rust, Java, C++, C#, Ruby, and many more
 
 ---
 
@@ -280,6 +280,7 @@ chmod +x .claude/hooks/*.sh
 | `cmm-sentinel-writer.sh` | PostToolUse | Writes a sentinel file after `index_repository` completes, unblocking the session gate |
 | `agent-cmm-gate.sh` | PreToolUse:Agent | Blocks subagent spawning unless the prompt includes CMM tool instructions |
 | `track-cmm-calls.sh` | PostToolUse | Tracks call counts per CMM tool to `~/.cache/codebase-memory-mcp/_call-counts.json` |
+| `reindex-after-commit.sh` | PostToolUse:Bash | Marks CMM sentinel stale after a `git commit` and calls `touch_project` to nudge the watcher for faster reindexing (5–60s) |
 
 > **Note:** These hooks will be created in Phases 2 and 3 of this project. The names and purposes are documented here for reference.
 
@@ -354,7 +355,7 @@ The session lifecycle hooks (Steps 5-6) work together to ensure the code graph i
 Session starts
   -> cmm-session-start.sh injects "check index and refresh" prompt
   -> cmm-session-gate.sh blocks ALL tools until index is ready
-  -> Claude runs index_status, then index_repository if needed
+  -> Claude runs index_repository (incremental — fast when already indexed)
   -> cmm-sentinel-writer.sh detects index_repository completion, writes sentinel file
   -> cmm-session-gate.sh reads sentinel, unblocks all tools
   -> Session is ready — all tools available
@@ -370,8 +371,8 @@ Session starts
          ▼
 ┌─────────────────────────────────────┐
 │  cmm-session-start.sh              │
-│  Injects: "Run index_status, then  │
-│  index_repository if stale/missing" │
+│  Injects: "Run index_repository    │
+│  to ensure graph is current"        │
 └────────┬────────────────────────────┘
          │
          ▼
@@ -401,6 +402,26 @@ Session starts
 ```
 
 > **Auto-sync:** After the initial `index_repository` call, the server keeps the graph fresh automatically via background polling. You don't need to manually re-index — the server detects file changes (mtime + size) and triggers incremental re-indexing within seconds. You can still call `index_repository` manually to force an immediate reindex (e.g., after a large `git pull`).
+
+### Post-Commit Reindexing
+
+When Claude Code runs a `git commit`, the `reindex-after-commit.sh` PostToolUse hook fires automatically. It:
+
+1. Marks the CMM sentinel as **stale** — the session gate will warn (non-blocking) until the index is refreshed.
+2. Calls `touch_project` to nudge the CMM watcher, so the next poll cycle runs immediately rather than waiting up to 60 seconds.
+
+**Timing:** The CMM watcher reindexes within **5–60 seconds** depending on project size (adaptive interval). Graph queries made immediately after a commit will return pre-commit results during this window.
+
+**Manual override:** To reindex immediately (blocking), call:
+```
+mcp__codebase-memory-mcp__index_repository
+```
+
+**Debug logging:** If `debug_logging: true` is set in `.vbw-planning/config.json`, each `touch_project` call is logged to `/tmp/cmm-touch-project.log` with timestamp, project name, and result.
+
+**Troubleshooting:**
+- If the watcher is not running (CMM server restarted), `touch_project` fails silently. The stale sentinel remains as a fallback — the session gate will prompt you to reindex at the start of the next session.
+- To verify the watcher is running: call `mcp__codebase-memory-mcp__index_status` and check the response.
 
 ---
 
@@ -551,6 +572,14 @@ Fetch the ADR before planning to validate against ARCHITECTURE, PATTERNS, STACK,
 - The sentinel file is session-scoped — it resets on each new session
 - As a temporary workaround, you can manually create the sentinel file (location will be documented when the hook is created in Phase 2)
 
+### Post-commit reindex not happening / touch_project silent failure
+
+- If `touch_project` returns "watcher not running", the CMM server's watcher thread is not active. This can happen after a server restart.
+- The stale sentinel acts as a fallback — the session gate will prompt you to run `index_repository` at the start of the next session.
+- To check watcher status: call `mcp__codebase-memory-mcp__index_status` — if the server responds, the watcher is likely running.
+- To force an immediate reindex: call `mcp__codebase-memory-mcp__index_repository`.
+- To enable debug logging: set `"debug_logging": true` in `.vbw-planning/config.json`. Each `touch_project` call will be logged to `/tmp/cmm-touch-project.log`.
+
 ### MCP server not connecting
 
 - Run `codebase-memory-mcp --help` to verify the binary works
@@ -580,6 +609,7 @@ Here's the full picture of all hooks, where they live, and what they do:
 | PreToolUse | Agent | `agent-cmm-gate.sh` | command | Blocks agents without CMM instructions |
 | PostToolUse | — | `cmm-sentinel-writer.sh` | command | Marks session as ready after index completes |
 | PostToolUse | — | `track-cmm-calls.sh` | command | Tracks call counts per CMM tool |
+| PostToolUse | Bash | `reindex-after-commit.sh` | command | Marks sentinel stale after `git commit`; calls `touch_project` to nudge watcher |
 
 ---
 
@@ -610,6 +640,140 @@ Claude edits a file
   -> reindex-after-edit.sh fires (debounced 60s)
   -> Prompts Claude to re-run index_repository
   -> Auto-sync also detects changes in background
+```
+
+---
+
+## Agent Hook Reliability and Known Limitations
+
+Claude Code's agent lifecycle hooks (`SubagentStop`, `TeammateIdle`, `TaskCompleted`) have several confirmed reliability gaps. This project deliberately avoids using these hooks for any critical logic and instead relies on `PostToolUse:Agent` fallback hooks.
+
+### Known Issues
+
+**Issue #1 — SubagentStop doesn't fire when maxTurns is reached**
+When a subagent hits the `maxTurns` limit, the last tool call's PostToolUse hook is skipped and the agent terminates with `error_max_turns`. Hooks for turns 1 through N−1 fire normally, but the final turn's hook is lost.
+- Severity: HIGH
+- Reference: [anthropics/claude-agent-sdk-typescript#58](https://github.com/anthropics/claude-agent-sdk-typescript/issues/58)
+- Workaround: `subagent-end-track.sh` (PostToolUse:Agent) marks the CMM sentinel stale at the **Agent tool level** — it fires regardless of how the subagent terminated.
+
+**Issue #2 — SubagentStop cannot identify which subagent finished**
+When multiple subagents share a session, `SubagentStop` receives only the `session_id` — no `subagent_type` field is propagated. There is no way to distinguish which agent (Dev, Scout, QA) completed.
+- Severity: MEDIUM
+- Reference: [anthropics/claude-code#7881](https://github.com/anthropics/claude-code/issues/7881)
+- Workaround: `subagent-start-track.sh` writes `session_id → subagent_type` to a state file at spawn time; `subagent-end-track.sh` looks up the type at completion time.
+
+**Issue #3 — Prompt-based SubagentStop hooks don't prevent termination**
+If a SubagentStop prompt hook returns `{"ok": false, "reason": "..."}`, the subagent receives the feedback message but is given no additional turn to respond — the session terminates anyway.
+- Severity: MEDIUM
+- Reference: [anthropics/claude-code#20221](https://github.com/anthropics/claude-code/issues/20221)
+- Closed as "not planned" (February 2026)
+- **Recommendation: Only use command-based (bash script) hooks for SubagentStop gates. Do not use prompt-based SubagentStop hooks for quality enforcement.**
+
+**Issue #4 — SubagentStop doesn't fire on session degradation (~2.5h)**
+After approximately 2.5 hours, session protocol timeouts can terminate a subagent without firing SubagentStop. Affects background subagents especially.
+- Severity: HIGH
+- Reference: claude-code issue #16047
+- Workaround: The session-gate.sh PreToolUse hook catches stale sentinels on the next tool call, providing a safety net even when cleanup hooks don't fire.
+
+**Issue #5 — Skills stop hooks never fire**
+Claude Code skills (`type: "command"` in settings.json) do not trigger SubagentStop or Stop events when they finish. Not currently applicable to this project (which uses the Agent tool, not skills), but worth noting for future work.
+- Reference: claude-code issue #19225
+
+### Recommended Pattern: PostToolUse:Agent Fallbacks
+
+Instead of SubagentStop, this project uses two hooks that fire on every Agent tool invocation:
+
+| Hook | Event | Purpose |
+|------|-------|---------|
+| `subagent-start-track.sh` | PreToolUse:Agent | Records `session_id`, `subagent_type`, and timestamp to `/tmp/subagent-tracking-<hash>` |
+| `subagent-end-track.sh` | PostToolUse:Agent | Correlates end event, logs execution time, marks sentinel stale if Dev agent completed |
+
+This pattern reliably provides start+end tracking and Dev-agent sentinel marking, even when SubagentStop doesn't fire.
+
+#### Example: State File Tracking
+
+```bash
+# /tmp/subagent-tracking-<project-hash> — newline-delimited JSON
+{"session_id":"abc-123","subagent_type":"dev","started_at":"2026-03-24T14:30:45Z","project_root":"/path/to/project"}
+{"session_id":"def-456","subagent_type":"scout","started_at":"2026-03-24T14:35:10Z","project_root":"/path/to/project"}
+```
+
+#### Adding a Custom PostToolUse:Agent Hook
+
+To add your own agent completion logic, create a bash hook and register it in `.claude/settings.json`:
+
+```json
+{
+  "PostToolUse": [
+    {
+      "matcher": "Agent",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash /path/to/your-agent-end-hook.sh"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Requires Claude Code v1.0.33+.
+
+### Team-Mode Detection and SUBAGENT_COMMIT Bypass
+
+In VBW team sessions, multiple subagents run in parallel. To prevent one subagent's commit from stalling others, `reindex-after-commit.sh` skips writing the stale sentinel when running inside a VBW team session.
+
+**Detection logic:**
+```bash
+# reindex-after-commit.sh checks for VBW team directories
+if ls "${CLAUDE_CONFIG_DIR}/teams/vbw-"* >/dev/null 2>&1; then
+    # In team mode: skip sentinel stale write
+    exit 0
+fi
+```
+
+**Dev agent override:**
+The `dev.md` agent frontmatter sets `SUBAGENT_COMMIT=1`, which bypasses the team-mode check so Dev's commits still mark the sentinel stale (triggering Scout/QA awareness):
+
+```yaml
+# .claude/agents/dev.md frontmatter
+hooks:
+  PostToolUse:
+    - matcher: Bash
+      command: "SUBAGENT_COMMIT=1 bash .claude/hooks/reindex-after-commit.sh"
+```
+
+To replicate this bypass for a custom agent, add the same `SUBAGENT_COMMIT=1` prefix to the hook command in your agent's frontmatter.
+
+### Troubleshooting Agent Lifecycle Issues
+
+**Stale graph after maxTurns termination**
+
+If a Dev subagent hits maxTurns and the graph is stale:
+1. Check if `subagent-end-track.sh` ran: `cat /tmp/cmm-subagent-track.log` (only populated when `CMM_DEBUG_TRACKING=1`)
+2. Manually mark the sentinel stale: `echo stale > /tmp/cmm-session-ready-<hash>`
+3. Run `index_repository` at the start of the next session
+
+**touch_project failures**
+
+If the CMM watcher isn't being nudged after commits:
+1. Check `/tmp/cmm-touch-project.log` for errors (only populated when `debug_logging: true` in `.vbw-planning/config.json`)
+2. Verify the CMM server is running: `mcp__codebase-memory-mcp__index_status`
+
+**SubagentStart advisory not appearing**
+
+If the "index is stale" advisory isn't appearing at subagent startup:
+1. Verify `subagent-cmm-startup.sh` is registered in `.claude/settings.json` under `SubagentStart`
+2. Check the sentinel file exists: `ls /tmp/cmm-session-ready-*`
+3. If no sentinel exists, run `index_repository` to initialize it
+
+**Enable debug tracking**
+
+To log all subagent start/end events to file:
+```bash
+export CMM_DEBUG_TRACKING=1
+# Then start your Claude Code session; events log to /tmp/cmm-subagent-track.log
 ```
 
 ---
