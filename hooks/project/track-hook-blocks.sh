@@ -64,6 +64,9 @@ data['total_blocks'] = data.get('total_blocks', 0) + 1
 if hook_type == 'read':
     data['read_blocks'] = data.get('read_blocks', 0) + 1
     data.setdefault('by_hook', {})['cmm-nudge'] = data.get('by_hook', {}).get('cmm-nudge', 0) + 1
+elif hook_type == 'grep':
+    data['grep_blocks'] = data.get('grep_blocks', 0) + 1
+    data.setdefault('by_hook', {})['cmm-grep-nudge'] = data.get('by_hook', {}).get('cmm-grep-nudge', 0) + 1
 elif hook_type == 'bash':
     data['bash_blocks'] = data.get('bash_blocks', 0) + 1
     data.setdefault('by_hook', {})['ctx-execute-enforcer'] = data.get('by_hook', {}).get('ctx-execute-enforcer', 0) + 1

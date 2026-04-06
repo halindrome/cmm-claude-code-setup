@@ -611,6 +611,10 @@ merge_settings_json() {
       {
         "matcher": "Read",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-nudge.sh\""}]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-grep-nudge.sh\""}]
       }
     ],
     "PostToolUse": [
@@ -777,13 +781,16 @@ install_project() {
   done
   shopt -u nullglob
 
-  # Copy cmm-nudge.sh from hooks/global/ to .claude/hooks/ — needed by agent frontmatter
-  # hooks (in .claude/agents/) that reference cmm-nudge.sh via project-relative paths
-  # (e.g., "bash .claude/hooks/cmm-nudge.sh"). Without this, project installs that skip
-  # --global would lack the file at the expected location.
+  # Copy global CMM hooks to .claude/hooks/ — needed by agent frontmatter hooks (in
+  # .claude/agents/) that reference them via project-relative paths. Without this,
+  # project installs that skip --global would lack these files at the expected location.
   if [ -f "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ]; then
     copy_file "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ".claude/hooks/cmm-nudge.sh"
     set_executable ".claude/hooks/cmm-nudge.sh"
+  fi
+  if [ -f "$SCRIPT_DIR/hooks/global/cmm-grep-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/cmm-grep-nudge.sh" ".claude/hooks/cmm-grep-nudge.sh"
+    set_executable ".claude/hooks/cmm-grep-nudge.sh"
   fi
 
 

@@ -83,6 +83,24 @@ print(json.dumps({'tool_name':'Bash','tool_input':{'command':cmd}}))" 2>/dev/nul
     || printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$command"
 }
 
+# Generate PreToolUse Grep JSON payload.
+# Usage: json=$(_e2e_grep_payload "MyClass")
+#        json=$(_e2e_grep_payload "MyClass" "/path/to/dir")          # with path
+#        json=$(_e2e_grep_payload "MyClass" "/path/to/dir" "*.py")   # with glob
+#        json=$(_e2e_grep_payload "MyClass" "" "" "python")          # with type
+_e2e_grep_payload() {
+  local pattern="$1"
+  local path="${2:-}"
+  local glob="${3:-}"
+  local type="${4:-}"
+  local input="{\"pattern\":\"$pattern\""
+  [[ -n "$path" ]] && input+=",\"path\":\"$path\""
+  [[ -n "$glob" ]] && input+=",\"glob\":\"$glob\""
+  [[ -n "$type" ]] && input+=",\"type\":\"$type\""
+  input+="}"
+  printf '{"tool_name":"Grep","tool_input":%s}' "$input"
+}
+
 # Generate PreToolUse JSON for an arbitrary tool.
 # Usage: json=$(_e2e_tool_payload "Edit")
 #        json=$(_e2e_tool_payload "Edit" '{"file_path":"/tmp/f","old_string":"a","new_string":"b"}')

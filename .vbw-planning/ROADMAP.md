@@ -25,7 +25,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [x] Phase 20: CMM Sentinel Staleness After Commits
 - [x] Phase 21: Require index_repository for Stale Sentinel
 - [x] Phase 22: Context Mode Monorepo Root Path Fix
-- [ ] Phase 23: Enforce CMM Hooks Inside Subagents
+- [x] Phase 23: Enforce CMM Hooks Inside Subagents
 - [ ] Phase 24: Context Mode Integration Verification
 - [ ] Phase 25: CMM Index and UI Offer in Setup
 - [ ] Phase 26: Uninstall Option
@@ -39,6 +39,10 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [ ] Phase 34: Hard-Block Read on Code Files
 - [ ] Phase 35: Expand Agent CMM Gate to Explore and Plan
 - [ ] Phase 36: Hook Block Counter and Statusline Integration
+- [ ] Phase 37: Agent Override Missing Roles
+- [ ] Phase 38: End-to-End Agent Enforcement Integration Test
+- [ ] Phase 39: Harden CMM Nudge Hook
+- [x] Phase 40: Grep CMM Enforcement
 
 ### Phase 6: Token Consumption Benchmarks
 **Goal:** Design and implement a benchmark suite that measures Claude Code token consumption when answering standard codebase questions, comparing baseline (no CMM) vs CMM-enabled vs CMM-with-cache — producing reproducible data usable for evaluating the ROI of this tool.
@@ -252,7 +256,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 | 3 - Project Hooks | archived | complete | 2026-03-12 |
 | 4 - Rules + Config Templates | 1/1 | complete | 2026-03-20 |
 | 5 - Setup Script | 1/1 | complete | 2026-03-20 |
-| 6 - Token Benchmarks | 1/3 | in progress | - |
+| 6 - Token Benchmarks | 3/3 | complete | 2026-04-06 |
 | 7 - Agent Init Context | 1/1 | complete | 2026-03-20 |
 | 8 - Context Mode Integration | 3/3 | complete | 2026-03-14 |
 | 9 - Setup MCP Availability Check | 1/1 | complete | 2026-03-14 |
@@ -266,10 +270,10 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 | 17 - Git Branching Strategy | 3/3 | complete | 2026-04-01 |
 | 18 - Implement Branching Strategy | 3/3 | complete | 2026-03-17 |
 | 19 - Fix Session-Gate CMM Deadlock | 1/1 | complete | 2026-03-18 |
-| 20 - CMM Sentinel Staleness After Commits | 3/3 | complete | 2026-03-18 |
-| 21 - Require index_repository for Stale Sentinel | 0/? | pending | — |
-| 22 - Context Mode Monorepo Root Path Fix | 0/? | pending | — |
-| 23 - Enforce CMM Hooks Inside Subagents | 0/? | pending | — |
+| 20 - CMM Sentinel Staleness After Commits | 3/3 | complete | 2026-04-01 |
+| 21 - Require index_repository for Stale Sentinel | 2/2 | complete | 2026-04-02 |
+| 22 - Context Mode Monorepo Root Path Fix | 3/3 | complete | 2026-04-04 |
+| 23 - Enforce CMM Hooks Inside Subagents | 3/3 | complete | 2026-04-04 |
 | 24 - Context Mode Integration Verification | 0/? | pending | — |
 | 25 - CMM Index and UI Offer in Setup | 0/? | pending | — |
 | 26 - Uninstall Option | 0/? | pending | — |
@@ -504,3 +508,40 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - Block counts work inside subagents (frontmatter hooks in `.claude/agents/` fire the same blocking code)
 - Block counter resets per session (or accumulates — design choice based on what's most useful)
 - Tests verify: block count increments on blocked Read, block count increments on blocked Bash, statusline displays block data
+
+### Phase 37: Agent Override Missing Roles
+**Goal:** Create project-level agent overrides for `vbw-architect`, `vbw-lead`, and `vbw-docs` that inject CMM enforcement hooks (PreToolUse:Read cmm-nudge, PostToolUse CMM call tracking and stale advisory). These three VBW agent roles currently run without CMM enforcement because they lack `.claude/agents/` overrides — unlike vbw-scout, vbw-dev, vbw-qa, and vbw-debugger which already have them. The overrides must preserve the full plugin agent body and only add frontmatter hooks, following the established pattern.
+**Deps:** Phase 23 (Enforce CMM Hooks Inside Subagents)
+**Reqs:** none (enforcement coverage gap)
+**Success:**
+- `agents/vbw-architect.md` created with CMM hooks in frontmatter, body matches plugin source
+- `agents/vbw-lead.md` created with CMM hooks in frontmatter, body matches plugin source
+- `agents/vbw-docs.md` created with CMM hooks in frontmatter, body matches plugin source
+- `setup.sh` installs all three to `.claude/agents/` alongside existing agent overrides
+- Hook selection per agent respects tool access: cmm-nudge.sh only where Read is available, ctx-execute-enforcer.sh only where Bash is available
+- No conflicts with existing LSP-first or Code Navigation instructions in agent bodies
+
+### Phase 38: End-to-End Agent Enforcement Integration Test
+**Goal:** Create an integration test that installs the CMM hook layer into a well-known open-source repo (via setup.sh --project), then verifies that agent-level hook enforcement works end-to-end: spawning agents that attempt Read on large code files and Bash commands that produce large output, confirming hooks block and redirect to CMM/Context Mode tools as expected. This closes the gap between unit-level hook tests (which invoke hooks in isolation) and real-world behavior (where hooks fire inside Claude Code subagents).
+**Deps:** Phase 37 (Agent Override Missing Roles), Phase 23 (Enforce CMM Hooks Inside Subagents)
+**Reqs:** none (test coverage gap)
+**Success:**
+- Integration test script that clones or uses a fixture repo, runs setup.sh --project, and validates the installed hook layer
+- Verifies settings.json has correct hook registrations (PreToolUse, PostToolUse, SubagentStart)
+- Verifies .claude/agents/ overrides are installed for all 7 VBW agent roles
+- Simulates agent tool calls (Read on large code files, Bash with test runners) and confirms hooks block (exit 2)
+- Validates sentinel files are created and hooks respect them (CMM sentinel, Context Mode sentinel)
+- Test is self-contained: creates fixtures, runs, cleans up — no manual steps
+- Optional stretch: actually spawn a Claude Code subagent (if CLI available) and verify hook output in agent context
+
+### Phase 39: Harden CMM Nudge Hook
+**Goal:** Close the enforcement gaps discovered in Phase 38 E2E testing where agents bypass cmm-nudge.sh by adding offset/limit to Read calls on large code files instead of switching to CMM graph tools. The nudge hook currently allows targeted reads (with offset/limit) on any file regardless of size, which means agents can sidestep the enforcement by simply adding `offset: 0, limit: 100` to their Read calls. This phase hardens the nudge to also block targeted reads on large code files when CMM graph tools are available, and evaluates whether ctx-execute-enforcer's allowlist is too permissive for common agent Bash patterns (ls, git, cat).
+**Deps:** Phase 38 (E2E Agent Enforcement Integration Test)
+**Reqs:** none (enforcement hardening)
+**Success:**
+- cmm-nudge.sh blocks Read on large code files even with offset/limit present — targeted reads no longer bypass enforcement
+- Exception: offset+limit <= ~20 lines still allowed (viewing a specific small section is legitimate)
+- Exception: files in .vbw-planning/, .claude/, and other non-code paths remain exempt
+- ctx-execute-enforcer allowlist reviewed — document which commands should remain allowed vs which are too permissive
+- Phase 38 E2E tests updated: Section 6 known-bypass tests flipped from PASS to FAIL for hardened cases
+- No false positives on legitimate small-section reads during normal Dev agent workflows

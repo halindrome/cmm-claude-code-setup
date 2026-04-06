@@ -36,7 +36,7 @@ AGENTS=(
 # (all), cmm-query-stale-advisory (all).
 _must_have_hooks() {
   local agent="$1"
-  local hooks="cmm-nudge.sh track-cmm-calls.sh cmm-query-stale-advisory.sh"
+  local hooks="cmm-nudge.sh cmm-grep-nudge.sh track-cmm-calls.sh cmm-query-stale-advisory.sh"
   case "$agent" in
     vbw-dev)       hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh" ;;
     vbw-debugger)  hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh" ;;

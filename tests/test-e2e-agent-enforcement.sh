@@ -50,7 +50,7 @@ echo ""
 # ─── Section 1: Installed File Existence ─────────────────────────────────
 echo "=== Section 1: Installed File Existence ==="
 
-# Hook files expected in .claude/hooks/ (13 from hooks/project/ + cmm-nudge.sh from hooks/global/)
+# Hook files expected in .claude/hooks/ (13 from hooks/project/ + cmm-nudge.sh + cmm-grep-nudge.sh from hooks/global/)
 EXPECTED_HOOKS=(
   session-gate.sh
   agent-cmm-gate.sh
@@ -66,6 +66,7 @@ EXPECTED_HOOKS=(
   context-mode-pre-compact.sh
   track-hook-blocks.sh
   cmm-nudge.sh
+  cmm-grep-nudge.sh
 )
 
 for hook in "${EXPECTED_HOOKS[@]}"; do
@@ -81,6 +82,13 @@ if [ -f "$FIXTURE/.claude/hooks/cmm-nudge.sh" ]; then
   pass "cmm-nudge.sh copied from global hooks"
 else
   fail "cmm-nudge.sh not copied from global hooks"
+fi
+
+# cmm-grep-nudge.sh specifically — validates global hook was copied to project hooks dir
+if [ -f "$FIXTURE/.claude/hooks/cmm-grep-nudge.sh" ]; then
+  pass "cmm-grep-nudge.sh copied from global hooks"
+else
+  fail "cmm-grep-nudge.sh not copied from global hooks"
 fi
 
 # Agent override files in .claude/agents/
@@ -254,6 +262,13 @@ for agent in "${AGENT_NAMES[@]}"; do
   else
     fail "$agent missing cmm-nudge.sh reference"
   fi
+
+  # cmm-grep-nudge.sh reference (all agents should have it)
+  if grep -q "cmm-grep-nudge.sh" "$file"; then
+    pass "$agent has cmm-grep-nudge.sh reference"
+  else
+    fail "$agent missing cmm-grep-nudge.sh reference"
+  fi
 done
 
 # Agents WITH Bash access should have ctx-execute-enforcer.sh
@@ -344,6 +359,7 @@ trap 'rm -rf "$TMPDIR_ROOT"; _e2e_cleanup_sentinels "$PROJECT_HASH"' EXIT
 # Hook path variables pointing to INSTALLED hooks inside the fixture
 SESSION_GATE="$FIXTURE/.claude/hooks/session-gate.sh"
 CMM_NUDGE="$FIXTURE/.claude/hooks/cmm-nudge.sh"
+CMM_GREP_NUDGE="$FIXTURE/.claude/hooks/cmm-grep-nudge.sh"
 CTX_ENFORCER="$FIXTURE/.claude/hooks/ctx-execute-enforcer.sh"
 
 # ─── Section 4: Sentinel + session-gate blocking ───────────────────────
@@ -499,6 +515,46 @@ _e2e_assert_hook "$CTX_ENFORCER" "$(_e2e_bash_payload "echo hello")" 0 \
 
 # KNOWN GAP: Most agent Bash usage (ls, git, mkdir) falls within the allowlist
 # Only test runners (npm test, pytest) and package managers (pip install) are actually blocked
+
+echo ""
+
+# ─── Section 8: cmm-grep-nudge Grep blocking ───────────────────────────
+echo "=== Section 8: cmm-grep-nudge Grep blocking ==="
+
+# Ensure CMM sentinel exists
+_e2e_create_sentinels "$PROJECT_HASH"
+
+# Unscoped grep (no path): blocked
+_e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "MyClass")" 2 \
+  "cmm-grep-nudge blocks unscoped grep (no path)"
+
+# Code glob (*.py): blocked
+_e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "def foo" "" "*.py")" 2 \
+  "cmm-grep-nudge blocks Grep with *.py glob"
+
+# Code glob (*.ts): blocked
+_e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "function" "" "*.ts")" 2 \
+  "cmm-grep-nudge blocks Grep with *.ts glob"
+
+# Code type (python): blocked
+_e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "class Foo" "" "" "python")" 2 \
+  "cmm-grep-nudge blocks Grep with type=python"
+
+# Config glob (*.json): allowed
+_e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "key" "" "*.json")" 0 \
+  "cmm-grep-nudge allows Grep with *.json glob"
+
+# Markdown glob (*.md): allowed
+_e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "TODO" "" "*.md")" 0 \
+  "cmm-grep-nudge allows Grep with *.md glob"
+
+# Single file path: allowed
+_e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "foo" "$FIXTURE/big_module.py")" 0 \
+  "cmm-grep-nudge allows Grep on single file path"
+
+# .vbw-planning path: allowed
+_e2e_assert_hook "$CMM_GREP_NUDGE" "$(_e2e_grep_payload "phase" "$FIXTURE/.vbw-planning")" 0 \
+  "cmm-grep-nudge allows Grep inside .vbw-planning path"
 
 echo ""
 
