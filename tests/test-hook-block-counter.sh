@@ -103,19 +103,24 @@ REPO_T3_REAL="$(cd "$REPO_T3" && pwd -P)"
 HASH_T3=$(echo "$REPO_T3_REAL" | md5 -q 2>/dev/null || echo "$REPO_T3_REAL" | md5sum | awk '{print $1}')
 COUNTER_T3="$FAKE_HOME_T3/.cache/codebase-memory-mcp/_block-counts-${HASH_T3}.json"
 
-# Run "read" twice, then "bash" once
+# Run "read" twice, "grep" once, then "bash" once
 (cd "$REPO_T3" && HOME="$FAKE_HOME_T3" bash "$TRACK_HOOK" "read") 2>/dev/null
 (cd "$REPO_T3" && HOME="$FAKE_HOME_T3" bash "$TRACK_HOOK" "read") 2>/dev/null
+(cd "$REPO_T3" && HOME="$FAKE_HOME_T3" bash "$TRACK_HOOK" "grep") 2>/dev/null
 (cd "$REPO_T3" && HOME="$FAKE_HOME_T3" bash "$TRACK_HOOK" "bash") 2>/dev/null
 
 if [ -f "$COUNTER_T3" ]; then
   TOTAL_B=$(python3 -c "import json; print(json.load(open('$COUNTER_T3'))['total_blocks'])" 2>/dev/null || echo "ERR")
   READ_B=$(python3 -c "import json; print(json.load(open('$COUNTER_T3'))['read_blocks'])" 2>/dev/null || echo "ERR")
+  GREP_B=$(python3 -c "import json; print(json.load(open('$COUNTER_T3'))['grep_blocks'])" 2>/dev/null || echo "ERR")
   BASH_B=$(python3 -c "import json; print(json.load(open('$COUNTER_T3'))['bash_blocks'])" 2>/dev/null || echo "ERR")
+  BY_HOOK_GREP=$(python3 -c "import json; print(json.load(open('$COUNTER_T3'))['by_hook']['cmm-grep-nudge'])" 2>/dev/null || echo "ERR")
 
-  if [ "$TOTAL_B" = "3" ]; then pass "total_blocks accumulated to 3"; else fail "total_blocks expected 3, got $TOTAL_B"; fi
+  if [ "$TOTAL_B" = "4" ]; then pass "total_blocks accumulated to 4"; else fail "total_blocks expected 4, got $TOTAL_B"; fi
   if [ "$READ_B" = "2" ]; then pass "read_blocks accumulated to 2"; else fail "read_blocks expected 2, got $READ_B"; fi
+  if [ "$GREP_B" = "1" ]; then pass "grep_blocks accumulated to 1"; else fail "grep_blocks expected 1, got $GREP_B"; fi
   if [ "$BASH_B" = "1" ]; then pass "bash_blocks accumulated to 1"; else fail "bash_blocks expected 1, got $BASH_B"; fi
+  if [ "$BY_HOOK_GREP" = "1" ]; then pass "by_hook.cmm-grep-nudge is 1"; else fail "by_hook.cmm-grep-nudge expected 1, got $BY_HOOK_GREP"; fi
 else
   fail "Counter file missing after accumulation test"
 fi
@@ -194,7 +199,7 @@ HASH_T5=$(echo "$REPO_T5_REAL" | md5 -q 2>/dev/null || echo "$REPO_T5_REAL" | md
 # Write known block-counts JSON
 python3 -c "
 import json
-data = {'total_blocks': 20, 'read_blocks': 12, 'bash_blocks': 8, 'by_hook': {'cmm-nudge': 12, 'ctx-execute-enforcer': 8}}
+data = {'total_blocks': 25, 'read_blocks': 12, 'grep_blocks': 5, 'bash_blocks': 8, 'by_hook': {'cmm-nudge': 12, 'cmm-grep-nudge': 5, 'ctx-execute-enforcer': 8}}
 with open('$FAKE_HOME_T5/.cache/codebase-memory-mcp/_block-counts-${HASH_T5}.json', 'w') as f:
     json.dump(data, f)
 "
@@ -217,10 +222,10 @@ chmod +x "$STATUSLINE_TMP"
 # Run the extracted statusline from the test repo
 OUTPUT=$(cd "$REPO_T5" && HOME="$FAKE_HOME_T5" bash "$STATUSLINE_TMP" 2>/dev/null) || OUTPUT=""
 
-if echo "$OUTPUT" | grep -q 'Blk:R12/B8'; then
-  pass "Statusline output contains 'Blk:R12/B8'"
+if echo "$OUTPUT" | grep -q 'Blk:R12/G5/B8'; then
+  pass "Statusline output contains 'Blk:R12/G5/B8'"
 else
-  fail "Statusline output missing 'Blk:R12/B8' (got: '$OUTPUT')"
+  fail "Statusline output missing 'Blk:R12/G5/B8' (got: '$OUTPUT')"
 fi
 
 if echo "$OUTPUT" | grep -q 'CMM:47'; then

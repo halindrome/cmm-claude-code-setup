@@ -1049,9 +1049,10 @@ CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
 BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
 if [ -f "$BLOCK_CACHE" ]; then
   READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  GREP_BLOCKS=$(jq -r '.grep_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
   BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
-  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
-    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$GREP_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/G${GREP_BLOCKS}/B${BASH_BLOCKS}"
   fi
 fi
 echo "$CMM_OUTPUT"
@@ -1124,9 +1125,10 @@ fi
 BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
 if [ -f "$BLOCK_CACHE" ]; then
   READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
+  GREP_BLOCKS=$(jq -r '.grep_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
   BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
-  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
-    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$GREP_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/G${GREP_BLOCKS}/B${BASH_BLOCKS}"
   fi
 fi
 
