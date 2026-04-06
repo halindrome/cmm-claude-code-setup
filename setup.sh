@@ -722,6 +722,7 @@ install_global() {
   shopt -s nullglob
   for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
     copy_file "$file" "${config_dir}/hooks/lib/$(basename "$file")"
+    set_executable "${config_dir}/hooks/lib/$(basename "$file")"
   done
 
   for file in "$SCRIPT_DIR/hooks/global/"*.sh; do
@@ -780,6 +781,12 @@ install_project() {
     set_executable ".claude/hooks/$(basename "$file")"
   done
   shopt -u nullglob
+
+  # Pre-scan drift for global hooks and lib files copied into the project
+  # shellcheck disable=SC2046
+  scan_drift_summary ".claude/hooks" $( ls "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" "$SCRIPT_DIR/hooks/global/cmm-grep-nudge.sh" 2>/dev/null )
+  # shellcheck disable=SC2046
+  scan_drift_summary ".claude/hooks/lib" $( ls "$SCRIPT_DIR/hooks/lib/"*.sh 2>/dev/null )
 
   # Copy global CMM hooks to .claude/hooks/ — needed by agent frontmatter hooks (in
   # .claude/agents/) that reference them via project-relative paths. Without this,
