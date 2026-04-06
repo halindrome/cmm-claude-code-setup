@@ -123,6 +123,22 @@ echo "--- Test 16: Grep with non-code glob *.yaml -> allowed ---"
 _assert_exit "Test 16: *.yaml glob allowed" 0 \
     "{\"tool_input\":{\"pattern\":\"version\",\"glob\":\"*.yaml\"}}"
 
+echo "--- Test 17: Grep with *.rb (is-cmm-ext language) -> blocked ---"
+_assert_exit "Test 17: *.rb glob blocked (is-cmm-ext coverage)" 2 \
+    "{\"tool_input\":{\"pattern\":\"def \",\"glob\":\"*.rb\"}}"
+
+echo "--- Test 18: Grep with *.kt (Kotlin, is-cmm-ext language) -> blocked ---"
+_assert_exit "Test 18: *.kt glob blocked (is-cmm-ext coverage)" 2 \
+    "{\"tool_input\":{\"pattern\":\"fun \",\"glob\":\"*.kt\"}}"
+
+echo "--- Test 19: Grep with *.log (not a CMM language) -> allowed ---"
+_assert_exit "Test 19: *.log glob allowed (not a CMM language)" 0 \
+    "{\"tool_input\":{\"pattern\":\"ERROR\",\"glob\":\"*.log\"}}"
+
+echo "--- Test 20: Grep with nested glob src/**/*.ts -> blocked ---"
+_assert_exit "Test 20: src/**/*.ts blocked (nested glob)" 2 \
+    "{\"tool_input\":{\"pattern\":\"export\",\"glob\":\"src/**/*.ts\"}}"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

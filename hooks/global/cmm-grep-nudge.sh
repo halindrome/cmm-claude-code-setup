@@ -72,7 +72,8 @@ if [ "$CMM_FOUND" = false ]; then
 fi
 [ "$CMM_FOUND" = false ] && exit 0
 
-# --- Exception: Non-code glob (allow Grep for config/doc file types) ---
+# --- Exception: Config/doc globs (allow Grep even though CMM indexes some of these) ---
+# These are file types where grep for a literal value is more natural than CMM search.
 case "$GREP_GLOB" in
   *.json|*.yaml|*.yml|*.toml|*.md|*.mdx|*.txt|*.env|*.ini|*.cfg|*.conf|\
   *.xml|*.csv|*.lock|*.sum|*.html|*.htm|*.css|*.svg)
@@ -84,6 +85,30 @@ case "$GREP_TYPE" in
   json|yaml|toml|markdown|txt|html|css|xml)
     exit 0 ;;
 esac
+
+# --- Code glob detection via shared extension library ---
+# Sources is-cmm-ext.sh (67 built-in languages + user-defined extensions from CMM config).
+# For a glob like "*.py", strip the leading glob and check the extension.
+# If is_cmm_ext returns 0 (it's a CMM-indexed code extension) → block.
+# If is_cmm_ext returns 1 (unknown/non-code extension) → allow grep.
+if [ -n "$GREP_GLOB" ]; then
+  # Deployed path: hook at ~/.claude/hooks/ or .claude/hooks/, lib at .../hooks/lib/
+  # Source path:   hook at hooks/global/, lib at hooks/lib/ (sibling of global/)
+  LIB_DIR="$(dirname "${BASH_SOURCE[0]}")/lib"
+  [ ! -f "$LIB_DIR/is-cmm-ext.sh" ] && LIB_DIR="$(dirname "${BASH_SOURCE[0]}")/../lib"
+  if [ -f "$LIB_DIR/is-cmm-ext.sh" ]; then
+    # shellcheck source=hooks/lib/is-cmm-ext.sh
+    source "$LIB_DIR/is-cmm-ext.sh"
+    # Convert glob to a dummy filename (e.g. "*.py" → "_dummy_.py", "src/**/*.ts" → "_dummy_.ts")
+    GLOB_EXT="${GREP_GLOB##*\*}"   # strip everything up to and including the last *
+    if [ -n "$GLOB_EXT" ]; then
+      if ! is_cmm_ext "_dummy_${GLOB_EXT}" 2>/dev/null; then
+        exit 0  # Not a CMM-indexed code extension — allow grep
+      fi
+    fi
+    # If GLOB_EXT is empty (bare * or **) — fall through to block
+  fi
+fi
 
 # --- Block: Redirect to CMM graph tools (stderr, exit 2) ---
 cat >&2 <<EOF
