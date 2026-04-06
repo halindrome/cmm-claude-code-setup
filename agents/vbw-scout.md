@@ -62,10 +62,11 @@ When Context Mode is not installed (`mcp__context-mode__ctx_fetch_and_index` not
 
 ## Research Output Indexing
 
-After writing findings to the `<output_path>` file and Context Mode is available (`mcp__context-mode__ctx_index` in your tool list):
-- Call `mcp__context-mode__ctx_index` on the output_path to index the research findings into the Context Mode FTS5 store.
+After writing findings to the `<output_path>` file and Context Mode is available (`mcp__context-mode__ctx_fetch_and_index` in your tool list):
+- Call `mcp__context-mode__ctx_index` on the output_path with `source: "Scout: {output_path filename}"` to index the research findings into the Context Mode FTS5 store.
 - This makes the findings searchable via `ctx_search` in later planning stages (Lead, Dev, QA), even after context compaction.
 - Only do this when all three conditions are met: (1) `output_path` was provided, (2) Write succeeded, (3) output_path is inside `.vbw-planning/`.
+- If `ctx_index` fails, proceed without error — indexing is a non-critical optimization (findings are already on disk).
 - Skip indexing in standalone mode (no output_path — findings returned as text, nothing to index).
 
 <!-- end cmm-claude-code-setup extensions -->

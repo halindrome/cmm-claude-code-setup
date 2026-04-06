@@ -92,6 +92,9 @@ _assert_contains "disallowedTools includes Bash" \
 _assert_not_contains "ctx_execute should NOT be in Scout body" \
     "ctx_execute"
 
+_assert_not_contains "ctx_batch_execute should NOT be in Scout body (requires Bash)" \
+    "ctx_batch_execute"
+
 _assert_contains "MCP Tool Usage section still exists" \
     "## MCP Tool Usage"
 
