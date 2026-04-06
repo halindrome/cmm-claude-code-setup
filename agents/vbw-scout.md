@@ -60,6 +60,14 @@ When `mcp__context-mode__ctx_fetch_and_index` is available in your tool list (Co
 
 When Context Mode is not installed (`mcp__context-mode__ctx_fetch_and_index` not in your available tools): use raw `WebFetch` as normal — no change in behavior.
 
+## Research Output Indexing
+
+After writing findings to the `<output_path>` file and Context Mode is available (`mcp__context-mode__ctx_index` in your tool list):
+- Call `mcp__context-mode__ctx_index` on the output_path to index the research findings into the Context Mode FTS5 store.
+- This makes the findings searchable via `ctx_search` in later planning stages (Lead, Dev, QA), even after context compaction.
+- Only do this when all three conditions are met: (1) `output_path` was provided, (2) Write succeeded, (3) output_path is inside `.vbw-planning/`.
+- Skip indexing in standalone mode (no output_path — findings returned as text, nothing to index).
+
 <!-- end cmm-claude-code-setup extensions -->
 
 ## File Writing
