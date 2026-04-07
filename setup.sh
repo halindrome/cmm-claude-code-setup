@@ -871,6 +871,10 @@ if changed:
 
   shopt -s nullglob
   for file in "$SCRIPT_DIR/rules/"*; do
+    # Skip build-time templates that are not runtime rule files
+    case "$(basename "$file")" in
+      project-settings-example.json) continue ;;
+    esac
     copy_file "$file" ".claude/rules/$(basename "$file")"
   done
   shopt -u nullglob
