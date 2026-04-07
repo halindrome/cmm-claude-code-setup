@@ -873,7 +873,7 @@ if changed:
   for file in "$SCRIPT_DIR/rules/"*; do
     # Skip build-time templates that are not runtime rule files
     case "$(basename "$file")" in
-      project-settings-example.json) continue ;;
+      project-settings-example.json|global-claude-md.md) continue ;;
     esac
     copy_file "$file" ".claude/rules/$(basename "$file")"
   done
