@@ -479,6 +479,88 @@ fi
 
 # ===================================================================
 echo ""
+echo "=== Test 11: Empty stdin -- hook exits 0, no crash ==="
+# ===================================================================
+
+TMPDIR_T11="$TMPDIR_ROOT/t11"
+FAKE_HOME_T11="$TMPDIR_T11/home"
+REPO_T11="$TMPDIR_T11/repo"
+mkdir -p "$FAKE_HOME_T11/.cache/codebase-memory-mcp" "$REPO_T11"
+git -C "$REPO_T11" init -q
+
+EXIT_T11=0
+echo "" | (cd "$REPO_T11" && HOME="$FAKE_HOME_T11" bash "$TRACK_HOOK") 2>/dev/null || EXIT_T11=$?
+
+if [ "$EXIT_T11" -eq 0 ]; then
+  pass "Hook exits 0 with empty stdin"
+else
+  fail "Hook exited $EXIT_T11 with empty stdin (expected 0)"
+fi
+
+# ===================================================================
+echo ""
+echo "=== Test 12: Invalid JSON in cache -- hook recovers gracefully ==="
+# ===================================================================
+
+TMPDIR_T12="$TMPDIR_ROOT/t12"
+FAKE_HOME_T12="$TMPDIR_T12/home"
+REPO_T12="$TMPDIR_T12/repo"
+mkdir -p "$FAKE_HOME_T12/.cache/codebase-memory-mcp" "$REPO_T12"
+git -C "$REPO_T12" init -q
+REPO_T12_REAL="$(cd "$REPO_T12" && pwd -P)"
+HASH_T12=$(echo "$REPO_T12_REAL" | md5 -q 2>/dev/null || echo "$REPO_T12_REAL" | md5sum | awk '{print $1}')
+COUNTER_T12="$FAKE_HOME_T12/.cache/codebase-memory-mcp/_ctx-call-counts-${HASH_T12}.json"
+
+# Write invalid JSON to the cache file
+echo "NOT VALID JSON {{{{" > "$COUNTER_T12"
+
+EXIT_T12=0
+echo '{"tool_name": "mcp__context-mode__ctx_execute"}' \
+  | (cd "$REPO_T12" && HOME="$FAKE_HOME_T12" bash "$TRACK_HOOK") 2>/dev/null || EXIT_T12=$?
+
+if [ "$EXIT_T12" -eq 0 ]; then
+  pass "Hook exits 0 with invalid JSON in cache"
+else
+  fail "Hook exited $EXIT_T12 with invalid JSON (expected 0)"
+fi
+
+# Verify the file was recovered with valid JSON
+if [ -f "$COUNTER_T12" ]; then
+  RECOVERED=$(python3 -c "import json; d=json.load(open('$COUNTER_T12')); print(d.get('total_calls', 'MISSING'))" 2>/dev/null || echo "ERR")
+  if [ "$RECOVERED" = "1" ]; then
+    pass "Cache recovered from invalid JSON (total_calls=1)"
+  else
+    fail "Cache not properly recovered (total_calls=$RECOVERED)"
+  fi
+fi
+
+# ===================================================================
+echo ""
+echo "=== Test 13: Read-only cache directory -- hook exits 0 (never blocks) ==="
+# ===================================================================
+
+TMPDIR_T13="$TMPDIR_ROOT/t13"
+FAKE_HOME_T13="$TMPDIR_T13/home"
+REPO_T13="$TMPDIR_T13/repo"
+mkdir -p "$FAKE_HOME_T13/.cache/codebase-memory-mcp" "$REPO_T13"
+git -C "$REPO_T13" init -q
+chmod -w "$FAKE_HOME_T13/.cache/codebase-memory-mcp"
+
+EXIT_T13=0
+echo '{"tool_name": "mcp__context-mode__ctx_execute"}' \
+  | (cd "$REPO_T13" && HOME="$FAKE_HOME_T13" bash "$TRACK_HOOK") 2>/dev/null || EXIT_T13=$?
+
+# Restore write permissions for cleanup
+chmod +w "$FAKE_HOME_T13/.cache/codebase-memory-mcp" 2>/dev/null || true
+
+if [ "$EXIT_T13" -eq 0 ]; then
+  pass "Hook exits 0 with read-only cache directory"
+else
+  fail "Hook exited $EXIT_T13 with read-only cache dir (expected 0)"
+fi
+
+# ===================================================================
+echo ""
 echo "=== Summary ==="
 echo "Passed: $PASS"
 echo "Failed: $FAIL"
