@@ -311,11 +311,8 @@ fi
 
 # ===================================================================
 echo ""
-echo "=== Test 8: Config ctx_total=false — verify jq // behavior ==="
+echo "=== Test 8: Config ctx_total=false suppresses CTX segment ==="
 # ===================================================================
-# NOTE: jq's // operator treats false as falsy, so 'false // true' returns true.
-# This means config "ctx_total": false does NOT suppress CTX in current statusline.
-# This test documents the actual behavior. See known issue: jq // vs false.
 
 TMPDIR_T8="$TMPDIR_ROOT/t8"
 FAKE_HOME_T8="$TMPDIR_T8/home"
@@ -353,20 +350,17 @@ chmod +x "$STATUSLINE_TMP8"
 
 OUTPUT8=$(cd "$REPO_T8" && HOME="$FAKE_HOME_T8" bash "$STATUSLINE_TMP8" 2>/dev/null) || OUTPUT8=""
 
-# jq's // treats false as falsy — config false doesn't suppress.
-# Verify the config file is read (statusline runs without error) and
-# documents actual behavior: CTX still shows because of jq // semantics.
-if echo "$OUTPUT8" | grep -q 'CTX:10'; then
-  pass "Config read successfully (CTX:10 present — jq // treats false as missing, known issue)"
+# With ctx_total: false, CTX segment should be absent
+if echo "$OUTPUT8" | grep -q 'CTX:'; then
+  fail "CTX segment should be suppressed when ctx_total=false (got: '$OUTPUT8')"
 else
-  fail "Statusline did not produce expected output (got: '$OUTPUT8')"
+  pass "CTX segment correctly suppressed when ctx_total=false"
 fi
 
 # ===================================================================
 echo ""
-echo "=== Test 9: Config cmm_details=false — verify jq // behavior ==="
+echo "=== Test 9: Config cmm_details=false suppresses CMM details ==="
 # ===================================================================
-# Same jq // issue: cmm_details: false is treated as missing, defaults to true.
 
 TMPDIR_T9="$TMPDIR_ROOT/t9"
 FAKE_HOME_T9="$TMPDIR_T9/home"
@@ -406,11 +400,11 @@ else
   fail "CMM total missing (got: '$OUTPUT9')"
 fi
 
-# jq // treats false as missing — details still show. Document actual behavior.
-if echo "$OUTPUT9" | grep -q '(sg:10 cs:7 tr:3)'; then
-  pass "Config read (details present — jq // treats false as missing, known issue)"
+# With cmm_details: false, the (sg:X cs:Y tr:Z) breakdown should be absent
+if echo "$OUTPUT9" | grep -q '(sg:'; then
+  fail "CMM details should be suppressed when cmm_details=false (got: '$OUTPUT9')"
 else
-  fail "Unexpected output (got: '$OUTPUT9')"
+  pass "CMM details correctly suppressed when cmm_details=false"
 fi
 
 # ===================================================================

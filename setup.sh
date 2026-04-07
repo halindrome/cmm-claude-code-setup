@@ -1119,12 +1119,12 @@ PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT"
 # --- Config reading ---
 SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
 [ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
-SHOW_CMM_TOTAL=$(jq -r '.cmm_total // true' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CMM_DETAILS=$(jq -r '.cmm_details // true' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_BLOCKS_TOTAL=$(jq -r '.blocks_total // true' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_BLOCK_DETAILS=$(jq -r '.block_details // true' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CTX_TOTAL=$(jq -r '.ctx_total // true' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CTX_DETAILS=$(jq -r '.ctx_details // true' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_TOTAL=$(jq -r 'if has("cmm_total") then .cmm_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_DETAILS=$(jq -r 'if has("cmm_details") then .cmm_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_BLOCKS_TOTAL=$(jq -r 'if has("blocks_total") then .blocks_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_BLOCK_DETAILS=$(jq -r 'if has("block_details") then .block_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CTX_TOTAL=$(jq -r 'if has("ctx_total") then .ctx_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CTX_DETAILS=$(jq -r 'if has("ctx_details") then .ctx_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
 # --- CMM counts ---
 CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
 CMM_OUTPUT=""
@@ -1236,12 +1236,12 @@ PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT"
 # --- Config reading ---
 SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
 [ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
-SHOW_CMM_TOTAL=$(jq -r '.cmm_total // true' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CMM_DETAILS=$(jq -r '.cmm_details // true' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_BLOCKS_TOTAL=$(jq -r '.blocks_total // true' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_BLOCK_DETAILS=$(jq -r '.block_details // true' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CTX_TOTAL=$(jq -r '.ctx_total // true' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CTX_DETAILS=$(jq -r '.ctx_details // true' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_TOTAL=$(jq -r 'if has("cmm_total") then .cmm_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_DETAILS=$(jq -r 'if has("cmm_details") then .cmm_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_BLOCKS_TOTAL=$(jq -r 'if has("blocks_total") then .blocks_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_BLOCK_DETAILS=$(jq -r 'if has("block_details") then .block_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CTX_TOTAL=$(jq -r 'if has("ctx_total") then .ctx_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CTX_DETAILS=$(jq -r 'if has("ctx_details") then .ctx_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
 # --- CMM counts ---
 CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
 if [ -f "$CACHE" ]; then
