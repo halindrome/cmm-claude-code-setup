@@ -167,6 +167,150 @@ fi
 
 # ===================================================================
 echo ""
+echo "=== Test 5: Statusline displays CTX:N (ex:X bex:Y sr:Z) with global heredoc ==="
+# ===================================================================
+
+TMPDIR_T5="$TMPDIR_ROOT/t5"
+FAKE_HOME_T5="$TMPDIR_T5/home"
+REPO_T5="$TMPDIR_T5/repo"
+mkdir -p "$FAKE_HOME_T5/.cache/codebase-memory-mcp" "$REPO_T5"
+git -C "$REPO_T5" init -q
+REPO_T5_REAL="$(cd "$REPO_T5" && pwd -P)"
+HASH_T5=$(echo "$REPO_T5_REAL" | md5 -q 2>/dev/null || echo "$REPO_T5_REAL" | md5sum | awk '{print $1}')
+
+# Pre-populate CTX call counts
+python3 -c "
+import json
+data = {'total_calls': 15, 'by_tool': {
+    'mcp__context-mode__ctx_execute': 7,
+    'mcp__context-mode__ctx_batch_execute': 5,
+    'mcp__context-mode__ctx_search': 3
+}}
+with open('$FAKE_HOME_T5/.cache/codebase-memory-mcp/_ctx-call-counts-${HASH_T5}.json', 'w') as f:
+    json.dump(data, f)
+"
+
+# Pre-populate CMM call counts (needed by statusline for CMM section)
+python3 -c "
+import json
+data = {'total_calls': 10, 'by_tool': {
+    'mcp__codebase-memory-mcp__search_graph': 5,
+    'mcp__codebase-memory-mcp__get_code_snippet': 3,
+    'mcp__codebase-memory-mcp__trace_call_path': 2
+}}
+with open('$FAKE_HOME_T5/.cache/codebase-memory-mcp/_call-counts-${HASH_T5}.json', 'w') as f:
+    json.dump(data, f)
+"
+
+# Extract the global statusline heredoc from setup.sh
+STATUSLINE_TMP="$TMPDIR_T5/statusline-test.sh"
+sed -n "/cat > \"\$script_path\" <<'STATUSLINE_SCRIPT'/,/^STATUSLINE_SCRIPT$/p" "$SETUP_SH" \
+  | tail -n +2 | sed '$d' > "$STATUSLINE_TMP"
+chmod +x "$STATUSLINE_TMP"
+
+OUTPUT=$(cd "$REPO_T5" && HOME="$FAKE_HOME_T5" bash "$STATUSLINE_TMP" 2>/dev/null) || OUTPUT=""
+
+if echo "$OUTPUT" | grep -q 'CTX:15'; then
+  pass "Statusline contains CTX:15"
+else
+  fail "Statusline missing CTX:15 (got: '$OUTPUT')"
+fi
+
+if echo "$OUTPUT" | grep -q '(ex:7 bex:5 sr:3)'; then
+  pass "Statusline contains CTX details (ex:7 bex:5 sr:3)"
+else
+  fail "Statusline missing CTX details (got: '$OUTPUT')"
+fi
+
+# ===================================================================
+echo ""
+echo "=== Test 6: Statusline suppresses CTX: when no ctx-call-counts file ==="
+# ===================================================================
+
+TMPDIR_T6="$TMPDIR_ROOT/t6"
+FAKE_HOME_T6="$TMPDIR_T6/home"
+REPO_T6="$TMPDIR_T6/repo"
+mkdir -p "$FAKE_HOME_T6/.cache/codebase-memory-mcp" "$REPO_T6"
+git -C "$REPO_T6" init -q
+REPO_T6_REAL="$(cd "$REPO_T6" && pwd -P)"
+HASH_T6=$(echo "$REPO_T6_REAL" | md5 -q 2>/dev/null || echo "$REPO_T6_REAL" | md5sum | awk '{print $1}')
+
+# Only write CMM counts, no CTX counts
+python3 -c "
+import json
+data = {'total_calls': 5, 'by_tool': {}}
+with open('$FAKE_HOME_T6/.cache/codebase-memory-mcp/_call-counts-${HASH_T6}.json', 'w') as f:
+    json.dump(data, f)
+"
+
+STATUSLINE_TMP6="$TMPDIR_T6/statusline-test.sh"
+sed -n "/cat > \"\$script_path\" <<'STATUSLINE_SCRIPT'/,/^STATUSLINE_SCRIPT$/p" "$SETUP_SH" \
+  | tail -n +2 | sed '$d' > "$STATUSLINE_TMP6"
+chmod +x "$STATUSLINE_TMP6"
+
+OUTPUT6=$(cd "$REPO_T6" && HOME="$FAKE_HOME_T6" bash "$STATUSLINE_TMP6" 2>/dev/null) || OUTPUT6=""
+
+if echo "$OUTPUT6" | grep -q 'CTX:'; then
+  fail "Statusline shows CTX: when no ctx-call-counts file (got: '$OUTPUT6')"
+else
+  pass "Statusline correctly suppresses CTX: when no ctx-call-counts file"
+fi
+
+# ===================================================================
+echo ""
+echo "=== Test 7: Wrapper heredoc also displays CTX segment ==="
+# ===================================================================
+
+TMPDIR_T7="$TMPDIR_ROOT/t7"
+FAKE_HOME_T7="$TMPDIR_T7/home"
+REPO_T7="$TMPDIR_T7/repo"
+mkdir -p "$FAKE_HOME_T7/.cache/codebase-memory-mcp" "$REPO_T7"
+git -C "$REPO_T7" init -q
+REPO_T7_REAL="$(cd "$REPO_T7" && pwd -P)"
+HASH_T7=$(echo "$REPO_T7_REAL" | md5 -q 2>/dev/null || echo "$REPO_T7_REAL" | md5sum | awk '{print $1}')
+
+# Pre-populate CTX and CMM counts
+python3 -c "
+import json
+ctx = {'total_calls': 8, 'by_tool': {
+    'mcp__context-mode__ctx_execute': 4,
+    'mcp__context-mode__ctx_batch_execute': 2,
+    'mcp__context-mode__ctx_search': 2
+}}
+with open('$FAKE_HOME_T7/.cache/codebase-memory-mcp/_ctx-call-counts-${HASH_T7}.json', 'w') as f:
+    json.dump(ctx, f)
+
+cmm = {'total_calls': 6, 'by_tool': {
+    'mcp__codebase-memory-mcp__search_graph': 3,
+    'mcp__codebase-memory-mcp__get_code_snippet': 2,
+    'mcp__codebase-memory-mcp__trace_call_path': 1
+}}
+with open('$FAKE_HOME_T7/.cache/codebase-memory-mcp/_call-counts-${HASH_T7}.json', 'w') as f:
+    json.dump(cmm, f)
+"
+
+# Extract wrapper heredoc from setup.sh
+WRAPPER_TMP="$TMPDIR_T7/wrapper-test.sh"
+sed -n "/cat > \"\$script_path\" <<'WRAPPER_SCRIPT'/,/^WRAPPER_SCRIPT$/p" "$SETUP_SH" \
+  | tail -n +2 | sed '$d' > "$WRAPPER_TMP"
+chmod +x "$WRAPPER_TMP"
+
+OUTPUT7=$(cd "$REPO_T7" && HOME="$FAKE_HOME_T7" bash "$WRAPPER_TMP" 2>/dev/null) || OUTPUT7=""
+
+if echo "$OUTPUT7" | grep -q 'CTX:8'; then
+  pass "Wrapper statusline contains CTX:8"
+else
+  fail "Wrapper statusline missing CTX:8 (got: '$OUTPUT7')"
+fi
+
+if echo "$OUTPUT7" | grep -q '(ex:4 bex:2 sr:2)'; then
+  pass "Wrapper statusline contains CTX details (ex:4 bex:2 sr:2)"
+else
+  fail "Wrapper statusline missing CTX details (got: '$OUTPUT7')"
+fi
+
+# ===================================================================
+echo ""
 echo "=== Summary ==="
 echo "Passed: $PASS"
 echo "Failed: $FAIL"
