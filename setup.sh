@@ -617,6 +617,14 @@ merge_settings_json() {
       {
         "matcher": "Write|Edit",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/reindex-after-edit.sh\""}]
+      },
+      {
+        "matcher": "mcp__codebase-memory-mcp__*",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-cmm-calls.sh\""}]
+      },
+      {
+        "matcher": "mcp__context-mode__*",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-ctx-calls.sh\""}]
       }
     ]
   }
