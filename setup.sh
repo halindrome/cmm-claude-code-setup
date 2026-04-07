@@ -1116,23 +1116,68 @@ if [ -n "$PROJECT_ROOT" ]; then
     fi
 fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+# --- Config reading ---
+SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
+[ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
+SHOW_CMM_TOTAL=$(jq -r '.cmm_total // true' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_DETAILS=$(jq -r '.cmm_details // true' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_BLOCKS_TOTAL=$(jq -r '.blocks_total // true' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_BLOCK_DETAILS=$(jq -r '.block_details // true' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CTX_TOTAL=$(jq -r '.ctx_total // true' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CTX_DETAILS=$(jq -r '.ctx_details // true' "$SL_CONFIG" 2>/dev/null || echo true)
+# --- CMM counts ---
 CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
-if [ ! -f "$CACHE" ]; then echo "CMM:0"; exit 0; fi
-TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
-SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
-SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
-TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
-CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+CMM_OUTPUT=""
+if [ -f "$CACHE" ]; then
+  TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
+  SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  if [ "$SHOW_CMM_TOTAL" = "true" ]; then
+    CMM_OUTPUT="CMM:${TOTAL}"
+    if [ "$SHOW_CMM_DETAILS" = "true" ]; then
+      CMM_OUTPUT="${CMM_OUTPUT} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+    fi
+  fi
+else
+  if [ "$SHOW_CMM_TOTAL" = "true" ]; then
+    CMM_OUTPUT="CMM:0"
+  fi
+fi
+# --- CTX counts ---
+CTX_CACHE="$HOME/.cache/codebase-memory-mcp/_ctx-call-counts-${PROJECT_HASH}.json"
+if [ -f "$CTX_CACHE" ]; then
+  CTX_TOTAL=$(jq -r '.total_calls // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  CTX_EXEC=$(jq -r '.by_tool["mcp__context-mode__ctx_execute"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  CTX_BATCH=$(jq -r '.by_tool["mcp__context-mode__ctx_batch_execute"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  CTX_SEARCH=$(jq -r '.by_tool["mcp__context-mode__ctx_search"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  if [ "$CTX_TOTAL" -gt 0 ] 2>/dev/null; then
+    if [ "$SHOW_CTX_TOTAL" = "true" ]; then
+      CTX_OUTPUT="CTX:${CTX_TOTAL}"
+      if [ "$SHOW_CTX_DETAILS" = "true" ]; then
+        CTX_OUTPUT="${CTX_OUTPUT} (ex:${CTX_EXEC} bex:${CTX_BATCH} sr:${CTX_SEARCH})"
+      fi
+      CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }${CTX_OUTPUT}"
+    fi
+  fi
+fi
 # --- Block counts ---
 BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
 if [ -f "$BLOCK_CACHE" ]; then
   READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
   BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
-  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
-    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  if [ "$SHOW_BLOCKS_TOTAL" = "true" ]; then
+    if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+      if [ "$SHOW_BLOCK_DETAILS" = "true" ]; then
+        CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+      else
+        BLOCK_SUM=$((READ_BLOCKS + BASH_BLOCKS))
+        CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }Blk:${BLOCK_SUM}"
+      fi
+    fi
   fi
 fi
-echo "$CMM_OUTPUT"
+[ -n "$CMM_OUTPUT" ] && echo "$CMM_OUTPUT" || echo "CMM:0"
 STATUSLINE_SCRIPT
     else
       # PROJECT MODE — Generate wrapper statusline-cmm.sh
