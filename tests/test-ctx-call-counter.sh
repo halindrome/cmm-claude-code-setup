@@ -112,6 +112,61 @@ fi
 
 # ===================================================================
 echo ""
+echo "=== Test 4: Project isolation -- different repos get independent counters ==="
+# ===================================================================
+
+TMPDIR_T4="$TMPDIR_ROOT/t4"
+FAKE_HOME_T4="$TMPDIR_T4/home"
+REPO_A="$TMPDIR_T4/repo-a"
+REPO_B="$TMPDIR_T4/repo-b"
+mkdir -p "$FAKE_HOME_T4/.cache/codebase-memory-mcp" "$REPO_A" "$REPO_B"
+git -C "$REPO_A" init -q
+git -C "$REPO_B" init -q
+REPO_A_REAL="$(cd "$REPO_A" && pwd -P)"
+REPO_B_REAL="$(cd "$REPO_B" && pwd -P)"
+HASH_A=$(echo "$REPO_A_REAL" | md5 -q 2>/dev/null || echo "$REPO_A_REAL" | md5sum | awk '{print $1}')
+HASH_B=$(echo "$REPO_B_REAL" | md5 -q 2>/dev/null || echo "$REPO_B_REAL" | md5sum | awk '{print $1}')
+COUNTER_A="$FAKE_HOME_T4/.cache/codebase-memory-mcp/_ctx-call-counts-${HASH_A}.json"
+COUNTER_B="$FAKE_HOME_T4/.cache/codebase-memory-mcp/_ctx-call-counts-${HASH_B}.json"
+
+# Feed 2 events to repo A, 1 event to repo B
+echo '{"tool_name": "mcp__context-mode__ctx_execute"}' \
+  | (cd "$REPO_A" && HOME="$FAKE_HOME_T4" bash "$TRACK_HOOK") 2>/dev/null
+echo '{"tool_name": "mcp__context-mode__ctx_execute"}' \
+  | (cd "$REPO_A" && HOME="$FAKE_HOME_T4" bash "$TRACK_HOOK") 2>/dev/null
+echo '{"tool_name": "mcp__context-mode__ctx_search"}' \
+  | (cd "$REPO_B" && HOME="$FAKE_HOME_T4" bash "$TRACK_HOOK") 2>/dev/null
+
+if [ "$HASH_A" != "$HASH_B" ]; then
+  pass "Repo A and B have distinct hashes"
+else
+  fail "Repo A and B produced same hash (collision)"
+fi
+
+if [ -f "$COUNTER_A" ]; then
+  TOTAL_A=$(python3 -c "import json; print(json.load(open('$COUNTER_A'))['total_calls'])" 2>/dev/null || echo "ERR")
+  if [ "$TOTAL_A" = "2" ]; then
+    pass "Repo A: total_calls=2 (isolated)"
+  else
+    fail "Repo A: expected total_calls=2, got $TOTAL_A"
+  fi
+else
+  fail "Repo A counter file missing"
+fi
+
+if [ -f "$COUNTER_B" ]; then
+  TOTAL_B=$(python3 -c "import json; print(json.load(open('$COUNTER_B'))['total_calls'])" 2>/dev/null || echo "ERR")
+  if [ "$TOTAL_B" = "1" ]; then
+    pass "Repo B: total_calls=1 (isolated)"
+  else
+    fail "Repo B: expected total_calls=1, got $TOTAL_B"
+  fi
+else
+  fail "Repo B counter file missing"
+fi
+
+# ===================================================================
+echo ""
 echo "=== Summary ==="
 echo "Passed: $PASS"
 echo "Failed: $FAIL"
