@@ -35,6 +35,8 @@ INSTALL_PROJECT=false
 SKIP_MCP_CHECK=false
 SKIP_STATUSLINE=false
 VERIFY=false
+YES_FLAG=false
+RECONFIGURE_STATUSLINE=false
 
 # Detect Claude Code config directory at runtime.
 # Priority: $CLAUDE_CONFIG_DIR (set by Claude Code) > ~/.config/claude-code (XDG) > ~/.claude (legacy)
@@ -1008,6 +1010,81 @@ except Exception:
       fi
     fi
 
+    # --- Statusline component config ---
+    # Determine config file path based on mode
+    local sl_config_path
+    if [ "$mode" = "project" ]; then
+      local _project_root
+      _project_root="$(pwd -P)"
+      local _project_hash
+      _project_hash=$(echo "$_project_root" | md5 -q 2>/dev/null || echo "$_project_root" | md5sum | awk '{print $1}')
+      sl_config_path="$HOME/.cache/codebase-memory-mcp/_statusline-config-${_project_hash}.json"
+    else
+      sl_config_path="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
+    fi
+
+    # Write config: skip prompts if config exists (unless --reconfigure-statusline)
+    if [ -f "$sl_config_path" ] && [ "$RECONFIGURE_STATUSLINE" = false ]; then
+      echo "  [info] Statusline config found: ${sl_config_path}"
+    else
+      mkdir -p "$(dirname "$sl_config_path")"
+
+      if [ "$YES_FLAG" = true ] || [ ! -t 0 ]; then
+        # Non-interactive: write defaults (all true)
+        cat > "$sl_config_path" <<'SLCFG'
+{
+  "cmm_total": true,
+  "cmm_details": true,
+  "blocks_total": true,
+  "block_details": true,
+  "ctx_total": true,
+  "ctx_details": true
+}
+SLCFG
+        echo "  [ok] Statusline config written (defaults): ${sl_config_path}"
+      else
+        echo ""
+        echo "  Statusline component selection (press Enter for default):"
+        local sl_cmm_total sl_cmm_details sl_blocks_total sl_block_details sl_ctx_total sl_ctx_details
+
+        printf "    Show CMM total (CMM:N)? [Y/n] "
+        read -r sl_cmm_total
+        case "$sl_cmm_total" in n|N) sl_cmm_total=false ;; *) sl_cmm_total=true ;; esac
+
+        printf "    Show CMM details (sg:X cs:Y tr:Z)? [Y/n] "
+        read -r sl_cmm_details
+        case "$sl_cmm_details" in n|N) sl_cmm_details=false ;; *) sl_cmm_details=true ;; esac
+
+        printf "    Show Blocks total (Blk:N)? [Y/n] "
+        read -r sl_blocks_total
+        case "$sl_blocks_total" in n|N) sl_blocks_total=false ;; *) sl_blocks_total=true ;; esac
+
+        printf "    Show Block details (R:X/B:Y)? [Y/n] "
+        read -r sl_block_details
+        case "$sl_block_details" in n|N) sl_block_details=false ;; *) sl_block_details=true ;; esac
+
+        printf "    Show Context Mode total (CTX:N)? [Y/n] "
+        read -r sl_ctx_total
+        case "$sl_ctx_total" in n|N) sl_ctx_total=false ;; *) sl_ctx_total=true ;; esac
+
+        printf "    Show Context Mode details (ex:X bex:Y sr:Z)? [Y/n] "
+        read -r sl_ctx_details
+        case "$sl_ctx_details" in n|N) sl_ctx_details=false ;; *) sl_ctx_details=true ;; esac
+
+        cat > "$sl_config_path" <<SLCFG
+{
+  "cmm_total": ${sl_cmm_total},
+  "cmm_details": ${sl_cmm_details},
+  "blocks_total": ${sl_blocks_total},
+  "block_details": ${sl_block_details},
+  "ctx_total": ${sl_ctx_total},
+  "ctx_details": ${sl_ctx_details}
+}
+SLCFG
+        echo "  [ok] Statusline config written: ${sl_config_path}"
+      fi
+    fi
+
     # Create hooks dir if needed
     mkdir -p "${target_config_dir}/hooks"
 
@@ -1397,6 +1474,8 @@ parse_args() {
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
+      --reconfigure-statusline) RECONFIGURE_STATUSLINE=true ;;
+      --yes|-y)          YES_FLAG=true ;;
       --verify)          VERIFY=true ;;
       --help|-h)
         cat <<'HELP'
@@ -1418,6 +1497,8 @@ Flags:
   --dry-run         Show what would be done without making changes
   --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
   --skip-statusline Skip the CMM statusline installation offer
+  --reconfigure-statusline  Re-prompt for statusline component selection (overwrite existing config)
+  --yes, -y         Non-interactive mode: accept all defaults without prompting
   --verify          After installing hooks, verify file integrity against CHECKSUMS.sha256
   --help, -h        Show this help message
 
