@@ -1,6 +1,6 @@
 #!/bin/bash
 # project-root.sh — Shared project-root detection with /tmp caching (source, don't execute)
-# Exports: PROJECT_ROOT, PROJECT_HASH, CMM_SENTINEL, CTX_SENTINEL
+# Exports: PROJECT_ROOT, PROJECT_HASH, CMM_SENTINEL, CONTEXT_MODE_SENTINEL
 #
 # Caches PROJECT_ROOT and PROJECT_HASH to /tmp/cmm-project-root-<md5(pwd)> on first
 # source. Subsequent sources read the cache file (zero git subprocesses). Safe to
@@ -25,8 +25,8 @@ if [ -f "$_PR_CACHE_FILE" ]; then
     PROJECT_ROOT="$_PR_CACHED_ROOT"
     PROJECT_HASH="$_PR_CACHED_HASH"
     CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
-    CTX_SENTINEL="/tmp/cmm-ctx-ready-${PROJECT_HASH}"
-    export PROJECT_ROOT PROJECT_HASH CMM_SENTINEL CTX_SENTINEL
+    CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
+    export PROJECT_ROOT PROJECT_HASH CMM_SENTINEL CONTEXT_MODE_SENTINEL
     _PROJECT_ROOT_LOADED=1
     return 0
   fi
@@ -83,7 +83,7 @@ echo "$PROJECT_HASH" >> "$_PR_CACHE_FILE" 2>/dev/null
 
 # --- Export sentinel paths ---
 CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
-CTX_SENTINEL="/tmp/cmm-ctx-ready-${PROJECT_HASH}"
-export PROJECT_ROOT PROJECT_HASH CMM_SENTINEL CTX_SENTINEL
+CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
+export PROJECT_ROOT PROJECT_HASH CMM_SENTINEL CONTEXT_MODE_SENTINEL
 
 _PROJECT_ROOT_LOADED=1
