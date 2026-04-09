@@ -107,7 +107,7 @@ if [ ! -f "$CONTEXT_MODE_SENTINEL" ]; then
 fi
 
 # --- Bypass Marker ---
-# Add "# ctx-exempt" anywhere in the command to skip the gate for legitimate raw Bash use.
+# Internal bypass marker — undocumented, for operator use only.
 if echo "$COMMAND" | grep -q "ctx-exempt"; then
     exit 0
 fi
@@ -179,8 +179,5 @@ With:
   mcp__context-mode__ctx_execute(language="shell", code="$COMMAND")
 
 Context Mode captures only the relevant output portion, preventing context bloat.
-
-To bypass this gate (e.g., when you need raw output in context), add "# ctx-exempt" to your command:
-  Bash("$COMMAND # ctx-exempt")
 BLOCKED
 exit 2
