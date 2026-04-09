@@ -39,7 +39,7 @@ RESULT=$(cd "$REPO_T1" && bash -c "
   echo \"ROOT=\$PROJECT_ROOT\"
   echo \"HASH=\$PROJECT_HASH\"
   echo \"CMM=\$CMM_SENTINEL\"
-  echo \"CTX=\$CTX_SENTINEL\"
+  echo \"CTX=\$CONTEXT_MODE_SENTINEL\"
   echo \"LOADED=\$_PROJECT_ROOT_LOADED\"
 " 2>/dev/null)
 
@@ -56,10 +56,10 @@ if [ "$CMM_VAL" = "/tmp/cmm-session-ready-${HASH_VAL}" ]; then
 else
   fail "CMM_SENTINEL expected /tmp/cmm-session-ready-${HASH_VAL}, got $CMM_VAL"
 fi
-if [ "$CTX_VAL" = "/tmp/cmm-ctx-ready-${HASH_VAL}" ]; then
-  pass "CTX_SENTINEL has correct format"
+if [ "$CTX_VAL" = "/tmp/context-mode-ready-${HASH_VAL}" ]; then
+  pass "CONTEXT_MODE_SENTINEL has correct format"
 else
-  fail "CTX_SENTINEL expected /tmp/cmm-ctx-ready-${HASH_VAL}, got $CTX_VAL"
+  fail "CONTEXT_MODE_SENTINEL expected /tmp/context-mode-ready-${HASH_VAL}, got $CTX_VAL"
 fi
 if [ "$LOADED_VAL" = "1" ]; then pass "_PROJECT_ROOT_LOADED is 1"; else fail "_PROJECT_ROOT_LOADED expected 1, got $LOADED_VAL"; fi
 
