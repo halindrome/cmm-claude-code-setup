@@ -14,7 +14,7 @@
 
 # --- Cache key: md5 of $(pwd) ---
 _PR_CWD="$(pwd)"
-_PR_CACHE_KEY=$(echo -n "$_PR_CWD" | md5 -qs 2>/dev/null || echo -n "$_PR_CWD" | md5sum 2>/dev/null | cut -d' ' -f1)
+_PR_CACHE_KEY=$(echo -n "$_PR_CWD" | md5 -q 2>/dev/null || echo -n "$_PR_CWD" | md5sum 2>/dev/null | cut -d' ' -f1)
 _PR_CACHE_FILE="/tmp/cmm-project-root-${_PR_CACHE_KEY}"
 
 # --- Try cache first ---
