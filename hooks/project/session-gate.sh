@@ -12,6 +12,40 @@
 #   "hooks": { "PreToolUse": [{ "matcher": "*", "hooks": [{"type": "command", "command": "bash .claude/hooks/session-gate.sh"}] }] }
 # Matcher: PreToolUse:*
 
+# --- Input Capture ---
+# stdin can only be read once — capture it immediately for all subsequent parsing
+INPUT=$(cat)
+
+# --- Lightweight Tool Extraction ---
+# Use bash-only grep/sed to extract tool_name without python3 overhead.
+# Fall back to python3 if the lightweight parse fails (malformed JSON, etc.)
+TOOL=$(echo "$INPUT" | grep -o '"tool_name": *"[^"]*"' | head -1 | sed 's/.*: *"//;s/"//')
+if [ -z "$TOOL" ]; then
+    TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
+fi
+
+# If parsing failed, do not block — fail open to avoid spurious hook errors
+[ -z "$TOOL" ] && exit 0
+
+# --- Phase 1: Universal Allow-list (before any git traversal) ---
+# These tools never need gating — exit immediately with zero subprocess overhead
+case "$TOOL" in
+  Agent)        exit 0 ;;  # subagents run in their own session with their own gate
+  ToolSearch)   exit 0 ;;  # schema fetch needed to escape the catch-22
+  SendMessage)  exit 0 ;;  # inter-agent coordination; must never be gated
+esac
+
+# --- Phase 2: CMM/CTX/Read-only Bypass (before any git traversal) ---
+# These tools are safe to run without sentinel checks — bypass the expensive git chain walk
+case "$TOOL" in
+  mcp__codebase-memory-mcp__*)  # all CMM tools bypass CMM sentinel check unconditionally
+    exit 0 ;;
+  mcp__context-mode__*)         # Context Mode tools: full bypass (both CMM and CM gates)
+    exit 0 ;;
+  Bash|Read|Grep|Glob)          # read-only tools; safe to run in parallel with index_status
+    exit 0 ;;
+esac
+
 # --- Stable Sentinel Path Computation ---
 # Walk the git superproject chain to find the outermost project root.
 # Handles arbitrarily nested submodules — each iteration climbs one level until there is
@@ -62,32 +96,6 @@ fi
 
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
-
-# --- Input Parsing ---
-INPUT=$(cat)
-TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
-
-# If parsing failed, do not block — fail open to avoid spurious hook errors
-[ -z "$TOOL" ] && exit 0
-
-# --- Phase 1: Universal Allow-list ---
-# Bypass both gates unconditionally
-case "$TOOL" in
-  Agent)        exit 0 ;;  # subagents run in their own session with their own gate
-  ToolSearch)   exit 0 ;;  # schema fetch needed to escape the catch-22
-  SendMessage)  exit 0 ;;  # inter-agent coordination; must never be gated
-esac
-
-# --- Phase 2: CMM Gate ---
-# Allow-list: CMM bootstrap tools and read-only tools
-case "$TOOL" in
-  mcp__codebase-memory-mcp__*)  # all CMM tools bypass CMM sentinel check unconditionally
-    exit 0 ;;
-  mcp__context-mode__*)         # Context Mode tools: full bypass (both CMM and CM gates)
-    exit 0 ;;
-  Bash|Read|Grep|Glob)          # read-only tools; safe to run in parallel with index_status
-    exit 0 ;;
-esac
 
 # Check CMM sentinel
 if [ ! -f "$CMM_SENTINEL" ]; then
