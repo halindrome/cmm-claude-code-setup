@@ -757,17 +757,35 @@ install_project() {
 
   if [ "$DRY_RUN" = true ]; then
     echo "  [DRY RUN] Would create .claude/hooks/"
+    echo "  [DRY RUN] Would create .claude/hooks/lib/"
     echo "  [DRY RUN] Would create .claude/rules/"
   else
     mkdir -p .claude/hooks
+    mkdir -p .claude/hooks/lib
     mkdir -p .claude/rules
   fi
 
   # Pre-scan: report drift summary before per-file prompts
   # shellcheck disable=SC2046
+  scan_drift_summary ".claude/hooks/lib" $( ls "$SCRIPT_DIR/hooks/lib/"*.sh 2>/dev/null )
+  # shellcheck disable=SC2046
   scan_drift_summary ".claude/hooks" $( ls "$SCRIPT_DIR/hooks/project/"*.sh 2>/dev/null )
   # shellcheck disable=SC2046
   scan_drift_summary ".claude/rules" $( ls "$SCRIPT_DIR/rules/"* 2>/dev/null )
+
+  # Install shared libraries first (sourced by hooks at runtime)
+  shopt -s nullglob
+  for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
+    copy_file "$file" ".claude/hooks/lib/$(basename "$file")"
+  done
+  shopt -u nullglob
+
+  # Invalidate project-root cache for this directory so hooks re-detect after reinstall
+  _PR_CACHE_KEY=$(echo -n "$(pwd)" | md5 -qs 2>/dev/null || echo -n "$(pwd)" | md5sum 2>/dev/null | cut -d' ' -f1)
+  if [ -n "$_PR_CACHE_KEY" ] && [ -f "/tmp/cmm-project-root-${_PR_CACHE_KEY}" ]; then
+    rm -f "/tmp/cmm-project-root-${_PR_CACHE_KEY}"
+    echo "  [ok] Invalidated project-root cache for $(pwd)"
+  fi
 
   shopt -s nullglob
   # Copies all hooks/project/*.sh to .claude/hooks/, including:
