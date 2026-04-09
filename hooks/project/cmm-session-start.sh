@@ -60,6 +60,13 @@ rm -f "/tmp/context-mode-ready-${PROJECT_HASH}"
 # This eliminates the manual ctx_stats call that was previously required.
 # The sentinel is advisory: if the MCP server is down, ctx_* tool calls will
 # fail with a clear MCP error (not a gate block), which is acceptable UX.
+#
+# ORDERING GUARANTEE: SessionStart hooks run synchronously before any
+# PreToolUse hooks fire. This means the sentinel written below at
+# /tmp/context-mode-ready-${PROJECT_HASH} is guaranteed to exist before
+# ctx-execute-enforcer.sh checks for it on the first tool call. The
+# delete-then-recreate pattern (lines 55-56 delete, lines 87-89 recreate)
+# is safe because no PreToolUse hook can interleave between them.
 CONTEXT_MODE_INSTALLED=0
 if python3 -c "
 import json, os, sys
