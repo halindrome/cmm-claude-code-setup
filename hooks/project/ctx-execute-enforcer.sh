@@ -1,5 +1,5 @@
 #!/bin/bash
-# ctx-execute-enforcer.sh — PreToolUse:Bash hook (redirects large-output commands to ctx_execute)
+# ctx-execute-enforcer.sh — PreToolUse:Bash hook (allowlist enforcer — only exempt commands pass through; everything else redirects to ctx_execute)
 # BLOCKING: exits 2 for test runners, package installs, linters, and log viewers; redirects to mcp__context-mode__ctx_execute
 # No-op when Context Mode is not installed or not yet initialized.
 #
@@ -148,42 +148,30 @@ case "$COMMAND" in
   ssh\ *|scp\ *|rsync\ *|sftp\ *)                              exit 0 ;;
 esac
 
-# --- Block Patterns (redirect to ctx_execute) ---
-SHOULD_BLOCK=0
-
+# VBW/planning scripts (must not break planning workflows)
 case "$COMMAND" in
-  # Test runners
-  npm\ test*|npm\ run\ test*|npx\ jest*|npx\ vitest*|npx\ mocha*)  SHOULD_BLOCK=1 ;;
-  yarn\ test*|yarn\ run\ test*|pnpm\ test*|pnpm\ run\ test*)     SHOULD_BLOCK=1 ;;
-  bun\ test*|deno\ test*|node\ --test*)                           SHOULD_BLOCK=1 ;;
-  pytest*|python\ -m\ pytest*|py.test*)                          SHOULD_BLOCK=1 ;;
-  cargo\ test*|go\ test\ *|mvn\ test*|./gradlew\ test*)          SHOULD_BLOCK=1 ;;
-  make\ test*|make\ check*)                                      SHOULD_BLOCK=1 ;;
-
-  # Log/output viewers (unbounded output)
-  tail\ -f\ *|journalctl*|kubectl\ logs\ *)                      SHOULD_BLOCK=1 ;;
-  docker\ logs\ *)                                               SHOULD_BLOCK=1 ;;
-
-  # Package managers (verbose install output)
-  npm\ install*|npm\ ci*|yarn\ install*|pnpm\ install*)          SHOULD_BLOCK=1 ;;
-  pip\ install*|pip3\ install*|poetry\ install*|uv\ sync*)       SHOULD_BLOCK=1 ;;
-  cargo\ build*|cargo\ check*)                                   SHOULD_BLOCK=1 ;;
-
-  # Linters/formatters (many lines of output)
-  eslint\ *|pylint\ *|mypy\ *|flake8\ *|black\ *|isort\ *)       SHOULD_BLOCK=1 ;;
-  cargo\ clippy*|golangci-lint\ *|go\ vet\ *)                    SHOULD_BLOCK=1 ;;
-
-  # Build tools (context-mode handles these too, belt-and-suspenders)
-  npm\ run\ build*|yarn\ build*|tsc\ *|webpack\ *|vite\ build*)  SHOULD_BLOCK=1 ;;
+  */.vbw-planning/*|*/tmp/.vbw-plugin-root-link-*)   exit 0 ;;
+  bash\ */.vbw-planning/*|bash\ */tmp/.vbw-plugin-root-link-*)  exit 0 ;;
 esac
 
-# --- Block Decision ---
-if [ "$SHOULD_BLOCK" -eq 1 ]; then
-  # --- Block Counter ---
-  bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash" 2>/dev/null || true
+# Package version queries (bounded output)
+case "$COMMAND" in
+  *--version|*\ -v|*\ -V)   exit 0 ;;
+esac
 
-  cat >&2 <<BLOCKED
-BLOCKED: This command produces large output. Use ctx_execute to run it in the sandbox.
+# Git log/diff/show (variable output but integral to workflow)
+case "$COMMAND" in
+  git\ log\ *|git\ diff\ *)  exit 0 ;;
+  git\ show\ *)              exit 0 ;;
+esac
+
+# --- Default: block everything not explicitly exempt ---
+# Allowlist model: only commands matching exempt patterns above pass through.
+# Everything else must go through ctx_execute for output sandboxing.
+bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash" 2>/dev/null || true
+
+cat >&2 <<BLOCKED
+BLOCKED: Route this command through ctx_execute for output sandboxing.
 
 Replace:
   Bash("$COMMAND")
@@ -195,8 +183,4 @@ Context Mode captures only the relevant output portion, preventing context bloat
 To bypass this gate (e.g., when you need raw output in context), add "# ctx-exempt" to your command:
   Bash("$COMMAND # ctx-exempt")
 BLOCKED
-  exit 2
-fi
-
-# Default: allow everything not explicitly blocked
-exit 0
+exit 2
