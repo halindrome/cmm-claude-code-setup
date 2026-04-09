@@ -613,6 +613,10 @@ merge_settings_json() {
       {
         "matcher": "Read",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-nudge.sh\""}]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-grep-nudge.sh\""}]
       }
     ],
     "PostToolUse": [
@@ -812,6 +816,12 @@ install_project() {
   if [ -f "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ]; then
     copy_file "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ".claude/hooks/cmm-nudge.sh"
     set_executable ".claude/hooks/cmm-nudge.sh"
+  fi
+
+  # Copy cmm-grep-nudge.sh from hooks/global/ to .claude/hooks/
+  if [ -f "$SCRIPT_DIR/hooks/global/cmm-grep-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/cmm-grep-nudge.sh" ".claude/hooks/cmm-grep-nudge.sh"
+    set_executable ".claude/hooks/cmm-grep-nudge.sh"
   fi
 
 
