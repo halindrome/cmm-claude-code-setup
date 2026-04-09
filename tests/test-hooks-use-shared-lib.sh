@@ -111,7 +111,7 @@ else
     echo \"ROOT=\$PROJECT_ROOT\"
     echo \"HASH=\$PROJECT_HASH\"
     echo \"CMM=\$CMM_SENTINEL\"
-    echo \"CTX=\$CTX_SENTINEL\"
+    echo \"CTX=\$CONTEXT_MODE_SENTINEL\"
     echo \"LOADED=\$_PROJECT_ROOT_LOADED\"
   " 2>/dev/null)
 
@@ -124,7 +124,7 @@ else
   [ -n "$ROOT_VAL" ] && pass "PROJECT_ROOT is set ($ROOT_VAL)" || fail "PROJECT_ROOT is empty"
   [ -n "$HASH_VAL" ] && pass "PROJECT_HASH is set" || fail "PROJECT_HASH is empty"
   [ -n "$CMM_VAL" ]  && pass "CMM_SENTINEL is set" || fail "CMM_SENTINEL is empty"
-  [ -n "$CTX_VAL" ]  && pass "CTX_SENTINEL is set" || fail "CTX_SENTINEL is empty"
+  [ -n "$CTX_VAL" ]  && pass "CONTEXT_MODE_SENTINEL is set" || fail "CONTEXT_MODE_SENTINEL is empty"
   [ "$LOADED_VAL" = "1" ] && pass "_PROJECT_ROOT_LOADED guard is set" || fail "_PROJECT_ROOT_LOADED not set"
 fi
 
