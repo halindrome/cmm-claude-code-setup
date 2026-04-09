@@ -9,6 +9,12 @@
 #   "hooks": { "PostToolUse": [{ "matcher": "Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/reindex-after-commit.sh"}] }] }
 # Matcher: PostToolUse:Bash
 
+# --- Pre-Traversal Early Exit ---
+# Read stdin once (can only be consumed once), then check if this is a git commit command.
+# Exit immediately for non-commit Bash calls — avoids the expensive git traversal for ~95% of calls.
+INPUT=$(cat)
+echo "$INPUT" | grep -q '"git commit\|"git  *commit' || exit 0
+
 # --- Stable Sentinel Path Computation ---
 # Walk the git superproject chain to find the outermost project root.
 # Handles arbitrarily nested submodules — each iteration climbs one level until there is
@@ -50,7 +56,7 @@ PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT"
 CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
 
 # --- Input Parsing ---
-INPUT=$(cat)
+# stdin already consumed into INPUT above — pipe from variable for python3 parsing
 CMD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null || echo "")
 STDOUT=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_output',{}).get('stdout',''))" 2>/dev/null || echo "")
 
