@@ -51,9 +51,32 @@ fi
 INPUT=$(cat)
 
 # --- Context Mode Presence Check ---
-# No-op gracefully if Context Mode binary is not installed and no DB exists yet.
+# 3-source detection matching ctx-execute-enforcer.sh and context-mode-sentinel-writer.sh:
+# 1. Project .mcp.json for context-mode server entry
+# 2. Global Claude Code settings for context-mode server entry
+# 3. .claude/context-mode.db existence (prior session used Context Mode here)
 CONTEXT_MODE_INSTALLED=0
-command -v context-mode >/dev/null 2>&1 && CONTEXT_MODE_INSTALLED=1
+if python3 -c "
+import json, os, sys
+# 1. Project .mcp.json
+try:
+    with open('${PROJECT_ROOT}/.mcp.json') as f:
+        if 'context-mode' in json.load(f).get('mcpServers', {}):
+            sys.exit(0)
+except Exception: pass
+# 2. Global Claude Code settings
+for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
+    if not d: continue
+    try:
+        with open(os.path.join(d, 'settings.json')) as f:
+            if 'context-mode' in json.load(f).get('mcpServers', {}):
+                sys.exit(0)
+    except Exception: pass
+sys.exit(1)
+" 2>/dev/null; then
+  CONTEXT_MODE_INSTALLED=1
+fi
+# Also activate if a session DB already exists (context-mode was used here before)
 [ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
 if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
