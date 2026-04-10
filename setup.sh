@@ -717,9 +717,11 @@ install_global() {
   if [ "$DRY_RUN" = true ]; then
     echo "  [DRY RUN] Would create ${config_dir}/hooks/"
     echo "  [DRY RUN] Would create ${config_dir}/hooks/lib/"
+    echo "  [DRY RUN] Would create ${config_dir}/rules/"
   else
     mkdir -p "${config_dir}/hooks"
     mkdir -p "${config_dir}/hooks/lib"
+    mkdir -p "${config_dir}/rules"
   fi
 
   # Pre-scan: report drift summary before per-file prompts
@@ -727,6 +729,8 @@ install_global() {
   scan_drift_summary "${config_dir}/hooks/lib" $( ls "$SCRIPT_DIR/hooks/lib/"*.sh 2>/dev/null )
   # shellcheck disable=SC2046
   scan_drift_summary "${config_dir}/hooks" $( ls "$SCRIPT_DIR/hooks/global/"*.sh 2>/dev/null )
+  # shellcheck disable=SC2046
+  scan_drift_summary "${config_dir}/rules" $( ls "$SCRIPT_DIR/rules/"*.md 2>/dev/null )
 
   # Install shared libraries first (sourced by hooks at runtime)
   shopt -s nullglob
@@ -746,6 +750,13 @@ install_global() {
     copy_file "$SCRIPT_DIR/hooks/project/track-hook-blocks.sh" "${config_dir}/hooks/track-hook-blocks.sh"
     set_executable "${config_dir}/hooks/track-hook-blocks.sh"
   fi
+
+  # Install rules (global rules apply to all projects)
+  shopt -s nullglob
+  for file in "$SCRIPT_DIR/rules/"*.md; do
+    copy_file "$file" "${config_dir}/rules/$(basename "$file")"
+  done
+  shopt -u nullglob
 
   merge_settings_json "${config_dir}/settings.json" "global"
 
@@ -905,7 +916,7 @@ if changed:
   for file in "$SCRIPT_DIR/rules/"*; do
     # Skip reference/example files that are not runtime rule files
     case "$(basename "$file")" in
-      project-settings-example.json|global-claude-md.md|allowed-tools.txt|mcp-example.json) continue ;;
+      project-settings-example.json|allowed-tools.txt|mcp-example.json) continue ;;
     esac
     copy_file "$file" ".claude/rules/$(basename "$file")"
   done
