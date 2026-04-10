@@ -49,9 +49,10 @@ if [ -n "$PROJECT_ROOT" ]; then
 fi
 if [ -z "$PROJECT_ROOT" ]; then
     # Fallback: derive from BASH_SOURCE (non-git environments)
+    # This file lives at .claude/hooks/lib/project-root.sh — 3 levels up to project root
     _PR_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
     if [ -n "$_PR_SCRIPT_DIR" ]; then
-        PROJECT_ROOT="$(cd "$_PR_SCRIPT_DIR/../.." 2>/dev/null && pwd -P)"
+        PROJECT_ROOT="$(cd "$_PR_SCRIPT_DIR/../../.." 2>/dev/null && pwd -P)"
     else
         PROJECT_ROOT="$_PR_CWD"
     fi
