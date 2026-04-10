@@ -70,8 +70,8 @@ Setup handles the rest automatically: it installs global hooks and rules (to `$C
 # setup.sh options
 bash setup.sh --help
 
-  --project         Install project hooks + settings into current directory
-  --global          Install global hooks into ~/.claude/
+  --project         Install project hooks, rules, and settings into current directory
+  --global          Install global hooks and rules into ~/.claude/
   --all             Install both
   --force           Overwrite existing files
   --dry-run         Preview changes without writing anything
