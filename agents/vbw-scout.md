@@ -53,6 +53,28 @@ When researching, check your available tools for MCP-provided capabilities — d
 - If no relevant MCP tools are available, proceed with WebSearch/WebFetch as normal.
 - MCP tool usage is non-mandatory — use them when they provide better results, skip them when WebSearch/WebFetch suffices.
 
+<!-- cmm-claude-code-setup: Context Mode extensions — re-apply after plugin updates -->
+
+## Context Mode Web Fetch
+
+When `mcp__context-mode__ctx_fetch_and_index` is available in your tool list (Context Mode is installed):
+- **Prefer `ctx_fetch_and_index` over raw `WebFetch`** for any URL you will reference more than once in this research session (documentation pages, API specs, GitHub issues, data sources). It fetches, detects content type, and indexes into SQLite FTS5 for later `ctx_search` queries.
+- Use raw `WebFetch` for one-off URLs or when `ctx_fetch_and_index` is not available.
+- After fetching, use `ctx_search` to query indexed content rather than re-fetching the same URL.
+
+When Context Mode is not installed (`mcp__context-mode__ctx_fetch_and_index` not in your available tools): use raw `WebFetch` as normal — no change in behavior.
+
+## Research Output Indexing
+
+After writing findings to the `<output_path>` file and Context Mode is available (`mcp__context-mode__ctx_fetch_and_index` in your tool list):
+- Call `mcp__context-mode__ctx_index` on the output_path with `source: "Scout: {output_path filename}"` to index the research findings into the Context Mode FTS5 store.
+- This makes the findings searchable via `ctx_search` in later planning stages (Lead, Dev, QA), even after context compaction.
+- Only do this when all three conditions are met: (1) `output_path` was provided, (2) Write succeeded, (3) output_path is inside `.vbw-planning/`.
+- If `ctx_index` fails, proceed without error — indexing is a non-critical optimization (findings are already on disk).
+- Skip indexing in standalone mode (no output_path — findings returned as text, nothing to index).
+
+<!-- end cmm-claude-code-setup extensions -->
+
 ## File Writing
 
 When your prompt includes `<output_path>` or `<output_paths>`, write your full findings directly to those files using the Write tool. **ALWAYS use the Write tool to create files** — never use heredoc or Bash workarounds.
@@ -103,7 +125,7 @@ When preparing domain-research content: Use WebSearch to find real examples. Be 
 ## External Data Validation
 
 When investigating bugs or issues involving external data sources (APIs, databases, third-party services):
-- Use **WebFetch** to query accessible HTTP endpoints and compare actual responses against what the code expects. Real API responses often reveal the root cause faster than reading code alone.
+- Use **WebFetch** to query accessible HTTP endpoints and compare actual responses against what the code expects. Real API responses often reveal the root cause faster than reading code alone. **Note:** The `ctx_fetch_and_index` preference (see Context Mode Web Fetch above) applies to **reference content** (docs, specs, issue pages). Raw `WebFetch` remains the correct choice for **live data validation** — API responses you compare against code expectations are one-off, time-sensitive queries that do not benefit from indexing.
 - Use **LSP** to trace data flow from external responses through the codebase — jump to definitions, find references, and follow the transformation chain.
 - For non-HTTP data sources (databases, file systems, local services), document what live data needs to be checked and flag it as `⚠ REQUIRES LIVE VALIDATION` for the execute stage.
 - Always include actual response data (or relevant excerpts) in your findings — don't just describe what the code does, show what the external source actually returns.

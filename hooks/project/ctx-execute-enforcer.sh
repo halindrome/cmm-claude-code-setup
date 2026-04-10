@@ -1,5 +1,5 @@
 #!/bin/bash
-# ctx-execute-enforcer.sh — PreToolUse:Bash hook (redirects large-output commands to ctx_execute)
+# ctx-execute-enforcer.sh — PreToolUse:Bash hook (allowlist enforcer — only exempt commands pass through; everything else redirects to ctx_execute)
 # BLOCKING: exits 2 for test runners, package installs, linters, and log viewers; redirects to mcp__context-mode__ctx_execute
 # No-op when Context Mode is not installed or not yet initialized.
 #
@@ -8,41 +8,37 @@
 #   "hooks": { "PreToolUse": [{ "matcher": "Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/ctx-execute-enforcer.sh"}] }] }
 # Matcher: PreToolUse:Bash
 
-# --- Stable Sentinel Path Computation ---
-# Walk the git superproject chain to find the outermost project root.
-# Handles arbitrarily nested submodules — each iteration climbs one level until there is
-# no further superproject. Falls back to BASH_SOURCE traversal for non-git environments.
-# Git worktrees are handled separately below (they are not submodules).
-PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$PROJECT_ROOT" ]; then
-    _WALK="$PROJECT_ROOT"
-    while true; do
-        _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
-        [ -z "$_PARENT" ] && break
-        _WALK="$_PARENT"
-    done
-    PROJECT_ROOT="$_WALK"
-fi
-if [ -z "$PROJECT_ROOT" ]; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-fi
-
-# --- Git Worktree Detection ---
-# git worktrees share the main repo but show-superproject-working-tree returns empty
-# (worktrees are not submodules). Detect via git-common-dir: in a worktree it points
-# to the main .git dir, while git-dir points into .git/worktrees/<name>.
-# Use the main project root so sentinel hashes are stable across worktree sessions.
-if [ -n "$PROJECT_ROOT" ]; then
-    _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
-    _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
-    # Resolve relative paths (git may return relative paths in the main working tree)
-    [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
-    [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
-    if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
-        _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
-        [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
-    fi
+# --- Project root detection (shared library with /tmp cache) ---
+_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
+if [ -f "$_LIB_DIR/project-root.sh" ]; then
+  source "$_LIB_DIR/project-root.sh"
+else
+  # Fallback: inline detection (pre-optimization installs)
+  PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+  if [ -n "$PROJECT_ROOT" ]; then
+      _WALK="$PROJECT_ROOT"
+      while true; do
+          _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+          [ -z "$_PARENT" ] && break
+          _WALK="$_PARENT"
+      done
+      PROJECT_ROOT="$_WALK"
+  fi
+  if [ -z "$PROJECT_ROOT" ]; then
+      SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+      PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+  fi
+  if [ -n "$PROJECT_ROOT" ]; then
+      _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
+      _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
+      [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
+      [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
+      if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
+          _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
+          [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
+      fi
+  fi
+  PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 fi
 
 # --- Path Integrity Check ---
@@ -55,8 +51,6 @@ if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PR
     echo "Project was moved or cloned. Re-run: bash setup.sh --project --force"
     exit 2
 fi
-
-PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 
 # --- Input Parsing ---
 INPUT=$(cat)
@@ -113,7 +107,7 @@ if [ ! -f "$CONTEXT_MODE_SENTINEL" ]; then
 fi
 
 # --- Bypass Marker ---
-# Add "# ctx-exempt" anywhere in the command to skip the gate for legitimate raw Bash use.
+# Internal bypass marker — undocumented, for operator use only.
 if echo "$COMMAND" | grep -q "ctx-exempt"; then
     exit 0
 fi
@@ -154,49 +148,30 @@ case "$COMMAND" in
   ssh\ *|scp\ *|rsync\ *|sftp\ *)                              exit 0 ;;
 esac
 
-# --- Block Patterns (redirect to ctx_execute) ---
-# Design philosophy: fail-open (default allow) to avoid blocking agent workflows.
-#   Block list: commands with large/unbounded output that should use ctx_execute
-#               (test runners, package managers, linters, build tools, log viewers).
-#   Allow list: commands with small/bounded output needed for normal workflow
-#               (git writes, git bounded reads, filesystem mutations, navigation).
-#   Default:    allow — anything not explicitly blocked passes through.
-# See "Known allowlist gaps" comment at end of file for documented fall-through cases.
-SHOULD_BLOCK=0
-
+# VBW/planning scripts (must not break planning workflows)
 case "$COMMAND" in
-  # Test runners
-  npm\ test*|npm\ run\ test*|npx\ jest*|npx\ vitest*|npx\ mocha*)  SHOULD_BLOCK=1 ;;
-  yarn\ test*|yarn\ run\ test*|pnpm\ test*|pnpm\ run\ test*)     SHOULD_BLOCK=1 ;;
-  bun\ test*|deno\ test*|node\ --test*)                           SHOULD_BLOCK=1 ;;
-  pytest*|python\ -m\ pytest*|py.test*)                          SHOULD_BLOCK=1 ;;
-  cargo\ test*|go\ test\ *|mvn\ test*|./gradlew\ test*)          SHOULD_BLOCK=1 ;;
-  make\ test*|make\ check*)                                      SHOULD_BLOCK=1 ;;
-
-  # Log/output viewers (unbounded output)
-  tail\ -f\ *|journalctl*|kubectl\ logs\ *)                      SHOULD_BLOCK=1 ;;
-  docker\ logs\ *)                                               SHOULD_BLOCK=1 ;;
-
-  # Package managers (verbose install output)
-  npm\ install*|npm\ ci*|yarn\ install*|pnpm\ install*)          SHOULD_BLOCK=1 ;;
-  pip\ install*|pip3\ install*|poetry\ install*|uv\ sync*)       SHOULD_BLOCK=1 ;;
-  cargo\ build*|cargo\ check*)                                   SHOULD_BLOCK=1 ;;
-
-  # Linters/formatters (many lines of output)
-  eslint\ *|pylint\ *|mypy\ *|flake8\ *|black\ *|isort\ *)       SHOULD_BLOCK=1 ;;
-  cargo\ clippy*|golangci-lint\ *|go\ vet\ *)                    SHOULD_BLOCK=1 ;;
-
-  # Build tools (context-mode handles these too, belt-and-suspenders)
-  npm\ run\ build*|yarn\ build*|tsc\ *|webpack\ *|vite\ build*)  SHOULD_BLOCK=1 ;;
+  */.vbw-planning/*|*/tmp/.vbw-plugin-root-link-*)   exit 0 ;;
+  bash\ */.vbw-planning/*|bash\ */tmp/.vbw-plugin-root-link-*)  exit 0 ;;
 esac
 
-# --- Block Decision ---
-if [ "$SHOULD_BLOCK" -eq 1 ]; then
-  # --- Block Counter ---
-  bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash" 2>/dev/null || true
+# Package version queries (bounded output)
+case "$COMMAND" in
+  *--version|*\ -v|*\ -V)   exit 0 ;;
+esac
 
-  cat >&2 <<BLOCKED
-BLOCKED: This command produces large output. Use ctx_execute to run it in the sandbox.
+# Git log/diff/show (variable output but integral to workflow)
+case "$COMMAND" in
+  git\ log|git\ log\ *|git\ diff|git\ diff\ *)  exit 0 ;;
+  git\ show\ *)                                  exit 0 ;;
+esac
+
+# --- Default: block everything not explicitly exempt ---
+# Allowlist model: only commands matching exempt patterns above pass through.
+# Everything else must go through ctx_execute for output sandboxing.
+bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash" 2>/dev/null || true
+
+cat >&2 <<BLOCKED
+BLOCKED: Route this command through ctx_execute for output sandboxing.
 
 Replace:
   Bash("$COMMAND")
@@ -204,37 +179,5 @@ With:
   mcp__context-mode__ctx_execute(language="shell", code="$COMMAND")
 
 Context Mode captures only the relevant output portion, preventing context bloat.
-
-To bypass this gate (e.g., when you need raw output in context), add "# ctx-exempt" to your command:
-  Bash("$COMMAND # ctx-exempt")
 BLOCKED
-  exit 2
-fi
-
-# Default: allow everything not explicitly blocked
-#
-# --- Known allowlist gaps (by design) ---
-# The following commands fall through to this default allow. They are NOT blocked
-# because blocking them would break common agent workflows. This is by design.
-#
-# Commands that fall through (not in block list, not in allow list):
-#   cat, ls, find, grep, sed, awk   — content reading / filesystem queries
-#   git log (full)                   — git log --oneline -N IS allowlisted above,
-#                                      but full git log falls through here
-#   git diff (full)                  — git diff --stat IS allowlisted above,
-#                                      but full git diff falls through here
-#   git show (without --stat)        — git show --stat IS allowlisted above
-#   bash tests/*.sh                  — custom test scripts (only named runners
-#                                      like pytest/jest are blocked)
-#   python3 -c "...", node -e "..."  — inline interpreter evaluation
-#   curl, wget                       — HTTP requests
-#
-# These gaps produce potentially large output in context. If this becomes a problem,
-# agents should route through ctx_execute instead:
-#   mcp__context-mode__ctx_execute(language="shell", code="<command>")
-# Or use "# ctx-exempt" for explicit bypass when raw Bash output is needed.
-#
-# Expanding the block list to cover these is not recommended — it risks breaking
-# essential agent workflows (e.g., reading small files with cat, listing directories
-# with ls, running project-specific test scripts).
-exit 0
+exit 2

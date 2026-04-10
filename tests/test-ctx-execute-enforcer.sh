@@ -106,6 +106,61 @@ _assert_exit "echo exempt" 0 \
 _assert_exit "git status exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
 
+# --- Allowlist: previously-unblocked commands now blocked (expect exit 2) ---
+echo ""
+echo "--- Allowlist: previously-unblocked commands now blocked (expect exit 2) ---"
+
+_assert_exit "cat command blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat README.md"}}'
+
+_assert_exit "find command blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"find . -name \"*.sh\""}}'
+
+_assert_exit "grep command blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"grep -r TODO src/"}}'
+
+_assert_exit "ls command blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}'
+
+_assert_exit "curl command blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"curl https://example.com"}}'
+
+_assert_exit "node command blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"node -e \"console.log(1)\""}}'
+
+_assert_exit "python3 command blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"python3 script.py"}}'
+
+_assert_exit "sed command blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"sed -i s/foo/bar/ file.txt"}}'
+
+# --- VBW/planning exempt tests (expect exit 0) ---
+echo ""
+echo "--- VBW/planning exempt tests (expect exit 0) ---"
+
+_assert_exit "vbw planning script exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"bash /Users/dev/project/.vbw-planning/scripts/resolve.sh"}}'
+
+_assert_exit "vbw plugin root link exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"bash /tmp/.vbw-plugin-root-link-abc123/scripts/run.sh"}}'
+
+# --- Version query exempt tests (expect exit 0) ---
+echo ""
+echo "--- Version query exempt tests (expect exit 0) ---"
+
+_assert_exit "version flag exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"node --version"}}'
+
+# --- Git log/diff exempt tests (expect exit 0) ---
+echo ""
+echo "--- Git log/diff exempt tests (expect exit 0) ---"
+
+_assert_exit "git log exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git log --oneline -10"}}'
+
+_assert_exit "git diff exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git diff HEAD~1"}}'
+
 # --- Bypass marker test (expect exit 0 even for blocked command) ---
 echo ""
 echo "--- Bypass marker tests (expect exit 0) ---"

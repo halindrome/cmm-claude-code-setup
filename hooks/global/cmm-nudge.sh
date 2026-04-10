@@ -77,17 +77,38 @@ fi
 # If CMM not found anywhere, allow Read (fail open)
 [ "$CMM_FOUND" = false ] && exit 0
 
-# --- Inline Extension Case (THE BLOCK DECISION — pure code extensions only) ---
+# --- Code Extension Check (inline list + project extra_extensions) ---
+_IS_CODE=false
 case "$FILE_PATH" in
   *.py|*.go|*.js|*.jsx|*.ts|*.tsx|*.rs|*.java|*.cpp|*.cc|*.cxx|*.c|*.h|*.hpp|\
   *.cs|*.php|*.lua|*.scala|*.kt|*.rb|*.sh|*.bash|*.zsh|*.zig|*.ex|*.exs|*.hs|\
   *.swift|*.dart|*.pl|*.pm|*.groovy|*.erl|*.r|*.R|*.clj|*.fs|*.jl|*.el|*.cu|\
   *.sql|*.vue|*.svelte|*.graphql|*.proto|*.ml|*.m|*.mm|*.nix|*.elm|*.lean|\
   *.f90|*.f95|*.f03|*.f08|*.cuh|*.v|*.sv|*.glsl|*.frag|*.vert)
-    ;; # matched — continue to block check
-  *)
-    exit 0 ;; # non-code extension — allow Read
+    _IS_CODE=true ;;
 esac
+# Check project extra_extensions from .codebase-memory.json
+if [ "$_IS_CODE" = false ] && [ -n "$REPO_ROOT" ]; then
+  _EXT_CACHE="/tmp/cmm-user-ext-$(echo -n "$REPO_ROOT" | md5 -q 2>/dev/null || echo -n "$REPO_ROOT" | md5sum 2>/dev/null | cut -d' ' -f1)"
+  if [ ! -f "$_EXT_CACHE" ]; then
+    python3 -c "
+import json, os
+for p in ['${REPO_ROOT}/.codebase-memory.json']:
+    if os.path.isfile(p):
+        try:
+            for ext in json.load(open(p)).get('extra_extensions',{}):
+                print(ext)
+        except: pass
+" 2>/dev/null > "$_EXT_CACHE" || rm -f "$_EXT_CACHE"
+  fi
+  if [ -s "$_EXT_CACHE" ]; then
+    _BASENAME=$(basename "$FILE_PATH")
+    while IFS= read -r _ext; do
+      case "$_BASENAME" in *"$_ext") _IS_CODE=true; break ;; esac
+    done < "$_EXT_CACHE"
+  fi
+fi
+[ "$_IS_CODE" = false ] && exit 0
 
 # --- Exception: Non-existent files (CMM can't index them either) ---
 [ ! -f "$FILE_PATH" ] && exit 0

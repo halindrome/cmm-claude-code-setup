@@ -12,74 +12,31 @@
 #   "hooks": { "PreToolUse": [{ "matcher": "*", "hooks": [{"type": "command", "command": "bash .claude/hooks/session-gate.sh"}] }] }
 # Matcher: PreToolUse:*
 
-# --- Stable Sentinel Path Computation ---
-# Walk the git superproject chain to find the outermost project root.
-# Handles arbitrarily nested submodules — each iteration climbs one level until there is
-# no further superproject. Falls back to BASH_SOURCE traversal for non-git environments.
-# Git worktrees are handled separately below (they are not submodules).
-PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
-if [ -n "$PROJECT_ROOT" ]; then
-    _WALK="$PROJECT_ROOT"
-    while true; do
-        _PARENT="$(git -C "$_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
-        [ -z "$_PARENT" ] && break
-        _WALK="$_PARENT"
-    done
-    PROJECT_ROOT="$_WALK"
-fi
-if [ -z "$PROJECT_ROOT" ]; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-fi
-
-# --- Git Worktree Detection ---
-# git worktrees share the main repo but show-superproject-working-tree returns empty
-# (worktrees are not submodules). Detect via git-common-dir: in a worktree it points
-# to the main .git dir, while git-dir points into .git/worktrees/<name>.
-# Use the main project root so sentinel hashes are stable across worktree sessions.
-if [ -n "$PROJECT_ROOT" ]; then
-    _GIT_DIR="$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)"
-    _GIT_COMMON="$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)"
-    # Resolve relative paths (git may return relative paths in the main working tree)
-    [ "${_GIT_DIR:0:1}" != "/" ]    && _GIT_DIR="$PROJECT_ROOT/$_GIT_DIR"
-    [ "${_GIT_COMMON:0:1}" != "/" ] && _GIT_COMMON="$PROJECT_ROOT/$_GIT_COMMON"
-    if [ "$_GIT_DIR" != "$_GIT_COMMON" ]; then
-        _MAIN_ROOT="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd -P)"
-        [ -n "$_MAIN_ROOT" ] && PROJECT_ROOT="$_MAIN_ROOT"
-    fi
-fi
-
-# --- Path Integrity Check ---
-# Hooks are registered with absolute paths by setup.sh. If the project was moved or
-# cloned without re-running setup.sh, BASH_SOURCE points to the old location while
-# git resolves the actual current root — catch this mismatch early.
-_SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P 2>/dev/null)"
-if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PROJECT_ROOT" ]; then
-    echo "cmm-hooks: path mismatch — hooks registered for '$_SCRIPT_ROOT' but git root is '$PROJECT_ROOT'."
-    echo "Project was moved or cloned. Re-run: bash setup.sh --project --force"
-    exit 2
-fi
-
-PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
-CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
-
-# --- Input Parsing ---
+# --- Input Capture ---
+# stdin can only be read once — capture it immediately for all subsequent parsing
 INPUT=$(cat)
-TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
+
+# --- Lightweight Tool Extraction ---
+# Use bash-only grep/sed to extract tool_name without python3 overhead.
+# Fall back to python3 if the lightweight parse fails (malformed JSON, etc.)
+TOOL=$(echo "$INPUT" | grep -o '"tool_name": *"[^"]*"' | head -1 | sed 's/.*: *"//;s/"//')
+if [ -z "$TOOL" ]; then
+    TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
+fi
 
 # If parsing failed, do not block — fail open to avoid spurious hook errors
 [ -z "$TOOL" ] && exit 0
 
-# --- Phase 1: Universal Allow-list ---
-# Bypass both gates unconditionally
+# --- Phase 1: Universal Allow-list (before any git traversal) ---
+# These tools never need gating — exit immediately with zero subprocess overhead
 case "$TOOL" in
   Agent)        exit 0 ;;  # subagents run in their own session with their own gate
   ToolSearch)   exit 0 ;;  # schema fetch needed to escape the catch-22
   SendMessage)  exit 0 ;;  # inter-agent coordination; must never be gated
 esac
 
-# --- Phase 2: CMM Gate ---
-# Allow-list: CMM bootstrap tools and read-only tools
+# --- Phase 2: CMM/CTX/Read-only Bypass (before any git traversal) ---
+# These tools are safe to run without sentinel checks — bypass the expensive git chain walk
 case "$TOOL" in
   mcp__codebase-memory-mcp__*)  # all CMM tools bypass CMM sentinel check unconditionally
     exit 0 ;;
@@ -88,6 +45,27 @@ case "$TOOL" in
   Bash|Read|Grep|Glob)          # read-only tools; safe to run in parallel with index_status
     exit 0 ;;
 esac
+
+# --- Project root detection (shared library with /tmp cache) ---
+_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
+if [ -f "$_LIB_DIR/project-root.sh" ]; then
+  source "$_LIB_DIR/project-root.sh"
+else
+  # Fallback: inline detection (pre-optimization installs)
+  PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+  [ -z "$PROJECT_ROOT" ] && PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+  PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+  CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
+fi
+CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
+
+# --- Path Integrity Check ---
+_SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P 2>/dev/null)"
+if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PROJECT_ROOT" ]; then
+    echo "cmm-hooks: path mismatch — hooks registered for '$_SCRIPT_ROOT' but git root is '$PROJECT_ROOT'." >&2
+    echo "Project was moved or cloned. Re-run: bash setup.sh --project --force" >&2
+    exit 2
+fi
 
 # Check CMM sentinel
 if [ ! -f "$CMM_SENTINEL" ]; then
@@ -162,9 +140,7 @@ case "$TOOL" in
   mcp__codebase-memory-mcp__*)  exit 0 ;;
 esac
 
-# Check Context Mode sentinel
-CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
-
+# Check Context Mode sentinel (CONTEXT_MODE_SENTINEL exported by project-root.sh; fallback sets it inline)
 if [ ! -f "$CONTEXT_MODE_SENTINEL" ]; then
   cat >&2 <<BLOCKED
 BLOCKED: Context Mode is installed but not yet initialized for this session.
