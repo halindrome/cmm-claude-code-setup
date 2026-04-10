@@ -161,8 +161,8 @@ esac
 
 # Git log/diff/show (variable output but integral to workflow)
 case "$COMMAND" in
-  git\ log\ *|git\ diff\ *)  exit 0 ;;
-  git\ show\ *)              exit 0 ;;
+  git\ log|git\ log\ *|git\ diff|git\ diff\ *)  exit 0 ;;
+  git\ show\ *)                                  exit 0 ;;
 esac
 
 # --- Default: block everything not explicitly exempt ---

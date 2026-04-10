@@ -67,15 +67,36 @@ BLOCK_TARGET=""
 
 # --- Check glob field for code extensions ---
 if [ -n "$GLOB_FIELD" ]; then
-  case "$GLOB_FIELD" in
-    *.py|*.go|*.js|*.jsx|*.ts|*.tsx|*.rs|*.java|*.cpp|*.cc|*.cxx|*.c|*.h|*.hpp|\
-    *.cs|*.php|*.lua|*.scala|*.kt|*.rb|*.sh|*.bash|*.zsh|*.zig|*.ex|*.exs|*.hs|\
-    *.swift|*.dart|*.pl|*.pm|*.groovy|*.erl|*.r|*.R|*.clj|*.fs|*.jl|*.el|*.cu|\
-    *.sql|*.vue|*.svelte|*.graphql|*.proto|*.ml|*.m|*.mm|*.nix|*.elm|*.lean|\
-    *.f90|*.f95|*.f03|*.f08|*.cuh|*.v|*.sv|*.glsl|*.frag|*.vert)
-      SHOULD_BLOCK=true
-      BLOCK_TARGET="glob='$GLOB_FIELD'" ;;
-  esac
+  # Handle brace-expansion globs like *.{ts,tsx} — extract extensions and check each
+  _GLOB_MATCHED=false
+  if echo "$GLOB_FIELD" | grep -q '{.*}'; then
+    _BRACE_CONTENT=$(echo "$GLOB_FIELD" | sed 's/.*{\(.*\)}.*/\1/')
+    IFS=',' read -ra _EXTS <<< "$_BRACE_CONTENT"
+    for _EXT in "${_EXTS[@]}"; do
+      case "*.$_EXT" in
+        *.py|*.go|*.js|*.jsx|*.ts|*.tsx|*.rs|*.java|*.cpp|*.cc|*.cxx|*.c|*.h|*.hpp|\
+        *.cs|*.php|*.lua|*.scala|*.kt|*.rb|*.sh|*.bash|*.zsh|*.zig|*.ex|*.exs|*.hs|\
+        *.swift|*.dart|*.pl|*.pm|*.groovy|*.erl|*.r|*.R|*.clj|*.fs|*.jl|*.el|*.cu|\
+        *.sql|*.vue|*.svelte|*.graphql|*.proto|*.ml|*.m|*.mm|*.nix|*.elm|*.lean|\
+        *.f90|*.f95|*.f03|*.f08|*.cuh|*.v|*.sv|*.glsl|*.frag|*.vert)
+          _GLOB_MATCHED=true; break ;;
+      esac
+    done
+  fi
+  if [ "$_GLOB_MATCHED" = false ]; then
+    case "$GLOB_FIELD" in
+      *.py|*.go|*.js|*.jsx|*.ts|*.tsx|*.rs|*.java|*.cpp|*.cc|*.cxx|*.c|*.h|*.hpp|\
+      *.cs|*.php|*.lua|*.scala|*.kt|*.rb|*.sh|*.bash|*.zsh|*.zig|*.ex|*.exs|*.hs|\
+      *.swift|*.dart|*.pl|*.pm|*.groovy|*.erl|*.r|*.R|*.clj|*.fs|*.jl|*.el|*.cu|\
+      *.sql|*.vue|*.svelte|*.graphql|*.proto|*.ml|*.m|*.mm|*.nix|*.elm|*.lean|\
+      *.f90|*.f95|*.f03|*.f08|*.cuh|*.v|*.sv|*.glsl|*.frag|*.vert)
+        _GLOB_MATCHED=true ;;
+    esac
+  fi
+  if [ "$_GLOB_MATCHED" = true ]; then
+    SHOULD_BLOCK=true
+    BLOCK_TARGET="glob='$GLOB_FIELD'"
+  fi
 fi
 
 # --- Check type field for code types ---
