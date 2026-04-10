@@ -11,6 +11,10 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-nudge.sh"
+    - matcher: "Grep"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/cmm-grep-nudge.sh"
   PostToolUse:
     - matcher: "mcp__codebase-memory-mcp__*"
       hooks:

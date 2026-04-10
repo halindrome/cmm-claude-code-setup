@@ -35,6 +35,8 @@ INSTALL_PROJECT=false
 SKIP_MCP_CHECK=false
 SKIP_STATUSLINE=false
 VERIFY=false
+YES_FLAG=false
+RECONFIGURE_STATUSLINE=false
 
 # Detect Claude Code config directory at runtime.
 # Priority: $CLAUDE_CONFIG_DIR (set by Claude Code) > ~/.config/claude-code (XDG) > ~/.claude (legacy)
@@ -611,12 +613,24 @@ merge_settings_json() {
       {
         "matcher": "Read",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-nudge.sh\""}]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-grep-nudge.sh\""}]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/reindex-after-edit.sh\""}]
+      },
+      {
+        "matcher": "mcp__codebase-memory-mcp__*",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-cmm-calls.sh\""}]
+      },
+      {
+        "matcher": "mcp__context-mode__*",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-ctx-calls.sh\""}]
       }
     ]
   }
@@ -747,17 +761,39 @@ install_project() {
 
   if [ "$DRY_RUN" = true ]; then
     echo "  [DRY RUN] Would create .claude/hooks/"
+    echo "  [DRY RUN] Would create .claude/hooks/lib/"
     echo "  [DRY RUN] Would create .claude/rules/"
   else
     mkdir -p .claude/hooks
+    mkdir -p .claude/hooks/lib
     mkdir -p .claude/rules
   fi
 
   # Pre-scan: report drift summary before per-file prompts
   # shellcheck disable=SC2046
+  scan_drift_summary ".claude/hooks/lib" $( ls "$SCRIPT_DIR/hooks/lib/"*.sh 2>/dev/null )
+  # shellcheck disable=SC2046
   scan_drift_summary ".claude/hooks" $( ls "$SCRIPT_DIR/hooks/project/"*.sh 2>/dev/null )
   # shellcheck disable=SC2046
   scan_drift_summary ".claude/rules" $( ls "$SCRIPT_DIR/rules/"* 2>/dev/null )
+
+  # Install shared libraries first (sourced by hooks at runtime)
+  shopt -s nullglob
+  for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
+    copy_file "$file" ".claude/hooks/lib/$(basename "$file")"
+  done
+  shopt -u nullglob
+
+  # Invalidate project-root cache for this directory so hooks re-detect after reinstall
+  _PR_CACHE_KEY=$(echo -n "$(pwd)" | md5 -q 2>/dev/null || echo -n "$(pwd)" | md5sum 2>/dev/null | cut -d' ' -f1)
+  if [ -n "$_PR_CACHE_KEY" ] && [ -f "/tmp/cmm-project-root-${_PR_CACHE_KEY}" ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would invalidate project-root cache"
+    else
+      rm -f "/tmp/cmm-project-root-${_PR_CACHE_KEY}"
+      echo "  [ok] Invalidated project-root cache for $(pwd)"
+    fi
+  fi
 
   shopt -s nullglob
   # Copies all hooks/project/*.sh to .claude/hooks/, including:
@@ -784,6 +820,12 @@ install_project() {
   if [ -f "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ]; then
     copy_file "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ".claude/hooks/cmm-nudge.sh"
     set_executable ".claude/hooks/cmm-nudge.sh"
+  fi
+
+  # Copy cmm-grep-nudge.sh from hooks/global/ to .claude/hooks/
+  if [ -f "$SCRIPT_DIR/hooks/global/cmm-grep-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/cmm-grep-nudge.sh" ".claude/hooks/cmm-grep-nudge.sh"
+    set_executable ".claude/hooks/cmm-grep-nudge.sh"
   fi
 
 
@@ -861,9 +903,47 @@ if changed:
 
   shopt -s nullglob
   for file in "$SCRIPT_DIR/rules/"*; do
+    # Skip reference/example files that are not runtime rule files
+    case "$(basename "$file")" in
+      project-settings-example.json|global-claude-md.md|allowed-tools.txt|mcp-example.json) continue ;;
+    esac
     copy_file "$file" ".claude/rules/$(basename "$file")"
   done
   shopt -u nullglob
+
+  # Clean up legacy rule files from earlier installs
+  local _legacy_files="global-claude-md.md allowed-tools.txt mcp-example.json project-settings-example.json"
+  local _found_legacy=()
+  for _lf in $_legacy_files; do
+    [ -f ".claude/rules/$_lf" ] && _found_legacy+=("$_lf")
+  done
+  if [ ${#_found_legacy[@]} -gt 0 ]; then
+    echo ""
+    echo "  Found ${#_found_legacy[@]} legacy rule file(s) from earlier installs:"
+    for _lf in "${_found_legacy[@]}"; do
+      echo "    - .claude/rules/$_lf"
+    done
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would remove ${#_found_legacy[@]} legacy rule file(s)"
+    elif [ "$FORCE" = true ]; then
+      for _lf in "${_found_legacy[@]}"; do
+        rm -f ".claude/rules/$_lf"
+      done
+      echo "  [ok] Removed legacy rule files (--force)"
+    else
+      printf "  Remove them? [Y/n] "
+      read -r _answer </dev/tty 2>/dev/null || _answer="y"
+      case "$_answer" in
+        [Nn]*) echo "  [skip] Keeping legacy rule files" ;;
+        *)
+          for _lf in "${_found_legacy[@]}"; do
+            rm -f ".claude/rules/$_lf"
+          done
+          echo "  [ok] Removed legacy rule files"
+          ;;
+      esac
+    fi
+  fi
 
   # Merge MCP servers into .mcp.json (creates if missing, preserves existing servers)
   if [ "$DRY_RUN" = true ]; then
@@ -1000,6 +1080,81 @@ except Exception:
       fi
     fi
 
+    # --- Statusline component config ---
+    # Determine config file path based on mode
+    local sl_config_path
+    if [ "$mode" = "project" ]; then
+      local _project_root
+      _project_root="$(pwd -P)"
+      local _project_hash
+      _project_hash=$(echo "$_project_root" | md5 -q 2>/dev/null || echo "$_project_root" | md5sum | awk '{print $1}')
+      sl_config_path="$HOME/.cache/codebase-memory-mcp/_statusline-config-${_project_hash}.json"
+    else
+      sl_config_path="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
+    fi
+
+    # Write config: skip prompts if config exists (unless --reconfigure-statusline)
+    if [ -f "$sl_config_path" ] && [ "$RECONFIGURE_STATUSLINE" = false ]; then
+      echo "  [info] Statusline config found: ${sl_config_path}"
+    else
+      mkdir -p "$(dirname "$sl_config_path")"
+
+      if [ "$YES_FLAG" = true ] || [ ! -t 0 ]; then
+        # Non-interactive: write defaults (all true)
+        cat > "$sl_config_path" <<'SLCFG'
+{
+  "cmm_total": true,
+  "cmm_details": true,
+  "blocks_total": true,
+  "block_details": true,
+  "ctx_total": true,
+  "ctx_details": true
+}
+SLCFG
+        echo "  [ok] Statusline config written (defaults): ${sl_config_path}"
+      else
+        echo ""
+        echo "  Statusline component selection (press Enter for default):"
+        local sl_cmm_total sl_cmm_details sl_blocks_total sl_block_details sl_ctx_total sl_ctx_details
+
+        printf "    Show CMM total (CMM:N)? [Y/n] "
+        read -r sl_cmm_total
+        case "$sl_cmm_total" in n|N) sl_cmm_total=false ;; *) sl_cmm_total=true ;; esac
+
+        printf "    Show CMM details (sg:X cs:Y tr:Z)? [Y/n] "
+        read -r sl_cmm_details
+        case "$sl_cmm_details" in n|N) sl_cmm_details=false ;; *) sl_cmm_details=true ;; esac
+
+        printf "    Show Blocks total (Blk:N)? [Y/n] "
+        read -r sl_blocks_total
+        case "$sl_blocks_total" in n|N) sl_blocks_total=false ;; *) sl_blocks_total=true ;; esac
+
+        printf "    Show Block details (R:X/B:Y)? [Y/n] "
+        read -r sl_block_details
+        case "$sl_block_details" in n|N) sl_block_details=false ;; *) sl_block_details=true ;; esac
+
+        printf "    Show Context Mode total (CTX:N)? [Y/n] "
+        read -r sl_ctx_total
+        case "$sl_ctx_total" in n|N) sl_ctx_total=false ;; *) sl_ctx_total=true ;; esac
+
+        printf "    Show Context Mode details (ex:X bex:Y sr:Z)? [Y/n] "
+        read -r sl_ctx_details
+        case "$sl_ctx_details" in n|N) sl_ctx_details=false ;; *) sl_ctx_details=true ;; esac
+
+        cat > "$sl_config_path" <<SLCFG
+{
+  "cmm_total": ${sl_cmm_total},
+  "cmm_details": ${sl_cmm_details},
+  "blocks_total": ${sl_blocks_total},
+  "block_details": ${sl_block_details},
+  "ctx_total": ${sl_ctx_total},
+  "ctx_details": ${sl_ctx_details}
+}
+SLCFG
+        echo "  [ok] Statusline config written: ${sl_config_path}"
+      fi
+    fi
+
     # Create hooks dir if needed
     mkdir -p "${target_config_dir}/hooks"
 
@@ -1031,23 +1186,68 @@ if [ -n "$PROJECT_ROOT" ]; then
     fi
 fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+# --- Config reading ---
+SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
+[ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
+SHOW_CMM_TOTAL=$(jq -r 'if has("cmm_total") then .cmm_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_DETAILS=$(jq -r 'if has("cmm_details") then .cmm_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_BLOCKS_TOTAL=$(jq -r 'if has("blocks_total") then .blocks_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_BLOCK_DETAILS=$(jq -r 'if has("block_details") then .block_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CTX_TOTAL=$(jq -r 'if has("ctx_total") then .ctx_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CTX_DETAILS=$(jq -r 'if has("ctx_details") then .ctx_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+# --- CMM counts ---
 CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
-if [ ! -f "$CACHE" ]; then echo "CMM:0"; exit 0; fi
-TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
-SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
-SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
-TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
-CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+CMM_OUTPUT=""
+if [ -f "$CACHE" ]; then
+  TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
+  SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  if [ "$SHOW_CMM_TOTAL" = "true" ]; then
+    CMM_OUTPUT="CMM:${TOTAL}"
+    if [ "$SHOW_CMM_DETAILS" = "true" ]; then
+      CMM_OUTPUT="${CMM_OUTPUT} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+    fi
+  fi
+else
+  if [ "$SHOW_CMM_TOTAL" = "true" ]; then
+    CMM_OUTPUT="CMM:0"
+  fi
+fi
+# --- CTX counts ---
+CTX_CACHE="$HOME/.cache/codebase-memory-mcp/_ctx-call-counts-${PROJECT_HASH}.json"
+if [ -f "$CTX_CACHE" ]; then
+  CTX_TOTAL=$(jq -r '.total_calls // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  CTX_EXEC=$(jq -r '.by_tool["mcp__context-mode__ctx_execute"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  CTX_BATCH=$(jq -r '.by_tool["mcp__context-mode__ctx_batch_execute"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  CTX_SEARCH=$(jq -r '.by_tool["mcp__context-mode__ctx_search"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  if [ "$CTX_TOTAL" -gt 0 ] 2>/dev/null; then
+    if [ "$SHOW_CTX_TOTAL" = "true" ]; then
+      CTX_OUTPUT="CTX:${CTX_TOTAL}"
+      if [ "$SHOW_CTX_DETAILS" = "true" ]; then
+        CTX_OUTPUT="${CTX_OUTPUT} (ex:${CTX_EXEC} bex:${CTX_BATCH} sr:${CTX_SEARCH})"
+      fi
+      CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }${CTX_OUTPUT}"
+    fi
+  fi
+fi
 # --- Block counts ---
 BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
 if [ -f "$BLOCK_CACHE" ]; then
   READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
   BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
-  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
-    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  if [ "$SHOW_BLOCKS_TOTAL" = "true" ]; then
+    if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+      if [ "$SHOW_BLOCK_DETAILS" = "true" ]; then
+        CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+      else
+        BLOCK_SUM=$((READ_BLOCKS + BASH_BLOCKS))
+        CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }Blk:${BLOCK_SUM}"
+      fi
+    fi
   fi
 fi
-echo "$CMM_OUTPUT"
+[ -n "$CMM_OUTPUT" ] && echo "$CMM_OUTPUT" || echo "CMM:0"
 STATUSLINE_SCRIPT
     else
       # PROJECT MODE — Generate wrapper statusline-cmm.sh
@@ -1103,23 +1303,64 @@ if [ -n "$PROJECT_ROOT" ]; then
     fi
 fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+# --- Config reading ---
+SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
+[ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
+SHOW_CMM_TOTAL=$(jq -r 'if has("cmm_total") then .cmm_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_DETAILS=$(jq -r 'if has("cmm_details") then .cmm_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_BLOCKS_TOTAL=$(jq -r 'if has("blocks_total") then .blocks_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_BLOCK_DETAILS=$(jq -r 'if has("block_details") then .block_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CTX_TOTAL=$(jq -r 'if has("ctx_total") then .ctx_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CTX_DETAILS=$(jq -r 'if has("ctx_details") then .ctx_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+# --- CMM counts ---
 CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
 if [ -f "$CACHE" ]; then
   TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
   SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
   SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
   TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  CMM_OUTPUT="CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+  if [ "$SHOW_CMM_TOTAL" = "true" ]; then
+    CMM_OUTPUT="CMM:${TOTAL}"
+    if [ "$SHOW_CMM_DETAILS" = "true" ]; then
+      CMM_OUTPUT="${CMM_OUTPUT} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+    fi
+  fi
 else
-  CMM_OUTPUT="CMM:0"
+  if [ "$SHOW_CMM_TOTAL" = "true" ]; then
+    CMM_OUTPUT="CMM:0"
+  fi
+fi
+# --- CTX counts ---
+CTX_CACHE="$HOME/.cache/codebase-memory-mcp/_ctx-call-counts-${PROJECT_HASH}.json"
+if [ -f "$CTX_CACHE" ]; then
+  CTX_TOTAL=$(jq -r '.total_calls // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  CTX_EXEC=$(jq -r '.by_tool["mcp__context-mode__ctx_execute"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  CTX_BATCH=$(jq -r '.by_tool["mcp__context-mode__ctx_batch_execute"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  CTX_SEARCH=$(jq -r '.by_tool["mcp__context-mode__ctx_search"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
+  if [ "$CTX_TOTAL" -gt 0 ] 2>/dev/null; then
+    if [ "$SHOW_CTX_TOTAL" = "true" ]; then
+      CTX_OUTPUT="CTX:${CTX_TOTAL}"
+      if [ "$SHOW_CTX_DETAILS" = "true" ]; then
+        CTX_OUTPUT="${CTX_OUTPUT} (ex:${CTX_EXEC} bex:${CTX_BATCH} sr:${CTX_SEARCH})"
+      fi
+      CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }${CTX_OUTPUT}"
+    fi
+  fi
 fi
 # --- Block counts ---
 BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
 if [ -f "$BLOCK_CACHE" ]; then
   READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
   BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
-  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
-    CMM_OUTPUT="${CMM_OUTPUT} Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+  if [ "$SHOW_BLOCKS_TOTAL" = "true" ]; then
+    if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+      if [ "$SHOW_BLOCK_DETAILS" = "true" ]; then
+        CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+      else
+        BLOCK_SUM=$((READ_BLOCKS + BASH_BLOCKS))
+        CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }Blk:${BLOCK_SUM}"
+      fi
+    fi
   fi
 fi
 
@@ -1389,6 +1630,8 @@ parse_args() {
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
+      --reconfigure-statusline) RECONFIGURE_STATUSLINE=true ;;
+      --yes|-y)          YES_FLAG=true ;;
       --verify)          VERIFY=true ;;
       --help|-h)
         cat <<'HELP'
@@ -1410,6 +1653,8 @@ Flags:
   --dry-run         Show what would be done without making changes
   --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
   --skip-statusline Skip the CMM statusline installation offer
+  --reconfigure-statusline  Re-prompt for statusline component selection (overwrite existing config)
+  --yes, -y         Non-interactive mode: accept all defaults without prompting
   --verify          After installing hooks, verify file integrity against CHECKSUMS.sha256
   --help, -h        Show this help message
 

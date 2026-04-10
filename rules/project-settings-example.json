@@ -48,6 +48,16 @@
             "_comment": "Blocks Read on code files; redirects to CMM graph tools (no-ops if CMM not installed)"
           }
         ]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/cmm-grep-nudge.sh",
+            "_comment": "Blocks Grep on code files; redirects to CMM graph tools (no-ops if CMM not installed)"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -86,6 +96,15 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/track-cmm-calls.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__context-mode__*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/track-ctx-calls.sh"
           }
         ]
       },

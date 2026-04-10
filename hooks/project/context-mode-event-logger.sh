@@ -47,22 +47,56 @@ if [ -n "$PROJECT_ROOT" ]; then
     fi
 fi
 
+# --- Read stdin once (stdin can only be consumed once) ---
+INPUT=$(cat)
+
 # --- Context Mode Presence Check ---
-# No-op gracefully if Context Mode binary is not installed and no DB exists yet.
+# 3-source detection matching ctx-execute-enforcer.sh and context-mode-sentinel-writer.sh:
+# 1. Project .mcp.json for context-mode server entry
+# 2. Global Claude Code settings for context-mode server entry
+# 3. .claude/context-mode.db existence (prior session used Context Mode here)
 CONTEXT_MODE_INSTALLED=0
-command -v context-mode >/dev/null 2>&1 && CONTEXT_MODE_INSTALLED=1
+if python3 -c "
+import json, os, sys
+# 1. Project .mcp.json
+try:
+    with open('${PROJECT_ROOT}/.mcp.json') as f:
+        if 'context-mode' in json.load(f).get('mcpServers', {}):
+            sys.exit(0)
+except Exception: pass
+# 2. Global Claude Code settings
+for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
+    if not d: continue
+    try:
+        with open(os.path.join(d, 'settings.json')) as f:
+            if 'context-mode' in json.load(f).get('mcpServers', {}):
+                sys.exit(0)
+    except Exception: pass
+sys.exit(1)
+" 2>/dev/null; then
+  CONTEXT_MODE_INSTALLED=1
+fi
+# Also activate if a session DB already exists (context-mode was used here before)
 [ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
 if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
   exit 0
 fi
 
+# --- Fast-path: skip heavy pipeline for tools with dedicated trackers ---
+# Extract tool_name cheaply via bash (no python3 needed for the fast-path check).
+# CMM and CTX tools are already tracked by track-cmm-calls.sh and track-ctx-calls.sh
+# respectively — the full sqlite3/python3 event logging pipeline is unnecessary for them.
+TOOL_NAME=$(echo "$INPUT" | grep -o '"tool_name": *"[^"]*"' | head -1 | sed 's/.*: *"//;s/"//')
+case "$TOOL_NAME" in
+  mcp__codebase-memory-mcp__*) exit 0 ;;  # tracked by track-cmm-calls.sh
+  mcp__context-mode__*)        exit 0 ;;  # tracked by track-ctx-calls.sh
+esac
+
 # --- sqlite3 Availability Check ---
 command -v sqlite3 >/dev/null 2>&1 || exit 0
 
-# --- Input Parsing ---
-INPUT=$(cat)
-
+# --- Input Parsing (full JSON parse for remaining tools) ---
 TOOL_NAME=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
 TOOL_INPUT=$(echo "$INPUT" | python3 -c "import sys,json; print(str(json.load(sys.stdin).get('tool_input','')))" 2>/dev/null || echo "")
 TOOL_RESULT=$(echo "$INPUT" | python3 -c "import sys,json; print(str(json.load(sys.stdin).get('tool_result','')))" 2>/dev/null || echo "")

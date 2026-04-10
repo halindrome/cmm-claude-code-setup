@@ -1,12 +1,12 @@
 #!/bin/bash
-# track-cmm-calls.sh — PostToolUse:mcp__codebase-memory-mcp__* hook (CMM call counter)
-# Tracks call counts per CMM tool. Silent, never blocks, always exits 0.
+# track-ctx-calls.sh — PostToolUse:mcp__context-mode__* hook (Context Mode call counter)
+# Tracks call counts per Context Mode MCP tool. Silent, never blocks, always exits 0.
 #
-# Install: cp hooks/project/track-cmm-calls.sh .claude/hooks/ && chmod +x .claude/hooks/track-cmm-calls.sh
+# Install: cp hooks/project/track-ctx-calls.sh .claude/hooks/ && chmod +x .claude/hooks/track-ctx-calls.sh
 # Register in .claude/settings.json:
-#   "hooks": { "PostToolUse": [{ "matcher": "mcp__codebase-memory-mcp__*", "hooks": [{"type": "command", "command": "bash .claude/hooks/track-cmm-calls.sh"}] }] }
+#   "hooks": { "PostToolUse": [{ "matcher": "mcp__context-mode__*", "hooks": [{"type": "command", "command": "bash .claude/hooks/track-ctx-calls.sh"}] }] }
 #
-# Matcher: mcp__codebase-memory-mcp__* (all CMM tools)
+# Matcher: mcp__context-mode__* (all Context Mode MCP tools)
 
 INPUT=$(cat)
 TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null)
@@ -44,7 +44,7 @@ else
 fi
 
 COUNTER_DIR="$HOME/.cache/codebase-memory-mcp"
-COUNTER_FILE="${COUNTER_DIR}/_call-counts-${PROJECT_HASH}.json"
+COUNTER_FILE="${COUNTER_DIR}/_ctx-call-counts-${PROJECT_HASH}.json"
 mkdir -p "$COUNTER_DIR" 2>/dev/null
 
 TEMP=$(mktemp)
