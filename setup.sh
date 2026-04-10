@@ -899,13 +899,45 @@ if changed:
 
   shopt -s nullglob
   for file in "$SCRIPT_DIR/rules/"*; do
-    # Skip build-time templates that are not runtime rule files
+    # Skip reference/example files that are not runtime rule files
     case "$(basename "$file")" in
-      project-settings-example.json|global-claude-md.md) continue ;;
+      project-settings-example.json|global-claude-md.md|allowed-tools.txt|mcp-example.json) continue ;;
     esac
     copy_file "$file" ".claude/rules/$(basename "$file")"
   done
   shopt -u nullglob
+
+  # Clean up legacy rule files from earlier installs
+  local _legacy_files="global-claude-md.md allowed-tools.txt mcp-example.json project-settings-example.json"
+  local _found_legacy=()
+  for _lf in $_legacy_files; do
+    [ -f ".claude/rules/$_lf" ] && _found_legacy+=("$_lf")
+  done
+  if [ ${#_found_legacy[@]} -gt 0 ]; then
+    echo ""
+    echo "  Found ${#_found_legacy[@]} legacy rule file(s) from earlier installs:"
+    for _lf in "${_found_legacy[@]}"; do
+      echo "    - .claude/rules/$_lf"
+    done
+    if [ "$FORCE" = true ]; then
+      for _lf in "${_found_legacy[@]}"; do
+        rm -f ".claude/rules/$_lf"
+      done
+      echo "  [ok] Removed legacy rule files (--force)"
+    else
+      printf "  Remove them? [Y/n] "
+      read -r _answer </dev/tty 2>/dev/null || _answer="y"
+      case "$_answer" in
+        [Nn]*) echo "  [skip] Keeping legacy rule files" ;;
+        *)
+          for _lf in "${_found_legacy[@]}"; do
+            rm -f ".claude/rules/$_lf"
+          done
+          echo "  [ok] Removed legacy rule files"
+          ;;
+      esac
+    fi
+  fi
 
   # Merge MCP servers into .mcp.json (creates if missing, preserves existing servers)
   if [ "$DRY_RUN" = true ]; then
