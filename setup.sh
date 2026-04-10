@@ -787,8 +787,12 @@ install_project() {
   # Invalidate project-root cache for this directory so hooks re-detect after reinstall
   _PR_CACHE_KEY=$(echo -n "$(pwd)" | md5 -q 2>/dev/null || echo -n "$(pwd)" | md5sum 2>/dev/null | cut -d' ' -f1)
   if [ -n "$_PR_CACHE_KEY" ] && [ -f "/tmp/cmm-project-root-${_PR_CACHE_KEY}" ]; then
-    rm -f "/tmp/cmm-project-root-${_PR_CACHE_KEY}"
-    echo "  [ok] Invalidated project-root cache for $(pwd)"
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would invalidate project-root cache"
+    else
+      rm -f "/tmp/cmm-project-root-${_PR_CACHE_KEY}"
+      echo "  [ok] Invalidated project-root cache for $(pwd)"
+    fi
   fi
 
   shopt -s nullglob
