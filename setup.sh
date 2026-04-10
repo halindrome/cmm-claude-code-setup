@@ -919,7 +919,9 @@ if changed:
     for _lf in "${_found_legacy[@]}"; do
       echo "    - .claude/rules/$_lf"
     done
-    if [ "$FORCE" = true ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would remove ${#_found_legacy[@]} legacy rule file(s)"
+    elif [ "$FORCE" = true ]; then
       for _lf in "${_found_legacy[@]}"; do
         rm -f ".claude/rules/$_lf"
       done
