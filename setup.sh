@@ -613,6 +613,10 @@ merge_settings_json() {
       {
         "matcher": "Read",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-nudge.sh\""}]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-grep-nudge.sh\""}]
       }
     ],
     "PostToolUse": [
@@ -757,17 +761,39 @@ install_project() {
 
   if [ "$DRY_RUN" = true ]; then
     echo "  [DRY RUN] Would create .claude/hooks/"
+    echo "  [DRY RUN] Would create .claude/hooks/lib/"
     echo "  [DRY RUN] Would create .claude/rules/"
   else
     mkdir -p .claude/hooks
+    mkdir -p .claude/hooks/lib
     mkdir -p .claude/rules
   fi
 
   # Pre-scan: report drift summary before per-file prompts
   # shellcheck disable=SC2046
+  scan_drift_summary ".claude/hooks/lib" $( ls "$SCRIPT_DIR/hooks/lib/"*.sh 2>/dev/null )
+  # shellcheck disable=SC2046
   scan_drift_summary ".claude/hooks" $( ls "$SCRIPT_DIR/hooks/project/"*.sh 2>/dev/null )
   # shellcheck disable=SC2046
   scan_drift_summary ".claude/rules" $( ls "$SCRIPT_DIR/rules/"* 2>/dev/null )
+
+  # Install shared libraries first (sourced by hooks at runtime)
+  shopt -s nullglob
+  for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
+    copy_file "$file" ".claude/hooks/lib/$(basename "$file")"
+  done
+  shopt -u nullglob
+
+  # Invalidate project-root cache for this directory so hooks re-detect after reinstall
+  _PR_CACHE_KEY=$(echo -n "$(pwd)" | md5 -q 2>/dev/null || echo -n "$(pwd)" | md5sum 2>/dev/null | cut -d' ' -f1)
+  if [ -n "$_PR_CACHE_KEY" ] && [ -f "/tmp/cmm-project-root-${_PR_CACHE_KEY}" ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would invalidate project-root cache"
+    else
+      rm -f "/tmp/cmm-project-root-${_PR_CACHE_KEY}"
+      echo "  [ok] Invalidated project-root cache for $(pwd)"
+    fi
+  fi
 
   shopt -s nullglob
   # Copies all hooks/project/*.sh to .claude/hooks/, including:
@@ -794,6 +820,12 @@ install_project() {
   if [ -f "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ]; then
     copy_file "$SCRIPT_DIR/hooks/global/cmm-nudge.sh" ".claude/hooks/cmm-nudge.sh"
     set_executable ".claude/hooks/cmm-nudge.sh"
+  fi
+
+  # Copy cmm-grep-nudge.sh from hooks/global/ to .claude/hooks/
+  if [ -f "$SCRIPT_DIR/hooks/global/cmm-grep-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/cmm-grep-nudge.sh" ".claude/hooks/cmm-grep-nudge.sh"
+    set_executable ".claude/hooks/cmm-grep-nudge.sh"
   fi
 
 
@@ -871,13 +903,47 @@ if changed:
 
   shopt -s nullglob
   for file in "$SCRIPT_DIR/rules/"*; do
-    # Skip build-time templates that are not runtime rule files
+    # Skip reference/example files that are not runtime rule files
     case "$(basename "$file")" in
-      project-settings-example.json|global-claude-md.md) continue ;;
+      project-settings-example.json|global-claude-md.md|allowed-tools.txt|mcp-example.json) continue ;;
     esac
     copy_file "$file" ".claude/rules/$(basename "$file")"
   done
   shopt -u nullglob
+
+  # Clean up legacy rule files from earlier installs
+  local _legacy_files="global-claude-md.md allowed-tools.txt mcp-example.json project-settings-example.json"
+  local _found_legacy=()
+  for _lf in $_legacy_files; do
+    [ -f ".claude/rules/$_lf" ] && _found_legacy+=("$_lf")
+  done
+  if [ ${#_found_legacy[@]} -gt 0 ]; then
+    echo ""
+    echo "  Found ${#_found_legacy[@]} legacy rule file(s) from earlier installs:"
+    for _lf in "${_found_legacy[@]}"; do
+      echo "    - .claude/rules/$_lf"
+    done
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would remove ${#_found_legacy[@]} legacy rule file(s)"
+    elif [ "$FORCE" = true ]; then
+      for _lf in "${_found_legacy[@]}"; do
+        rm -f ".claude/rules/$_lf"
+      done
+      echo "  [ok] Removed legacy rule files (--force)"
+    else
+      printf "  Remove them? [Y/n] "
+      read -r _answer </dev/tty 2>/dev/null || _answer="y"
+      case "$_answer" in
+        [Nn]*) echo "  [skip] Keeping legacy rule files" ;;
+        *)
+          for _lf in "${_found_legacy[@]}"; do
+            rm -f ".claude/rules/$_lf"
+          done
+          echo "  [ok] Removed legacy rule files"
+          ;;
+      esac
+    fi
+  fi
 
   # Merge MCP servers into .mcp.json (creates if missing, preserves existing servers)
   if [ "$DRY_RUN" = true ]; then
