@@ -16,29 +16,21 @@ ti=d.get('tool_input',{})
 fp=ti.get('file_path','') or d.get('file_path','')
 has_offset='1' if (ti.get('offset') is not None and ti.get('limit') is not None) else '0'
 limit=str(ti.get('limit',0))
-offset=str(ti.get('offset',0) or 0)
 print(fp)
 print(has_offset)
 print(limit)
-print(offset)
 " 2>/dev/null)
 
 FILE_PATH=$(echo "$PARSED" | sed -n '1p')
 HAS_OFFSET=$(echo "$PARSED" | sed -n '2p')
 READ_LIMIT=$(echo "$PARSED" | sed -n '3p')
-READ_OFFSET=$(echo "$PARSED" | sed -n '4p')
 
 [ -z "$FILE_PATH" ] && exit 0
 
 
 
-# --- Exception: Targeted Read with offset+limit (two-tier check) ---
-# Tier 1: offset > 0 with limit <= 100 — post-graph targeted read (e.g., search_graph found line N)
-if [ "$HAS_OFFSET" = "1" ] && [ "${READ_OFFSET:-0}" -gt 0 ] 2>/dev/null && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
-  exit 0
-fi
-# Tier 2: offset = 0 with limit <= 30 — imports/headers read (small window from top of file)
-if [ "$HAS_OFFSET" = "1" ] && [ "${READ_OFFSET:-0}" -eq 0 ] 2>/dev/null && [ "${READ_LIMIT:-0}" -le 30 ] 2>/dev/null; then
+# --- Exception: Targeted Read with offset+limit (sliced edit workflow) ---
+if [ "$HAS_OFFSET" = "1" ] && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
   exit 0
 fi
 
@@ -126,11 +118,11 @@ BLOCKED: Use CMM graph tools instead of Read for '$BASENAME'.
   - Trace callers: mcp__codebase-memory-mcp__trace_call_path
   - Edit workflow: search_graph -> get_code_snippet (line range) -> Read(offset=N, limit=M) -> Edit
   Full Read is allowed when:
-    - targeted read: offset>0 with limit<=100 (after finding location via CMM)
-    - imports/headers: offset=0 with limit<=30
+    - targeted read with offset+limit (up to 100 lines)
+    - editing 6+ functions in same file
+    - need imports/globals/module-level init
     - file < 50 lines
     - non-code files (JSON, YAML, Markdown, config)
-  Full-file and large-window reads from start of file are blocked.
 EOF
 
 # --- Block Counter ---
