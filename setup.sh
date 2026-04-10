@@ -7,7 +7,7 @@ set -euo pipefail
 #   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
 #
 # Flags:
-#   --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
+#   --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
 #   --project         Install project hooks to .claude/hooks/, rules to .claude/rules/,
 #                     create .mcp.json, and merge into .claude/settings.json
 #   --all             Install both global and project hooks
@@ -1656,7 +1656,7 @@ Usage:
   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
 
 Flags:
-  --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
+  --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
   --project         Install project hooks to .claude/hooks/, rules to .claude/rules/,
                     create .mcp.json, and merge into .claude/settings.json
   --all             Install both global and project hooks

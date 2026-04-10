@@ -1,4 +1,5 @@
 edea9492a595c4f8ead17195b679b9789ddbe86960a9d18aac1bfc8c64b8a857  hooks/global/cmm-nudge.sh
+1eefdbdd546f04ba7dcc08b605fb3fe1320180151af52eb4f2677b0b07a68c42  hooks/global/cmm-grep-nudge.sh
 8e09e00ba3d731069a03ed474f38a91da42f9de18763b879e469321d760c2ae2  hooks/global/reindex-after-edit.sh
 f366e6e2c3a9175025dc106238435e94132d4523d1fd558a8f526add7e23ebfa  hooks/project/agent-cmm-gate.sh
 9a329b6786de6699fa6ebad507356f6e5acebed3b6b90885ee9924513741c7cf  hooks/project/cmm-sentinel-writer.sh
@@ -14,4 +15,4 @@ c638796bc0c0518c2dc031f99e34a45e17a330e0188a9d1cd0cbe43c672592ed  hooks/project/
 e6ea05e8f270d654b7e8b9e7320713b455687c6d178f6a3a2434132a843efd16  rules/mcp-example.json
 035cd1abe3e31bfb461e10c9f66bdc5b56263908485234d9c7d1461d47a8626a  rules/project-settings-example.json
 c087743ce83453469674a230f46a18de691d5a10a670d856afe0b03abf83e747  hooks/project/track-hook-blocks.sh
-2ee28217418fcc917d82ad9b55c6f0182fc136abe5873f41952fc8cbb54abdf1  setup.sh
+b1a1959957dbeaed01cfd5f31f8233cabe6b21907e8d73f1737e3b1b580cfb7b  setup.sh
