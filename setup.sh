@@ -578,7 +578,7 @@ check_prerequisites() {
     exit 1
   fi
 
-  if [ "$INSTALL_PROJECT" = true ] && [ ! -d "$SCRIPT_DIR/rules" ]; then
+  if { [ "$INSTALL_PROJECT" = true ] || [ "$INSTALL_GLOBAL" = true ]; } && [ ! -d "$SCRIPT_DIR/rules" ]; then
     echo "[ERROR] rules/ directory not found in $SCRIPT_DIR" >&2
     exit 1
   fi
