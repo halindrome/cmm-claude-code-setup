@@ -300,15 +300,15 @@ See [benchmarks/README.md](benchmarks/README.md) for prerequisites, configuratio
 
 ## Branch Strategy
 
-This project uses a three-branch model:
+This project uses a two-branch model:
 
 | Branch | Purpose |
 |--------|---------|
-| `production` | Stable releases only. Every merge requires a version bump. Tagged with `vX.Y.Z` and `stable`. |
+| `main` | Stable releases only. Every merge from `develop` requires a version bump. Tagged with `vX.Y.Z`. |
 | `develop` | Active development. All feature branches merge here first. |
 | `feature/*` | Short-lived branches for individual changes. Branch from `develop`, PR back to `develop`. |
 
-**Release flow:** `feature/* → develop → production`
+**Release flow:** `feature/* → develop → main` (tagged)
 
 To start new work:
 ```bash

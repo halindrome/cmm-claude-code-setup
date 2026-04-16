@@ -22,7 +22,7 @@ codebase-memory-setup-guide.md  End-to-end setup guide
 
 ## Making Changes
 
-1. **Fork the repo** and create a feature branch from `develop` (e.g., `fix/gate-allow-list` or `feat/better-agent-prompt`). **Never commit directly to `develop` or `production`**.
+1. **Fork the repo** and create a feature branch from `develop` (e.g., `fix/gate-allow-list` or `feat/better-agent-prompt`). **Never commit directly to `develop` or `main`**.
 2. **Test locally** by installing the hooks into a real project and exercising the relevant code paths.
 3. **Keep commits atomic** — one logical change per commit.
 4. **Follow code style:**
@@ -39,15 +39,15 @@ feature/my-work
       ▼  PR → develop
    develop
       │
-      ▼  PR → production (version bump required)
-  production  ◄── tagged vX.Y.Z + stable
+      ▼  PR → main (version bump required)
+    main  ◄── tagged vX.Y.Z
 ```
 
 | Branch | Base | Target | Rules |
 |--------|------|---------|-------|
 | `feature/*` | `develop` | `develop` | One feature per branch |
-| `develop` | — | `production` | All tests pass |
-| `production` | — | — | Version bump required; tagged on merge |
+| `develop` | — | `main` | All tests pass |
+| `main` | — | — | Version bump required; tagged on merge |
 
 ## Pull Request Process
 
