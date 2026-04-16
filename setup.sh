@@ -1634,6 +1634,7 @@ parse_args() {
       --force)           FORCE=true ;;
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
+      --skip-context-mode) SKIP_CONTEXT_MODE=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
       --reconfigure-statusline) RECONFIGURE_STATUSLINE=true ;;
       --yes|-y)          YES_FLAG=true ;;
@@ -1647,7 +1648,7 @@ Installs hooks, rules, and settings for two complementary MCP servers:
   - Context Mode MCP (optional): execution sandboxing + SQLite session persistence, ~98% context reduction
 
 Usage:
-  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
+  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-context-mode] [--skip-statusline] [--verify]
 
 Flags:
   --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
@@ -1656,7 +1657,10 @@ Flags:
   --all             Install both global and project hooks
   --force           Overwrite existing files without prompting (default: detect drift and prompt)
   --dry-run         Show what would be done without making changes
-  --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
+  --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation).
+                    Note: this does NOT skip context-mode registration — use --skip-context-mode for that.
+  --skip-context-mode  Skip registering context-mode in .mcp.json (default: register context-mode).
+                    Existing context-mode entries in .mcp.json are preserved regardless.
   --skip-statusline Skip the CMM statusline installation offer
   --reconfigure-statusline  Re-prompt for statusline component selection (overwrite existing config)
   --yes, -y         Non-interactive mode: accept all defaults without prompting
