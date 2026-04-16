@@ -85,8 +85,12 @@ BLOCKED: Use Context Mode instead of WebFetch for '$URL'.
   SQLite FTS5 so later ctx_search calls can query the same content without
   re-fetching — saving context tokens across the session.
 
-  If this is a one-off fetch or live-data validation, retry WebFetch with the
-  same URL -- this nudge fires once per URL/cache window, not repeatedly.
+  This nudge fires on every WebFetch call while Context Mode is installed in
+  this project (cache is keyed on project, not URL). For one-off fetches or
+  live-data validation where Context Mode is genuinely inappropriate, the
+  redirect here is advisory only — retry does not bypass the block. Use
+  ctx_fetch_and_index for the fetch, or ctx_search if the URL is already
+  indexed.
 EOF
 
 # --- Block Counter (best-effort; sibling script installed by setup.sh) ---

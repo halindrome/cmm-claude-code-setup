@@ -251,6 +251,60 @@ for entry in "${AGENT_HOOKS[@]}"; do
     "not-json-at-all"
 done
 
+# ─── Test: webfetch-nudge.sh detection cascade coverage ──────────────────
+# Covers the two detection sources the per-agent loop does not exercise:
+#   (a) CLAUDE_CONFIG_DIR/settings.json mentions context-mode (global-only)
+#   (b) .claude/context-mode.db exists (activation marker)
+echo ""
+echo "=== webfetch-nudge.sh: detection cascade coverage ==="
+
+# Helper that runs webfetch-nudge against FAKE_PROJ_NO_CTX with a custom
+# CLAUDE_CONFIG_DIR so we can test the global-settings fallback path.
+_assert_webfetch_with_global() {
+  local label="$1" expected="$2" config_dir="$3" json="$4"
+  local actual=0
+  rm -f "/tmp/ctx-webfetch-avail-${FAKE_PROJ_NO_CTX_HASH}" 2>/dev/null || true
+  echo "$json" | env CLAUDE_CONFIG_DIR="$config_dir" HOME="$TMPDIR_ROOT" \
+    bash -c "cd '$FAKE_PROJ_NO_CTX' && bash '$FAKE_PROJ_NO_CTX/.claude/hooks/webfetch-nudge.sh'" \
+    >/dev/null 2>&1 || actual=$?
+  if [ "$actual" -eq "$expected" ]; then
+    pass "$label"
+  else
+    fail "$label (expected exit $expected, got $actual)"
+  fi
+}
+
+# (a) Global-settings fallback: .mcp.json has no context-mode, but
+# CLAUDE_CONFIG_DIR/settings.json does. The hook must BLOCK (exit 2).
+FAKE_CONFIG_WITH_CTX="$TMPDIR_ROOT/fake-claude-config-with-ctx"
+mkdir -p "$FAKE_CONFIG_WITH_CTX"
+echo '{"mcpServers":{"context-mode":{"command":"npx","args":["-y","context-mode"]}}}' \
+  > "$FAKE_CONFIG_WITH_CTX/settings.json"
+
+_assert_webfetch_with_global \
+  "webfetch-nudge: BLOCKED via CLAUDE_CONFIG_DIR settings.json fallback" \
+  2 "$FAKE_CONFIG_WITH_CTX" \
+  "{\"tool_name\":\"WebFetch\",\"tool_input\":{\"url\":\"https://docs.example.com/api\"},\"cwd\":\"$FAKE_PROJ_NO_CTX\"}"
+
+# Confirm the original empty CLAUDE_CONFIG_DIR still PASSES (isolation sanity check)
+_assert_webfetch_with_global \
+  "webfetch-nudge: PASS with empty CLAUDE_CONFIG_DIR (no cascade sources)" \
+  0 "$FAKE_CONFIG" \
+  "{\"tool_name\":\"WebFetch\",\"tool_input\":{\"url\":\"https://docs.example.com/api\"},\"cwd\":\"$FAKE_PROJ_NO_CTX\"}"
+
+# (b) .claude/context-mode.db activation: neither .mcp.json nor global settings
+# mention context-mode, but the repo has a context-mode.db file. The hook must
+# BLOCK (exit 2).
+touch "$FAKE_PROJ_NO_CTX/.claude/context-mode.db"
+_assert_webfetch_with_global \
+  "webfetch-nudge: BLOCKED via .claude/context-mode.db activation marker" \
+  2 "$FAKE_CONFIG" \
+  "{\"tool_name\":\"WebFetch\",\"tool_input\":{\"url\":\"https://docs.example.com/api\"},\"cwd\":\"$FAKE_PROJ_NO_CTX\"}"
+rm -f "$FAKE_PROJ_NO_CTX/.claude/context-mode.db"
+
+# Restore pass-through state so any later tests see a clean FAKE_PROJ_NO_CTX.
+rm -f "/tmp/ctx-webfetch-avail-${FAKE_PROJ_NO_CTX_HASH}" 2>/dev/null || true
+
 # ─── Summary ─────────────────────────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════"

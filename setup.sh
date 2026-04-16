@@ -412,6 +412,18 @@ detect_context_mode() {
   if [ "$SKIP_CONTEXT_MODE" = true ]; then
     CONTEXT_MODE_STATUS="skip"
     INSTALL_CONTEXT_MODE=false
+    # Surface existing registration so the user knows the webfetch-nudge hook
+    # will continue to block WebFetch based on project-level context-mode state.
+    if [ "$INSTALL_PROJECT" = true ] && [ -f ".mcp.json" ] && \
+       grep -q "context-mode" ".mcp.json" 2>/dev/null; then
+      echo "  [info] --skip-context-mode set; existing context-mode entry in .mcp.json preserved"
+      echo "  [info] webfetch-nudge will continue to block WebFetch while context-mode remains registered"
+    fi
+    # Invalidate the webfetch-nudge availability cache so stale /tmp state does
+    # not keep the hook blocking after context-mode is removed from .mcp.json.
+    if [ "$DRY_RUN" != true ]; then
+      rm -f /tmp/ctx-webfetch-avail-* 2>/dev/null || true
+    fi
     return 0
   fi
 
