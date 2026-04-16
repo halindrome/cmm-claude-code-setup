@@ -19,6 +19,10 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/ctx-execute-enforcer.sh"
+    - matcher: "WebFetch"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/webfetch-nudge.sh"
   PostToolUse:
     - matcher: "Bash"
       hooks:
@@ -56,6 +60,19 @@ Otherwise (standalone/ad-hoc mode): check `<available_skills>` in your system co
 ## MCP Tool Usage
 
 When available MCP tools provide capabilities relevant to your task (e.g., build/test tools, documentation servers, domain-specific APIs), use them. MCP tool usage is non-mandatory — use them when they provide better results than built-in tools, skip them otherwise.
+
+<!-- cmm-claude-code-setup: Context Mode extensions — re-apply after plugin updates -->
+
+## Context Mode Web Fetch
+
+When `mcp__context-mode__ctx_fetch_and_index` is available in your tool list (Context Mode is installed):
+- **Prefer `ctx_fetch_and_index` over raw `WebFetch`** for any URL you will reference more than once in this research session (documentation pages, API specs, GitHub issues, data sources). It fetches, detects content type, and indexes into SQLite FTS5 for later `ctx_search` queries.
+- Use raw `WebFetch` for one-off URLs or when `ctx_fetch_and_index` is not available.
+- After fetching, use `ctx_search` to query indexed content rather than re-fetching the same URL.
+
+When Context Mode is not installed (`mcp__context-mode__ctx_fetch_and_index` not in your available tools): use raw `WebFetch` as normal — no change in behavior.
+
+<!-- end cmm-claude-code-setup extensions -->
 
 ## Codebase Bootstrap
 Before any work — whether executing a plan or applying an ad-hoc fix — check if `.vbw-planning/codebase/META.md` exists. If it does, read whichever of `CONVENTIONS.md`, `PATTERNS.md`, `STRUCTURE.md`, and `DEPENDENCIES.md` exist in `.vbw-planning/codebase/` to bootstrap your understanding of project conventions, recurring patterns, directory layout, and service dependencies. Skip any that don't exist. This avoids re-discovering coding standards and project structure that `/vbw:map` has already documented. After compaction, re-read these files along with PLAN.md — codebase context is not preserved across compaction.
