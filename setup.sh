@@ -408,88 +408,35 @@ INSTALL_CONTEXT_MODE=true
 SKIP_CONTEXT_MODE=false
 
 detect_context_mode() {
-  if [ "$SKIP_MCP_CHECK" = true ]; then
+  # --skip-context-mode wins unconditionally — opt out of context-mode registration.
+  if [ "$SKIP_CONTEXT_MODE" = true ]; then
     CONTEXT_MODE_STATUS="skip"
+    INSTALL_CONTEXT_MODE=false
     return 0
   fi
 
-  # Only runs for project installs
+  # Only runs for project installs (context-mode is registered in project .mcp.json)
   if [ "$INSTALL_PROJECT" != true ]; then
     CONTEXT_MODE_STATUS="skip"
+    INSTALL_CONTEXT_MODE=false
     return 0
   fi
 
-  # Step 1: If .mcp.json exists AND contains context-mode → already registered
+  # Default-on: register context-mode. INSTALL_CONTEXT_MODE is already true from
+  # initialization (and will only be flipped false by --skip-context-mode above).
+  # Idempotency: the install_project MCP merge block guards with
+  # `if "context-mode" not in data["mcpServers"]` — re-running setup preserves
+  # existing context-mode entries and user customizations.
+  INSTALL_CONTEXT_MODE=true
+
+  # If .mcp.json already has context-mode, surface that in the pre-flight summary.
   if [ -f ".mcp.json" ] && grep -q "context-mode" ".mcp.json" 2>/dev/null; then
     CONTEXT_MODE_STATUS="ok"
-    INSTALL_CONTEXT_MODE=true
-    echo "  [ok] context-mode detected"
-    return 0
-  fi
-
-  # Compute monorepo root so DB detection works from sub-module directories
-  local _project_root
-  _project_root="$(git rev-parse --show-toplevel 2>/dev/null)"
-  if [ -n "$_project_root" ]; then
-      local _walk="$_project_root"
-      while true; do
-          local _parent
-          _parent="$(git -C "$_walk" rev-parse --show-superproject-working-tree 2>/dev/null)"
-          [ -z "$_parent" ] && break
-          _walk="$_parent"
-      done
-      _project_root="$_walk"
-  fi
-  [ -z "$_project_root" ] && _project_root="$PWD"
-
-  # Git worktree detection: worktrees share the main repo but show-superproject-working-tree
-  # returns empty (they are not submodules). Detect via git-common-dir so DB detection
-  # resolves to the main repo root, not the worktree path.
-  if [ -n "$_project_root" ]; then
-      local _git_dir _git_common _main_root
-      _git_dir="$(git -C "$_project_root" rev-parse --git-dir 2>/dev/null)"
-      _git_common="$(git -C "$_project_root" rev-parse --git-common-dir 2>/dev/null)"
-      [ "${_git_dir:0:1}" != "/" ]    && _git_dir="$_project_root/$_git_dir"
-      [ "${_git_common:0:1}" != "/" ] && _git_common="$_project_root/$_git_common"
-      if [ "$_git_dir" != "$_git_common" ]; then
-          _main_root="$(cd "$_git_common/.." 2>/dev/null && pwd -P)"
-          [ -n "$_main_root" ] && _project_root="$_main_root"
-      fi
-  fi
-
-  # Step 2: Detect binary or db (binary on PATH or existing db in project)
-  local context_mode_available=false
-  if command -v context-mode >/dev/null 2>&1 || [ -f "${_project_root}/.claude/context-mode.db" ]; then
-    context_mode_available=true
-  fi
-
-  # Step 3: Decision
-  # Note: .mcp.json may have been created by a prior setup.sh run (for CMM only) — its
-  # absence of context-mode is NOT evidence of an intentional opt-out. Treat both cases
-  # (with or without existing .mcp.json) the same way: detect and prompt.
-  if [ "$context_mode_available" = true ]; then
-    CONTEXT_MODE_STATUS="ok"
-    INSTALL_CONTEXT_MODE=true
-    echo "  [ok] context-mode detected"
+    echo "  [ok] context-mode detected (already registered in .mcp.json)"
   else
-    # Not detected: prompt interactively when stdin is a tty, otherwise warn non-interactively
-    CONTEXT_MODE_STATUS="warn"
-    echo ""
-    if [ -t 0 ]; then
-      printf "  Use Context Mode integration? [y/N]: "
-      read -r choice
-      choice="${choice:-n}"
-      if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
-        INSTALL_CONTEXT_MODE=true
-        CONTEXT_MODE_STATUS="ok"
-        echo "  [info] Context Mode will be registered in .mcp.json"
-        echo "  [info] Docs: https://github.com/mksglu/context-mode"
-      fi
-    else
-      echo "  [warn] context-mode not detected."
-      echo "  [info] To add later: re-run setup.sh --project (without --skip-mcp-check)"
-      echo "  [info] Docs: https://github.com/mksglu/context-mode"
-    fi
+    CONTEXT_MODE_STATUS="ok"
+    echo "  [info] context-mode will be registered in .mcp.json (use --skip-context-mode to opt out)"
+    echo "  [info] Docs: https://github.com/mksglu/context-mode"
   fi
   return 0
 }
