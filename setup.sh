@@ -400,7 +400,12 @@ PYEOF
 # Status variable populated by detect_context_mode(); read by print_preflight_summary()
 CONTEXT_MODE_STATUS="skip"
 # Whether to register context-mode in .mcp.json (set by detect_context_mode)
-INSTALL_CONTEXT_MODE=false
+# Default: register context-mode (flip to false only when --skip-context-mode is passed).
+INSTALL_CONTEXT_MODE=true
+# Set by --skip-context-mode. When true, detect_context_mode forces INSTALL_CONTEXT_MODE=false
+# so context-mode registration is skipped entirely (fresh installs only — existing entries
+# in .mcp.json are preserved by the idempotency guard in install_project).
+SKIP_CONTEXT_MODE=false
 
 detect_context_mode() {
   if [ "$SKIP_MCP_CHECK" = true ]; then
