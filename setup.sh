@@ -780,6 +780,13 @@ install_project() {
     set_executable ".claude/hooks/cmm-grep-nudge.sh"
   fi
 
+  # Copy webfetch-nudge.sh from hooks/global/ to .claude/hooks/
+  # Registered by vbw-scout/vbw-lead/vbw-dev agent frontmatter as PreToolUse:WebFetch hook.
+  if [ -f "$SCRIPT_DIR/hooks/global/webfetch-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/webfetch-nudge.sh" ".claude/hooks/webfetch-nudge.sh"
+    set_executable ".claude/hooks/webfetch-nudge.sh"
+  fi
+
 
   # --- Agent override files (frontmatter hooks for VBW subagents) ---
   # Project-level .claude/agents/ overrides shadow VBW plugin agent definitions
