@@ -937,7 +937,10 @@ if "codebase-memory-mcp" not in data["mcpServers"]:
 else:
     print("  [skip] codebase-memory-mcp already in .mcp.json")
 
-# Register context-mode if requested
+# Register context-mode if requested.
+# Idempotency guard: the `not in data["mcpServers"]` check is what makes the default-on
+# behavior safe on re-runs — pre-existing context-mode entries (with any user-customized
+# command/args) are preserved untouched. Do not remove this guard.
 if install_ctx:
     if "context-mode" not in data["mcpServers"]:
         data["mcpServers"]["context-mode"] = {
