@@ -12,6 +12,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 AGENTS_DIR="$PROJECT_ROOT/agents"
 CMM_NUDGE="$PROJECT_ROOT/hooks/global/cmm-nudge.sh"
 CTX_ENFORCER="$PROJECT_ROOT/hooks/project/ctx-execute-enforcer.sh"
+WEBFETCH_NUDGE="$PROJECT_ROOT/hooks/global/webfetch-nudge.sh"
 
 PASS=0; FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
@@ -52,13 +53,27 @@ touch "/tmp/context-mode-ready-${FAKE_PROJ_HASH}"
 # Copy hooks into fake project so ctx-execute-enforcer's path integrity check passes
 cp "$CMM_NUDGE" "$FAKE_PROJ/.claude/hooks/cmm-nudge.sh" 2>/dev/null || true
 cp "$CTX_ENFORCER" "$FAKE_PROJ/.claude/hooks/ctx-execute-enforcer.sh" 2>/dev/null || true
+cp "$WEBFETCH_NUDGE" "$FAKE_PROJ/.claude/hooks/webfetch-nudge.sh" 2>/dev/null || true
 # track-hook-blocks.sh is called by both hooks
 if [ -f "$PROJECT_ROOT/hooks/project/track-hook-blocks.sh" ]; then
   cp "$PROJECT_ROOT/hooks/project/track-hook-blocks.sh" "$FAKE_PROJ/.claude/hooks/track-hook-blocks.sh"
 fi
 
+# Second fake project WITHOUT context-mode in .mcp.json — for webfetch-nudge pass-through test
+FAKE_PROJ_NO_CTX="$TMPDIR_ROOT/proj-no-ctx"
+mkdir -p "$FAKE_PROJ_NO_CTX/.claude/hooks"
+git -C "$FAKE_PROJ_NO_CTX" init -q 2>/dev/null
+echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$FAKE_PROJ_NO_CTX/.mcp.json"
+cp "$WEBFETCH_NUDGE" "$FAKE_PROJ_NO_CTX/.claude/hooks/webfetch-nudge.sh" 2>/dev/null || true
+if [ -f "$PROJECT_ROOT/hooks/project/track-hook-blocks.sh" ]; then
+  cp "$PROJECT_ROOT/hooks/project/track-hook-blocks.sh" "$FAKE_PROJ_NO_CTX/.claude/hooks/track-hook-blocks.sh"
+fi
+CANONICAL_PROJ_NO_CTX=$(cd "$FAKE_PROJ_NO_CTX" && git rev-parse --show-toplevel 2>/dev/null || pwd -P)
+FAKE_PROJ_NO_CTX_HASH=$(echo "$CANONICAL_PROJ_NO_CTX" | md5 -q 2>/dev/null || echo "$CANONICAL_PROJ_NO_CTX" | md5sum | awk '{print $1}')
+
 cleanup_sentinels() {
   rm -f "/tmp/ctx-enforcer-${FAKE_PROJ_HASH}" "/tmp/context-mode-ready-${FAKE_PROJ_HASH}"
+  rm -f "/tmp/ctx-webfetch-avail-${FAKE_PROJ_HASH}" "/tmp/ctx-webfetch-avail-${FAKE_PROJ_NO_CTX_HASH}"
 }
 # Append sentinel cleanup to existing trap
 trap 'rm -rf "$TMPDIR_ROOT"; cleanup_sentinels' EXIT
@@ -176,6 +191,64 @@ for entry in "${AGENT_HOOKS[@]}"; do
   else
     fail "$agent: cmm-nudge command unexpected: '$nudge_cmd'"
   fi
+done
+
+# ─── Test: webfetch-nudge.sh WebFetch enforcement ────────────────────────
+echo ""
+echo "=== webfetch-nudge.sh: WebFetch enforcement ==="
+
+FAKE_WEBFETCH_NUDGE="$FAKE_PROJ/.claude/hooks/webfetch-nudge.sh"
+FAKE_WEBFETCH_NUDGE_NO_CTX="$FAKE_PROJ_NO_CTX/.claude/hooks/webfetch-nudge.sh"
+
+# Helper: assert webfetch-nudge exit code, running inside a specific project dir.
+# Clears the per-project cache file so each call re-detects context-mode state.
+_assert_webfetch() {
+  local label="$1" proj_dir="$2" proj_hash="$3" expected="$4" json="$5"
+  local actual=0
+  rm -f "/tmp/ctx-webfetch-avail-${proj_hash}" 2>/dev/null || true
+  echo "$json" | env CLAUDE_CONFIG_DIR="$FAKE_CONFIG" HOME="$TMPDIR_ROOT" \
+    bash -c "cd '$proj_dir' && bash '$proj_dir/.claude/hooks/webfetch-nudge.sh'" \
+    >/dev/null 2>&1 || actual=$?
+  if [ "$actual" -eq "$expected" ]; then
+    pass "$label"
+  else
+    fail "$label (expected exit $expected, got $actual)"
+  fi
+}
+
+# Only scout/lead/dev register webfetch-nudge — iterate and confirm enforcement uniformly
+for entry in "${AGENT_HOOKS[@]}"; do
+  IFS='|' read -r agent has_nudge has_ctx <<< "$entry"
+  [ ! -f "$AGENTS_DIR/$agent.md" ] && continue
+  case "$agent" in
+    vbw-scout|vbw-lead|vbw-dev) ;;
+    *) continue ;;
+  esac
+
+  # BLOCK: doc URL when context-mode is in .mcp.json
+  _assert_webfetch "$agent: WebFetch doc URL BLOCKED (ctx-mode available)" \
+    "$FAKE_PROJ" "$FAKE_PROJ_HASH" 2 \
+    "{\"tool_name\":\"WebFetch\",\"tool_input\":{\"url\":\"https://docs.example.com/api\"},\"cwd\":\"$FAKE_PROJ\"}"
+
+  # BLOCK: arbitrary URL when context-mode is available (confirms unconditional nudge design)
+  _assert_webfetch "$agent: WebFetch arbitrary URL BLOCKED (ctx-mode available)" \
+    "$FAKE_PROJ" "$FAKE_PROJ_HASH" 2 \
+    "{\"tool_name\":\"WebFetch\",\"tool_input\":{\"url\":\"https://example.org/foo?bar=baz\"},\"cwd\":\"$FAKE_PROJ\"}"
+
+  # PASS: any URL when context-mode absent from .mcp.json (and no global settings fallback)
+  _assert_webfetch "$agent: WebFetch allowed (ctx-mode absent)" \
+    "$FAKE_PROJ_NO_CTX" "$FAKE_PROJ_NO_CTX_HASH" 0 \
+    "{\"tool_name\":\"WebFetch\",\"tool_input\":{\"url\":\"https://docs.example.com/api\"},\"cwd\":\"$FAKE_PROJ_NO_CTX\"}"
+
+  # PASS: empty payload (fail-open)
+  _assert_webfetch "$agent: WebFetch fail-open on empty payload" \
+    "$FAKE_PROJ" "$FAKE_PROJ_HASH" 0 \
+    ""
+
+  # PASS: malformed JSON (fail-open)
+  _assert_webfetch "$agent: WebFetch fail-open on malformed JSON" \
+    "$FAKE_PROJ" "$FAKE_PROJ_HASH" 0 \
+    "not-json-at-all"
 done
 
 # ─── Summary ─────────────────────────────────────────────────────────────
