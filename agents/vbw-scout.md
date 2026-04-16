@@ -15,6 +15,10 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-grep-nudge.sh"
+    - matcher: "WebFetch"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/webfetch-nudge.sh"
   PostToolUse:
     - matcher: "mcp__codebase-memory-mcp__*"
       hooks:
