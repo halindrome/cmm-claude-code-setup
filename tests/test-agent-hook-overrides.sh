@@ -38,12 +38,12 @@ _must_have_hooks() {
   local agent="$1"
   local hooks="cmm-nudge.sh track-cmm-calls.sh cmm-query-stale-advisory.sh"
   case "$agent" in
-    vbw-dev)       hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh" ;;
+    vbw-dev)       hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh webfetch-nudge.sh" ;;
     vbw-debugger)  hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh" ;;
     vbw-qa)        hooks="$hooks ctx-execute-enforcer.sh" ;;
-    vbw-lead)      hooks="$hooks ctx-execute-enforcer.sh" ;;
+    vbw-lead)      hooks="$hooks ctx-execute-enforcer.sh webfetch-nudge.sh" ;;
     vbw-docs)      hooks="$hooks ctx-execute-enforcer.sh" ;;
-    vbw-scout)     ;; # No Bash — no ctx-execute-enforcer or reindex
+    vbw-scout)     hooks="$hooks webfetch-nudge.sh" ;; # No Bash — no ctx-execute-enforcer or reindex
     vbw-architect) ;; # No Bash — no ctx-execute-enforcer or reindex
   esac
   echo "$hooks"
@@ -56,10 +56,11 @@ _must_not_have_hooks() {
   local hooks="session-gate.sh subagent-cmm-startup.sh cmm-session-start.sh agent-cmm-gate.sh"
   case "$agent" in
     vbw-scout)     hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh" ;;
-    vbw-architect) hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh" ;;
-    vbw-qa)        hooks="$hooks reindex-after-commit.sh" ;;
+    vbw-architect) hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh webfetch-nudge.sh" ;;
+    vbw-qa)        hooks="$hooks reindex-after-commit.sh webfetch-nudge.sh" ;;
     vbw-lead)      hooks="$hooks reindex-after-commit.sh" ;;
-    vbw-docs)      hooks="$hooks reindex-after-commit.sh" ;;
+    vbw-docs)      hooks="$hooks reindex-after-commit.sh webfetch-nudge.sh" ;;
+    vbw-debugger)  hooks="$hooks webfetch-nudge.sh" ;;
   esac
   echo "$hooks"
 }

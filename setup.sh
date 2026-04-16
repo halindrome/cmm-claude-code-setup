@@ -400,91 +400,55 @@ PYEOF
 # Status variable populated by detect_context_mode(); read by print_preflight_summary()
 CONTEXT_MODE_STATUS="skip"
 # Whether to register context-mode in .mcp.json (set by detect_context_mode)
-INSTALL_CONTEXT_MODE=false
+# Default: register context-mode (flip to false only when --skip-context-mode is passed).
+INSTALL_CONTEXT_MODE=true
+# Set by --skip-context-mode. When true, detect_context_mode forces INSTALL_CONTEXT_MODE=false
+# so context-mode registration is skipped entirely (fresh installs only — existing entries
+# in .mcp.json are preserved by the idempotency guard in install_project).
+SKIP_CONTEXT_MODE=false
 
 detect_context_mode() {
-  if [ "$SKIP_MCP_CHECK" = true ]; then
+  # --skip-context-mode wins unconditionally — opt out of context-mode registration.
+  if [ "$SKIP_CONTEXT_MODE" = true ]; then
     CONTEXT_MODE_STATUS="skip"
+    INSTALL_CONTEXT_MODE=false
+    # Surface existing registration so the user knows the webfetch-nudge hook
+    # will continue to block WebFetch based on project-level context-mode state.
+    if [ "$INSTALL_PROJECT" = true ] && [ -f ".mcp.json" ] && \
+       grep -q "context-mode" ".mcp.json" 2>/dev/null; then
+      echo "  [info] --skip-context-mode set; existing context-mode entry in .mcp.json preserved"
+      echo "  [info] webfetch-nudge will continue to block WebFetch while context-mode remains registered"
+    fi
+    # Invalidate the webfetch-nudge availability cache so stale /tmp state does
+    # not keep the hook blocking after context-mode is removed from .mcp.json.
+    if [ "$DRY_RUN" != true ]; then
+      rm -f /tmp/ctx-webfetch-avail-* 2>/dev/null || true
+    fi
     return 0
   fi
 
-  # Only runs for project installs
+  # Only runs for project installs (context-mode is registered in project .mcp.json)
   if [ "$INSTALL_PROJECT" != true ]; then
     CONTEXT_MODE_STATUS="skip"
+    INSTALL_CONTEXT_MODE=false
     return 0
   fi
 
-  # Step 1: If .mcp.json exists AND contains context-mode → already registered
+  # Default-on: register context-mode. INSTALL_CONTEXT_MODE is already true from
+  # initialization (and will only be flipped false by --skip-context-mode above).
+  # Idempotency: the install_project MCP merge block guards with
+  # `if "context-mode" not in data["mcpServers"]` — re-running setup preserves
+  # existing context-mode entries and user customizations.
+  INSTALL_CONTEXT_MODE=true
+
+  # If .mcp.json already has context-mode, surface that in the pre-flight summary.
   if [ -f ".mcp.json" ] && grep -q "context-mode" ".mcp.json" 2>/dev/null; then
     CONTEXT_MODE_STATUS="ok"
-    INSTALL_CONTEXT_MODE=true
-    echo "  [ok] context-mode detected"
-    return 0
-  fi
-
-  # Compute monorepo root so DB detection works from sub-module directories
-  local _project_root
-  _project_root="$(git rev-parse --show-toplevel 2>/dev/null)"
-  if [ -n "$_project_root" ]; then
-      local _walk="$_project_root"
-      while true; do
-          local _parent
-          _parent="$(git -C "$_walk" rev-parse --show-superproject-working-tree 2>/dev/null)"
-          [ -z "$_parent" ] && break
-          _walk="$_parent"
-      done
-      _project_root="$_walk"
-  fi
-  [ -z "$_project_root" ] && _project_root="$PWD"
-
-  # Git worktree detection: worktrees share the main repo but show-superproject-working-tree
-  # returns empty (they are not submodules). Detect via git-common-dir so DB detection
-  # resolves to the main repo root, not the worktree path.
-  if [ -n "$_project_root" ]; then
-      local _git_dir _git_common _main_root
-      _git_dir="$(git -C "$_project_root" rev-parse --git-dir 2>/dev/null)"
-      _git_common="$(git -C "$_project_root" rev-parse --git-common-dir 2>/dev/null)"
-      [ "${_git_dir:0:1}" != "/" ]    && _git_dir="$_project_root/$_git_dir"
-      [ "${_git_common:0:1}" != "/" ] && _git_common="$_project_root/$_git_common"
-      if [ "$_git_dir" != "$_git_common" ]; then
-          _main_root="$(cd "$_git_common/.." 2>/dev/null && pwd -P)"
-          [ -n "$_main_root" ] && _project_root="$_main_root"
-      fi
-  fi
-
-  # Step 2: Detect binary or db (binary on PATH or existing db in project)
-  local context_mode_available=false
-  if command -v context-mode >/dev/null 2>&1 || [ -f "${_project_root}/.claude/context-mode.db" ]; then
-    context_mode_available=true
-  fi
-
-  # Step 3: Decision
-  # Note: .mcp.json may have been created by a prior setup.sh run (for CMM only) — its
-  # absence of context-mode is NOT evidence of an intentional opt-out. Treat both cases
-  # (with or without existing .mcp.json) the same way: detect and prompt.
-  if [ "$context_mode_available" = true ]; then
-    CONTEXT_MODE_STATUS="ok"
-    INSTALL_CONTEXT_MODE=true
-    echo "  [ok] context-mode detected"
+    echo "  [ok] context-mode detected (already registered in .mcp.json)"
   else
-    # Not detected: prompt interactively when stdin is a tty, otherwise warn non-interactively
-    CONTEXT_MODE_STATUS="warn"
-    echo ""
-    if [ -t 0 ]; then
-      printf "  Use Context Mode integration? [y/N]: "
-      read -r choice
-      choice="${choice:-n}"
-      if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
-        INSTALL_CONTEXT_MODE=true
-        CONTEXT_MODE_STATUS="ok"
-        echo "  [info] Context Mode will be registered in .mcp.json"
-        echo "  [info] Docs: https://github.com/mksglu/context-mode"
-      fi
-    else
-      echo "  [warn] context-mode not detected."
-      echo "  [info] To add later: re-run setup.sh --project (without --skip-mcp-check)"
-      echo "  [info] Docs: https://github.com/mksglu/context-mode"
-    fi
+    CONTEXT_MODE_STATUS="ok"
+    echo "  [info] context-mode will be registered in .mcp.json (use --skip-context-mode to opt out)"
+    echo "  [info] Docs: https://github.com/mksglu/context-mode"
   fi
   return 0
 }
@@ -828,6 +792,13 @@ install_project() {
     set_executable ".claude/hooks/cmm-grep-nudge.sh"
   fi
 
+  # Copy webfetch-nudge.sh from hooks/global/ to .claude/hooks/
+  # Registered by vbw-scout/vbw-lead/vbw-dev agent frontmatter as PreToolUse:WebFetch hook.
+  if [ -f "$SCRIPT_DIR/hooks/global/webfetch-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/webfetch-nudge.sh" ".claude/hooks/webfetch-nudge.sh"
+    set_executable ".claude/hooks/webfetch-nudge.sh"
+  fi
+
 
   # --- Agent override files (frontmatter hooks for VBW subagents) ---
   # Project-level .claude/agents/ overrides shadow VBW plugin agent definitions
@@ -978,7 +949,10 @@ if "codebase-memory-mcp" not in data["mcpServers"]:
 else:
     print("  [skip] codebase-memory-mcp already in .mcp.json")
 
-# Register context-mode if requested
+# Register context-mode if requested.
+# Idempotency guard: the `not in data["mcpServers"]` check is what makes the default-on
+# behavior safe on re-runs — pre-existing context-mode entries (with any user-customized
+# command/args) are preserved untouched. Do not remove this guard.
 if install_ctx:
     if "context-mode" not in data["mcpServers"]:
         data["mcpServers"]["context-mode"] = {
@@ -1629,6 +1603,7 @@ parse_args() {
       --force)           FORCE=true ;;
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
+      --skip-context-mode) SKIP_CONTEXT_MODE=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
       --reconfigure-statusline) RECONFIGURE_STATUSLINE=true ;;
       --yes|-y)          YES_FLAG=true ;;
@@ -1642,7 +1617,7 @@ Installs hooks, rules, and settings for two complementary MCP servers:
   - Context Mode MCP (optional): execution sandboxing + SQLite session persistence, ~98% context reduction
 
 Usage:
-  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
+  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-context-mode] [--skip-statusline] [--verify]
 
 Flags:
   --global          Install global hooks to ~/.claude/hooks/ and merge into ~/.claude/settings.json
@@ -1651,7 +1626,10 @@ Flags:
   --all             Install both global and project hooks
   --force           Overwrite existing files without prompting (default: detect drift and prompt)
   --dry-run         Show what would be done without making changes
-  --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation)
+  --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation).
+                    Note: this does NOT skip context-mode registration — use --skip-context-mode for that.
+  --skip-context-mode  Skip registering context-mode in .mcp.json (default: register context-mode).
+                    Existing context-mode entries in .mcp.json are preserved regardless.
   --skip-statusline Skip the CMM statusline installation offer
   --reconfigure-statusline  Re-prompt for statusline component selection (overwrite existing config)
   --yes, -y         Non-interactive mode: accept all defaults without prompting
