@@ -61,20 +61,17 @@ curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/s
 
 # 3. Run the setup script from your target project directory
 cd /path/to/your-project
-bash /path/to/cmm-claude-code-setup/setup.sh --project
-
-# 4. Append CMM rules to your global CLAUDE.md
-cat /path/to/cmm-claude-code-setup/rules/global-claude-md.md >> ~/.claude/CLAUDE.md
+bash /path/to/cmm-claude-code-setup/setup.sh --all
 ```
 
-Step 3 handles the rest automatically: it detects whether CMM is registered with Claude Code and creates `.mcp.json` if needed, adds all 14 CMM tool names to `.claude/settings.json` (the tool allowlist), and optionally sets up Context Mode — all interactively with prompts at each step.
+Setup handles the rest automatically: it installs global hooks and rules (to `$CLAUDE_CONFIG_DIR/` or `~/.claude/`), project hooks and rules (to `.claude/`), detects whether CMM is registered with Claude Code and creates `.mcp.json` if needed, adds all 14 CMM tool names to `.claude/settings.json` (the tool allowlist), and optionally sets up Context Mode — all interactively with prompts at each step.
 
 ```bash
 # setup.sh options
 bash setup.sh --help
 
-  --project         Install project hooks + settings into current directory
-  --global          Install global hooks into ~/.claude/
+  --project         Install project hooks, rules, and settings into current directory
+  --global          Install global hooks and rules into ~/.claude/
   --all             Install both
   --force           Overwrite existing files
   --dry-run         Preview changes without writing anything
@@ -102,7 +99,7 @@ hooks/
     context-mode-event-logger.sh        # PostToolUse — logs tool calls to SQLite (no-op if not installed)
     context-mode-pre-compact.sh         # PreCompact — snapshots session state (no-op if not installed)
 rules/
-  global-claude-md.md                   # CLAUDE.md rules for ~/.claude/CLAUDE.md (CMM + Context Mode sections)
+  cmm-rules.md                          # CMM tool guidance (installed globally and per-project)
   project-settings-example.json         # Example .claude/settings.json with all hooks registered
   mcp-example.json                      # Example .mcp.json for project-scoped MCP registration
   allowed-tools.txt                     # CMM + Context Mode tool allowlist for settings.local.json
@@ -245,8 +242,7 @@ claude mcp add context-mode -- npx -y context-mode
 #    IMPORTANT: cmm-session-gate must appear before context-mode-session-gate in PreToolUse
 #    See rules/project-settings-example.json
 
-# 5. Append the Context Mode rules section to ~/.claude/CLAUDE.md
-#    See the bottom of rules/global-claude-md.md
+# 5. Context Mode rules are enforced by hooks — no manual CLAUDE.md edits needed
 ```
 
 ### Project-Scoped MCP Registration
