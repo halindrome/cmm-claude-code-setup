@@ -159,5 +159,43 @@ _assert_stderr_contains "block message prefix" \
     '[ctx-execute-cmm-nudge] BLOCKED'
 
 echo ""
+echo "--- QA round 1 regressions (M1, M2, M3, m1) ---"
+# M1: -r / -o are boolean in grep, must not consume the next token.
+_assert_exit "grep -r <pat> <target> blocks (not swallow)" 2 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -r MyFunc src/\"},\"cwd\":\"$FIX\"}"
+_assert_stderr_contains "grep -r keeps pattern, not target" \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -r MyFunc src/\"},\"cwd\":\"$FIX\"}" \
+    'name_pattern="MyFunc"'
+_assert_exit "grep -r <pat> (no target) still blocks" 2 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -r foo\"},\"cwd\":\"$FIX\"}"
+_assert_exit "grep -o <pat> <target> blocks" 2 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -o foo src/\"},\"cwd\":\"$FIX\"}"
+_assert_stderr_contains "grep -o keeps pattern, not target" \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -o foo src/\"},\"cwd\":\"$FIX\"}" \
+    'query="foo"'
+# rg -r IS value-taking (--replace), so next token is consumed.
+_assert_exit "rg -r <repl> <pat> <target> blocks on pat" 2 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"rg -r REPLACED MyFunc src/\"},\"cwd\":\"$FIX\"}"
+_assert_stderr_contains "rg -r uses pattern after consumed replacement" \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"rg -r REPLACED MyFunc src/\"},\"cwd\":\"$FIX\"}" \
+    'name_pattern="MyFunc"'
+
+# M2: egrep / fgrep / ripgrep (full binary name) must block.
+_assert_exit "egrep foo src/ blocks"       2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"egrep foo src/\"},\"cwd\":\"$FIX\"}"
+_assert_exit "fgrep foo src/ blocks"       2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"fgrep foo src/\"},\"cwd\":\"$FIX\"}"
+_assert_exit "ripgrep foo src/ blocks"     2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"ripgrep foo src/\"},\"cwd\":\"$FIX\"}"
+
+# M3: git grep <pat> <target> must block.
+_assert_exit "git grep MyFunc src/ blocks" 2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git grep MyFunc src/\"},\"cwd\":\"$FIX\"}"
+_assert_stderr_contains "git grep uses pattern after unwrap" \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git grep MyFunc src/\"},\"cwd\":\"$FIX\"}" \
+    'name_pattern="MyFunc"'
+_assert_exit "git log stays allowed"        0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git log --oneline\"},\"cwd\":\"$FIX\"}"
+
+# m1: absolute target that doesn't exist must not attribute to cwd's indexed repo.
+_assert_exit "grep foo /tmp/nonexistent-xyz/ fails open" 0 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep foo /tmp/nonexistent-cmm-qa-xyz/\"},\"cwd\":\"$FIX\"}"
+
+echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

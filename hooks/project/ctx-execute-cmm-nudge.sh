@@ -131,20 +131,25 @@ if not tokens:
     sys.exit(0)
 
 first = tokens[0]
-GREP_FAMILY = {'grep','rg','ack','ag','ugrep'}
+# Sub-command laundering: git grep ... is a grep invocation with git as tokens[0].
+# Unwrap so the rest of the pipeline sees grep as the tool.
+if first == 'git' and len(tokens) >= 2 and tokens[1] == 'grep':
+    tokens = tokens[1:]
+    first = tokens[0]
+GREP_FAMILY = {'grep','egrep','fgrep','rg','ripgrep','ack','ag','ugrep'}
 
-def extract_grep_family(toks):
+def extract_grep_family(toks, tool_first):
     # First non-flag positional arg is the pattern; last remaining positional is target path.
     positionals = []
     i = 1
     skip_next = False
-    # Flags that take a value (common subset) — conservatively treat all -X with a next token
-    # starting with non-dash as an option-with-value is too aggressive; instead recognize a
-    # small known set. Anything unknown just follows default: flags start with '-', non-flags
-    # are positional. For bundled '-rn', '-e <pat>' the '-e' case needs handling.
-    value_flags = {'-e','--regexp','-f','--file','--include','--exclude','--exclude-dir','-m','--max-count','-A','--after-context','-B','--before-context','-C','--context','-g','--glob','-t','--type','--type-add','-r','--replace','-o'}
-    # Note: for rg/ack/ag, -r means recursive for grep but replace for rg. We treat -r ambiguously
-    # as a value-taking flag only when the tool is rg. For grep, -r is boolean.
+    # Value-taking flags, conservative. -r takes a value only in rg (--replace); it is boolean
+    # in grep/egrep/fgrep/ack/ag/ugrep. -o is boolean everywhere we care about. Treating either
+    # as value-taking consumed the next token and either masked the pattern or shifted it to
+    # the target (QA round 1 M1).
+    value_flags = {'-e','--regexp','-f','--file','--include','--exclude','--exclude-dir','-m','--max-count','-A','--after-context','-B','--before-context','-C','--context','-g','--glob','-t','--type','--type-add','--replace'}
+    if tool_first in ('rg','ripgrep'):
+        value_flags = value_flags | {'-r'}
     explicit_pattern = None
     while i < len(toks):
         t = toks[i]
@@ -225,7 +230,7 @@ def extract_find_name(toks):
     return (None, '', '')
 
 if first in GREP_FAMILY:
-    pattern, target = extract_grep_family(tokens)
+    pattern, target = extract_grep_family(tokens, first)
     if not pattern:
         emit(tool_name, 'other', '', '', cwd)
         sys.exit(0)
@@ -275,8 +280,11 @@ if [ -n "$TARGET_PATH" ]; then
     elif [ -f "$_ABS" ]; then
         _PROBE_DIR="$(dirname "$_ABS")"
     else
-        # Path doesn't exist on disk — fall back to cwd for repo detection
-        _PROBE_DIR="$CWD_FIELD"
+        # Absolute target that doesn't exist → don't misattribute to cwd's repo (QA m1).
+        case "$TARGET_PATH" in
+            /*) exit 0 ;;
+            *)  _PROBE_DIR="$CWD_FIELD" ;;
+        esac
     fi
 else
     _PROBE_DIR="$CWD_FIELD"

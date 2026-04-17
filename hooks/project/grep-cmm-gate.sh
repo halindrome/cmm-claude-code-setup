@@ -136,6 +136,15 @@ fi
 
 # (c) neither type nor glob is set AND path is inside an indexed repo
 if [ "$SHOULD_BLOCK" = false ] && [ -z "$TYPE_FIELD" ] && [ -z "$GLOB_FIELD" ]; then
+    # Single-file path with a non-code extension → allow (QA M4). The explicit-glob
+    # allowlist above never fires in the path-only branch because GLOB_FIELD is empty,
+    # so re-check the file's own extension here before blocking Grep on README.md etc.
+    if [ -n "$PATH_FIELD" ] && [ -f "$PATH_FIELD" ]; then
+        case "$PATH_FIELD" in
+          *.yml|*.yaml|*.json|*.md|*.markdown|*.toml|*.lock|*.xml|*.ini|*.cfg|*.conf|*.txt|*.html|*.css|*.env)
+            exit 0 ;;
+        esac
+    fi
     # We already confirmed CMM is registered + sentinel present above
     SHOULD_BLOCK=true
 fi
