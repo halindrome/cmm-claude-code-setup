@@ -774,6 +774,8 @@ install_project() {
   # Copies all hooks/project/*.sh to .claude/hooks/, including:
   #   reindex-after-commit.sh — PostToolUse:Bash hook that marks CMM sentinel stale after git commits
   #   subagent-cmm-startup.sh — SubagentStart advisory hook (injects CMM state into all subagents via additionalContext)
+  #   grep-cmm-gate.sh — PreToolUse:Grep hard-block for source-code search in indexed repos (phase 46)
+  #   ctx-execute-cmm-nudge.sh — PreToolUse:mcp__context-mode__ctx_execute hard-block for grep-laundered code search (phase 46)
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
   # NOTE: VBW agent override files (agents/*.md) ARE copied by setup.sh --project to
