@@ -137,6 +137,16 @@ _assert "h) Read tool -> no advisory" \
     0 '' 1 \
     "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"/tmp/x\"},\"cwd\":\"$PROJ_YES\"}"
 
+echo "--- Test h2: ctx_search (retrieval side) -> silent no-op ---"
+_assert "h2) ctx_search -> no advisory (retrieval, never nudged)" \
+    0 '' 1 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_search\",\"tool_input\":{\"queries\":[\"apache config\"]},\"cwd\":\"$PROJ_YES\"}"
+
+echo "--- Test h3: ctx_stats (status/query tool) -> silent no-op ---"
+_assert "h3) ctx_stats -> no advisory (status query, never nudged)" \
+    0 '' 1 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_stats\",\"tool_input\":{},\"cwd\":\"$PROJ_YES\"}"
+
 echo "--- Test i: empty stdin -> exit 0, silent ---"
 _assert "i) empty stdin -> silent exit 0" \
     0 '' 1 \

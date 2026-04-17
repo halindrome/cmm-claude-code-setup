@@ -17,9 +17,13 @@ INPUT=$(cat 2>/dev/null)
 [ -z "$INPUT" ] && exit 0
 
 # Extract: tool_name, tool_input.intent (ctx_execute), tool_input.steps[*].intent (ctx_batch_execute),
-# and cwd. Line 1=tool_name, line 2=intent, line 3=first-non-empty-step-intent, line 4=cwd.
+# and cwd. Python base64-encodes each field so embedded newlines (or any other control chars)
+# in intent/step_intent do not shift subsequent fields. Fields are separated by a single newline;
+# each field is base64 of the UTF-8 bytes of the original string.
 PARSED=$(echo "$INPUT" | python3 -c "
-import sys, json
+import sys, json, base64
+def enc(s):
+    return base64.b64encode(s.encode('utf-8')).decode('ascii')
 try:
     d = json.load(sys.stdin)
 except Exception:
@@ -46,19 +50,21 @@ if isinstance(steps, list):
 cwd = d.get('cwd', '') or ''
 if not isinstance(cwd, str):
     cwd = ''
-print(tn)
-print(intent)
-print(step_intent)
-print(cwd)
+print(enc(tn))
+print(enc(intent))
+print(enc(step_intent))
+print(enc(cwd))
 " 2>/dev/null)
 
 # Parse failure -> silent no-op
 [ -z "$PARSED" ] && exit 0
 
-TOOL_NAME=$(echo "$PARSED" | sed -n '1p')
-INTENT=$(echo "$PARSED" | sed -n '2p')
-STEP_INTENT=$(echo "$PARSED" | sed -n '3p')
-CWD=$(echo "$PARSED" | sed -n '4p')
+# Decode each base64-encoded field. Base64 output never contains newlines in a single field
+# (Python's b64encode is single-line), so sed -n 'Np' selects exactly one field.
+TOOL_NAME=$(printf '%s\n' "$PARSED" | sed -n '1p' | base64 --decode 2>/dev/null)
+INTENT=$(printf '%s\n' "$PARSED" | sed -n '2p' | base64 --decode 2>/dev/null)
+STEP_INTENT=$(printf '%s\n' "$PARSED" | sed -n '3p' | base64 --decode 2>/dev/null)
+CWD=$(printf '%s\n' "$PARSED" | sed -n '4p' | base64 --decode 2>/dev/null)
 
 # Missing tool_name -> silent no-op
 [ -z "$TOOL_NAME" ] && exit 0
