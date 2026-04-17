@@ -179,5 +179,6 @@ With:
   mcp__context-mode__ctx_execute(language="shell", code="$COMMAND")
 
 Context Mode captures only the relevant output portion, preventing context bloat.
+If this is a source-code search, prefer search_code / search_graph (CMM) over ctx_execute.
 BLOCKED
 exit 2

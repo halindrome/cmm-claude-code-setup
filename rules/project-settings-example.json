@@ -58,6 +58,26 @@
             "_comment": "Blocks Grep on code files; redirects to CMM graph tools (no-ops if CMM not installed)"
           }
         ]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/grep-cmm-gate.sh",
+            "_comment": "Hard-blocks Grep on indexed source code with machine-readable REPLACE WITH advisory (no-ops if CMM not installed)"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__context-mode__ctx_execute",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ctx-execute-cmm-nudge.sh",
+            "_comment": "Hard-blocks ctx_execute(code=\"grep/rg/find ... src/\") on indexed source code; redirects to CMM (no-ops if CMM not installed)"
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -39,6 +39,22 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [ ] Phase 34: Hard-Block Read on Code Files
 - [ ] Phase 35: Expand Agent CMM Gate to Explore and Plan
 - [ ] Phase 36: Hook Block Counter and Statusline Integration
+- [x] Phase 46: Source-Code Search CMM Gate
+
+### Phase 46: Source-Code Search CMM Gate
+**Goal:** Close two overlapping enforcement gaps where agents search source code via the wrong tool. (A) The `Grep` tool has no PreToolUse block — agents freely run `Grep(pattern="password|PASSWORD|db_pass", type="sh")` instead of `search_code` / `search_graph` (observed 2026-04-08 in gitops). (B) `ctx-execute-enforcer.sh` pushes `Bash` to `ctx_execute` correctly, but has no "but not for code search" carve-out — so `ctx_execute(code="grep -rn 'x' src/")` gets laundered into the blessed path and CMM is never consulted (observed 2026-04-17 in codespace session `16e19082`, post-v1.6.0 reload). Both failures share one shape: a source-code search issued against the wrong tool in an indexed CMM project. Fix with three artifacts modeled on phase-44/45 templates: (1) new `hooks/project/grep-cmm-gate.sh` — PreToolUse on `Grep`, hard-block when `type`/`glob` matches a CMM-indexed language or `path` is inside an indexed repo without a non-code narrow; advisory names `search_code(query=…)` / `search_graph(name_pattern=…)` as the preferred call; (2) new `hooks/project/ctx-execute-cmm-nudge.sh` — PreToolUse on `mcp__context-mode__ctx_execute`, inspects `tool_input.code`; blocks when the command starts with or pipes through `grep|rg|ack|ag|ugrep|find -name` against source; fails open on ambiguous multi-statement scripts or `# cmm-exempt` marker; (3) one-line message update to `ctx-execute-enforcer.sh` suggesting `search_code`/`search_graph` when the Bash command looked like a grep. All three fail-silent when CMM is absent (`.mcp.json` probe). Absorbs the STATE.md todo "MISSING GREP HOOK" (added 2026-04-08). See `46-RESEARCH.md` for full evidence and the non-code extension exemption list.
+**Deps:** Phase 34 (hard-block Read on code files — reuses the same language/extension cascade), Phase 44 (webfetch/ctx templates)
+**Reqs:** none (enforcement improvement — mirrors phase 45 scope)
+**Success:**
+- `hooks/project/grep-cmm-gate.sh` created, exit 2 block with actionable advisory naming both `search_code` and `search_graph`
+- Grep block fires on: code-language `type` (go/py/sh/ts/…), code-extension `glob` (`*.go`/`*.sh`/`*.py`/`*.ts`/…), and path-only calls into an indexed repo with no non-code narrow
+- Grep block does NOT fire on: explicit non-code `type`/`glob`, `# cmm-exempt` marker, files <50 lines (reuse cmm-nudge logic), non-indexed languages, CMM not registered
+- `hooks/project/ctx-execute-cmm-nudge.sh` created, exit 2 block when `tool_input.code` pattern-matches a code search against indexed paths
+- Allowed `ctx_execute` commands unchanged: `git log`, `npm test`, `pytest`, `curl`, `jq`, test runners, `sqlite3`, `psql`, `cat <config>`, ambiguous multi-statement scripts
+- Both hooks registered in `rules/project-settings-example.json`, installed by `setup.sh`, referenced from `rules/cmm-rules.md`
+- `ctx-execute-enforcer.sh` block message includes the one-line Grep-in-Bash suffix
+- Tests: `tests/test-grep-cmm-gate.sh` (≥8 cases: blocked by type, blocked by glob, blocked by path heuristic, allowed non-code type, allowed exempt marker, allowed small file, allowed no-CMM, search_graph-style symbol pattern → suggests search_graph); `tests/test-ctx-execute-cmm-nudge.sh` (≥9 cases: grep/rg/find blocked, git log / npm test / curl / jq allowed, ambiguous script fails open, exempt marker bypasses); integration smoke extends the phase-45 bundle-install pattern (fresh install + idempotency)
+- Follow-up measurement (post-release): re-run the codespace diagnostic probe; target metric is 0 observed `Grep(type=<code-lang>)` calls and 0 observed `ctx_execute(code="grep …src/")` calls in the first session after upgrade
 
 ### Phase 6: Token Consumption Benchmarks
 **Goal:** Design and implement a benchmark suite that measures Claude Code token consumption when answering standard codebase questions, comparing baseline (no CMM) vs CMM-enabled vs CMM-with-cache — producing reproducible data usable for evaluating the ROI of this tool.
