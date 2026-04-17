@@ -139,11 +139,15 @@ if [ "$SHOULD_BLOCK" = false ] && [ -z "$TYPE_FIELD" ] && [ -z "$GLOB_FIELD" ]; 
     # Single-file path with a non-code extension → allow (QA M4). The explicit-glob
     # allowlist above never fires in the path-only branch because GLOB_FIELD is empty,
     # so re-check the file's own extension here before blocking Grep on README.md etc.
+    # Case-insensitive match so README.MD, Config.YAML, etc. are also allowed (QA n3).
     if [ -n "$PATH_FIELD" ] && [ -f "$PATH_FIELD" ]; then
+        shopt -s nocasematch
         case "$PATH_FIELD" in
           *.yml|*.yaml|*.json|*.md|*.markdown|*.toml|*.lock|*.xml|*.ini|*.cfg|*.conf|*.txt|*.html|*.css|*.env)
+            shopt -u nocasematch
             exit 0 ;;
         esac
+        shopt -u nocasematch
     fi
     # We already confirmed CMM is registered + sentinel present above
     SHOULD_BLOCK=true

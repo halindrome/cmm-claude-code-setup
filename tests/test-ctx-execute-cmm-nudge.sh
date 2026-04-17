@@ -196,6 +196,22 @@ _assert_exit "git log stays allowed"        0 "{\"tool_name\":\"mcp__context-mod
 _assert_exit "grep foo /tmp/nonexistent-xyz/ fails open" 0 \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep foo /tmp/nonexistent-cmm-qa-xyz/\"},\"cwd\":\"$FIX\"}"
 
+# QA round 2 N1: git-level options before grep must still unwrap.
+_assert_exit "git -c foo=bar grep blocks" 2 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git -c foo.bar=baz grep MyFunc src/\"},\"cwd\":\"$FIX\"}"
+_assert_stderr_contains "git -c ... grep uses pattern" \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git -c foo.bar=baz grep MyFunc src/\"},\"cwd\":\"$FIX\"}" \
+    'name_pattern="MyFunc"'
+_assert_exit "git -C path grep blocks" 2 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git -C /tmp grep MyFunc src/\"},\"cwd\":\"$FIX\"}"
+_assert_exit "git --no-pager grep blocks" 2 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git --no-pager grep MyFunc src/\"},\"cwd\":\"$FIX\"}"
+_assert_exit "git --git-dir=... grep blocks" 2 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git --git-dir=/tmp/.git grep MyFunc src/\"},\"cwd\":\"$FIX\"}"
+# git with leading opts whose subcommand is not grep stays allowed.
+_assert_exit "git -c foo=bar log still allowed" 0 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git -c foo.bar=baz log --oneline\"},\"cwd\":\"$FIX\"}"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

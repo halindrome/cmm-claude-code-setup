@@ -131,11 +131,29 @@ if not tokens:
     sys.exit(0)
 
 first = tokens[0]
-# Sub-command laundering: git grep ... is a grep invocation with git as tokens[0].
-# Unwrap so the rest of the pipeline sees grep as the tool.
-if first == 'git' and len(tokens) >= 2 and tokens[1] == 'grep':
-    tokens = tokens[1:]
-    first = tokens[0]
+# Sub-command laundering: git <git-opts...> grep ... is still a grep invocation.
+# Skip leading git-level options (-c key=val, -C path, --git-dir=..., --work-tree=...,
+# --no-pager, -p/--paginate, --bare, --no-replace-objects, --exec-path[=...], --namespace[=...])
+# and unwrap to the subcommand. If the subcommand is grep, treat the remainder as a grep call.
+if first == 'git' and len(tokens) >= 2:
+    git_value_opts = {'-c','-C','--git-dir','--work-tree','--namespace','--exec-path','--super-prefix','--list-cmds','--attr-source'}
+    j = 1
+    while j < len(tokens):
+        t = tokens[j]
+        if not t.startswith('-'):
+            break
+        # attached-value form: --flag=value
+        if '=' in t:
+            j += 1
+            continue
+        if t in git_value_opts and j + 1 < len(tokens):
+            j += 2
+            continue
+        # bare boolean flag
+        j += 1
+    if j < len(tokens) and tokens[j] == 'grep':
+        tokens = tokens[j:]
+        first = tokens[0]
 GREP_FAMILY = {'grep','egrep','fgrep','rg','ripgrep','ack','ag','ugrep'}
 
 def extract_grep_family(toks, tool_first):

@@ -279,6 +279,16 @@ _assert_exit "Grep path=config.yml (no type/glob) allowed" 0 \
     "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"name\",\"path\":\"$PROJ/config.yml\"},\"cwd\":\"$PROJ\"}" \
     "$ENV_NO_GLOBAL"
 
+echo "--- 26: path-only non-code extension allowed case-insensitively (QA n3) ---"
+{ for i in $(seq 1 80); do echo "# heading $i"; done; } > "$PROJ/README.MD"
+_assert_exit "Grep path=README.MD allowed (uppercase)" 0 \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"heading\",\"path\":\"$PROJ/README.MD\"},\"cwd\":\"$PROJ\"}" \
+    "$ENV_NO_GLOBAL"
+{ for i in $(seq 1 80); do echo "name: v$i"; done; } > "$PROJ/Config.YAML"
+_assert_exit "Grep path=Config.YAML allowed (mixed case)" 0 \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"name\",\"path\":\"$PROJ/Config.YAML\"},\"cwd\":\"$PROJ\"}" \
+    "$ENV_NO_GLOBAL"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
