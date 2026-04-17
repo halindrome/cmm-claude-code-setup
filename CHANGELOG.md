@@ -160,6 +160,6 @@ Milestone 01 shipped: core hook layer.
 - `cmm-sentinel-writer.sh` — PostToolUse hook writing the session sentinel after CMM bootstrap
 - `cmm-session-start.sh` — SessionStart hook prompting CMM initialization
 - `track-cmm-calls.sh` — PostToolUse hook tracking CMM tool call frequency
-- `rules/` — `project-settings-example.json`, `global-claude-md.md`, `allowed-tools.txt`, `mcp-example.json`
+- `rules/` — `cmm-rules.md`, `project-settings-example.json`, `allowed-tools.txt`, `mcp-example.json`
 - `setup.sh` — automated installer for global and project hooks
 - Global hooks: `cmm-nudge.sh` (soft Read-gate advisory), `reindex-after-edit.sh`

@@ -51,18 +51,17 @@ Before marking any PR ready for review, follow the QA cycle defined in `CONTRIBU
 
 ## Merge Requirements
 
-- **Version bump required.** Every release merged into `production` must include a version number increase. Bump the version as the final commit before merge — use `scripts/bump-version.sh` if it exists, or update the version file directly. Follow semver: breaking changes → major, new features → minor, fixes → patch.
+- **Version bump required for releases.** Every release merged into `main` must include a version number increase. Bump the version as the final commit before merge — use `scripts/bump-version.sh` if it exists, or update the version file directly. Follow semver: breaking changes → major, new features → minor, fixes → patch. Tag `vX.Y.Z` on the merge commit after it lands on `main`.
 
 ## Branch Model
 
 | Branch | Purpose |
 |--------|---------|
 | `develop` | Active development. Feature branches merge here first. |
-| `main` | Trunk. Stable, tested code. PRs from `develop` merge here. |
-| `production` | Releases. Every merge requires version bump + tag. |
+| `main` | Stable releases. Every merge from `develop` requires a version bump and is tagged `vX.Y.Z`. |
 | `feature/*` | Short-lived work branches. Base from `develop`, PR to `develop`. |
 
-**Release flow:** `feature/* → develop → main → production`
+**Release flow:** `feature/* → develop → main` (tagged)
 
 ## Commands
 

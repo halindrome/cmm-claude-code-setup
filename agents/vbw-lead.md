@@ -19,6 +19,10 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/ctx-execute-enforcer.sh"
+    - matcher: "WebFetch"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/webfetch-nudge.sh"
   PostToolUse:
     - matcher: "mcp__codebase-memory-mcp__*"
       hooks:
@@ -111,6 +115,19 @@ When receiving `execution_update`, `qa_verdict`, `blocker_report`, or `debugger_
 ## Constraints
 - No subagents. Write PLAN.md to disk immediately (compaction resilience). Re-read after compaction.
 - Bash for research only (git log, dir listing, patterns). WebFetch for external docs only.
+
+<!-- cmm-claude-code-setup: Context Mode extensions — re-apply after plugin updates -->
+
+## Context Mode Web Fetch
+
+When `mcp__context-mode__ctx_fetch_and_index` is available in your tool list (Context Mode is installed):
+- **Prefer `ctx_fetch_and_index` over raw `WebFetch`** for any URL you will reference more than once in this research session (documentation pages, API specs, GitHub issues, data sources). It fetches, detects content type, and indexes into SQLite FTS5 for later `ctx_search` queries.
+- Use raw `WebFetch` for one-off URLs or when `ctx_fetch_and_index` is not available.
+- After fetching, use `ctx_search` to query indexed content rather than re-fetching the same URL.
+
+When Context Mode is not installed (`mcp__context-mode__ctx_fetch_and_index` not in your available tools): use raw `WebFetch` as normal — no change in behavior.
+
+<!-- end cmm-claude-code-setup extensions -->
 
 ## V2 Role Isolation (always enforced)
 - You may ONLY Write to `.vbw-planning/` paths (planning artifacts). Writing product code files is a contract violation.

@@ -157,47 +157,11 @@ Claude Code needs permission to use each MCP tool. Add all 14 tools to your proj
 
 ---
 
-## Step 4: Add CLAUDE.md Rules
+## Step 4: Rules (Automatic)
 
-The hooks and MCP config make the tools *available*. The CLAUDE.md rules tell Claude *when* to prefer them over `Read`. Add this to your project `CLAUDE.md` or global `~/.claude/CLAUDE.md`:
+The setup script installs `rules/cmm-rules.md` and `rules/ctx-rules.md` automatically — both globally (`$CLAUDE_CONFIG_DIR/rules/`) and per-project (`.claude/rules/`). These rules tell Claude when to prefer CMM tools over `Read` and when to call `ctx_search` before re-indexing content via Context Mode.
 
-```markdown
-## Code Knowledge Graph — codebase-memory-mcp (when available)
-
-When codebase-memory-mcp tools (`mcp__codebase-memory-mcp__*`) are available, use them as the
-**primary tool for code navigation and understanding**.
-
-### Rules
-
-- **Orientation first**: Use `get_architecture` when exploring an unfamiliar codebase or area —
-  it provides language breakdown, hotspots, entry points, routes, and cross-service boundaries
-- **Search by name**: Use `search_graph` instead of `Grep` when looking for function/class
-  definitions — it returns connectivity (callers/callees) and supports regex patterns
-- **Fetch specific code**: Use `get_code_snippet` to retrieve individual functions/classes with
-  metadata — avoids reading entire files
-- **Trace relationships**: Use `trace_call_path` to understand who calls a function and what it
-  calls — essential before refactoring
-- **Blast radius**: Use `detect_changes` before committing to see which symbols are affected by
-  your git changes and their risk classification
-- **Text search**: Use `search_code` for string literals, error messages, TODO comments, and
-  config values that aren't in the graph as named symbols
-- **Complex queries**: Use `query_graph` with Cypher for relationship patterns, edge property
-  filtering, and cross-service HTTP/async links
-- **Keep index fresh**: Run `index_repository` at session start and after large batch edits.
-  The server auto-syncs after initial indexing
-- **ADR**: Use `manage_adr` to maintain Architecture Decision Records — fetch before planning
-  to validate against ARCHITECTURE, PATTERNS, STACK, and PHILOSOPHY sections
-
-### When Read is correct
-
-- Non-code files (JSON, YAML, config, HTML templates)
-- Full file context needed (imports, globals, module-level flow)
-- Very small files (<50 lines)
-- Files not yet indexed (newly created before next `index_repository`)
-- Editing many functions in the same file (batch edit — full Read is cheaper)
-```
-
-> **Why this matters:** Without these rules, Claude defaults to `Read` for everything. The rules make the knowledge graph the default for code navigation, with `Read` as the exception.
+> **No manual step needed.** Running `setup.sh --all` (or `--global` / `--project`) handles this. The rules file is a concise 14-line guide covering tool selection and when `Read` is correct.
 
 ---
 
@@ -788,7 +752,7 @@ bash setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-c
 
 | Flag | Description |
 |------|-------------|
-| `--global` | Install global hooks to `~/.claude/hooks/` and merge into `~/.claude/settings.json` |
+| `--global` | Install global hooks and rules to `~/.claude/` and merge into `~/.claude/settings.json` |
 | `--project` | Install project hooks to `.claude/hooks/`, rules to `.claude/rules/`, create `.mcp.json`, and merge into `.claude/settings.json` |
 | `--all` | Install both global and project hooks |
 | `--force` | Overwrite existing files (default: skip existing) |
