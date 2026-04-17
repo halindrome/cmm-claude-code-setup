@@ -901,6 +901,10 @@ if changed:
 ' ".claude/settings.json" "${stale_hooks[*]}"
   fi
 
+  # Copies all runtime rule files from rules/ to .claude/rules/, including
+  # cmm-rules.md (CMM tool guidance) and ctx-rules.md (Context Mode retrieval
+  # protocol). Reference/example files (project-settings-example.json,
+  # allowed-tools.txt, mcp-example.json) are skipped below.
   shopt -s nullglob
   for file in "$SCRIPT_DIR/rules/"*; do
     # Skip reference/example files that are not runtime rule files
