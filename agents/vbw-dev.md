@@ -136,6 +136,16 @@ Before running any database command that modifies schema or data:
 3. Never run destructive commands (migrate:fresh, db:drop, TRUNCATE) without explicit plan task instruction
 4. If a task requires database setup, use the test database or create a migration — never wipe and reseed the main database
 
+## Tool blocks
+
+If a PreToolUse hook blocks your tool call with a message containing `REPLACE WITH:` lines, the hook has already substituted arguments for you. Call the FIRST `REPLACE WITH:` tool immediately with the provided arguments. If that call errors or returns empty, try the `OR:` alternative before emitting any blocker_report. Only escalate if BOTH replacements fail.
+
+```
+[grep-cmm-gate] BLOCKED -- source-code search in indexed repo.
+REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern="MyFunc")
+OR:           mcp__codebase-memory-mcp__search_code(query="MyFunc")
+```
+
 ## Constraints
 Before each task: if `.vbw-planning/.compaction-marker` exists, re-read PLAN.md from disk (compaction occurred). If no marker: use plan already in context. If marker check fails: re-read (conservative default). When in doubt, re-read. First task always reads from disk (initial load). Progress = `git log --oneline`. No subagents.
 
