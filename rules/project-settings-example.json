@@ -119,6 +119,16 @@
         ]
       },
       {
+        "matcher": "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index|mcp__context-mode__ctx_batch_execute",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ctx-search-nudge.sh",
+            "_comment": "Non-blocking stderr advisory reminding the model to call ctx_search before re-indexing a topic (no-ops if Context Mode not installed)"
+          }
+        ]
+      },
+      {
         "matcher": "*",
         "hooks": [
           {
@@ -148,6 +158,16 @@
             "type": "command",
             "command": "bash .claude/hooks/subagent-cmm-startup.sh",
             "_comment": "Injects CMM index state into all subagents via additionalContext JSON at startup"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/subagent-ctx-startup.sh",
+            "_comment": "Injects a ctx_stats nudge into subagents via additionalContext JSON at startup (no-ops if Context Mode not installed)"
           }
         ]
       }
