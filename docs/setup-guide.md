@@ -159,7 +159,7 @@ Claude Code needs permission to use each MCP tool. Add all 14 tools to your proj
 
 ## Step 4: Rules (Automatic)
 
-The setup script installs `rules/cmm-rules.md` automatically — both globally (`$CLAUDE_CONFIG_DIR/rules/`) and per-project (`.claude/rules/`). These rules tell Claude when to prefer CMM tools over `Read`.
+The setup script installs `rules/cmm-rules.md` and `rules/ctx-rules.md` automatically — both globally (`$CLAUDE_CONFIG_DIR/rules/`) and per-project (`.claude/rules/`). These rules tell Claude when to prefer CMM tools over `Read` and when to call `ctx_search` before re-indexing content via Context Mode.
 
 > **No manual step needed.** Running `setup.sh --all` (or `--global` / `--project`) handles this. The rules file is a concise 14-line guide covering tool selection and when `Read` is correct.
 

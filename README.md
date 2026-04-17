@@ -100,6 +100,7 @@ hooks/
     context-mode-pre-compact.sh         # PreCompact — snapshots session state (no-op if not installed)
 rules/
   cmm-rules.md                          # CMM tool guidance (installed globally and per-project)
+  ctx-rules.md                          # Context Mode tool guidance (ctx_search retrieval protocol)
   project-settings-example.json         # Example .claude/settings.json with all hooks registered
   mcp-example.json                      # Example .mcp.json for project-scoped MCP registration
   allowed-tools.txt                     # CMM + Context Mode tool allowlist for settings.local.json

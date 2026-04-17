@@ -810,6 +810,24 @@ install_project() {
     set_executable ".claude/hooks/webfetch-nudge.sh"
   fi
 
+  # Copy ctx-search-nudge.sh from hooks/global/ to .claude/hooks/
+  # PostToolUse advisory for context-mode indexing tools (reminds the model to call
+  # ctx_search before re-indexing a similar topic). No-ops when context-mode is not
+  # installed thanks to the hook's built-in absence probe.
+  if [ -f "$SCRIPT_DIR/hooks/global/ctx-search-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/ctx-search-nudge.sh" ".claude/hooks/ctx-search-nudge.sh"
+    set_executable ".claude/hooks/ctx-search-nudge.sh"
+  fi
+
+  # Copy subagent-ctx-startup.sh from hooks/global/ to .claude/hooks/
+  # SubagentStart injector — emits a one-line instruction nudging spawned subagents
+  # to call ctx_stats before indexing more content. No-ops when context-mode is not
+  # installed thanks to the hook's built-in absence probe.
+  if [ -f "$SCRIPT_DIR/hooks/global/subagent-ctx-startup.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/subagent-ctx-startup.sh" ".claude/hooks/subagent-ctx-startup.sh"
+    set_executable ".claude/hooks/subagent-ctx-startup.sh"
+  fi
+
 
   # --- Agent override files (frontmatter hooks for VBW subagents) ---
   # Project-level .claude/agents/ overrides shadow VBW plugin agent definitions
@@ -883,6 +901,10 @@ if changed:
 ' ".claude/settings.json" "${stale_hooks[*]}"
   fi
 
+  # Copies all runtime rule files from rules/ to .claude/rules/, including
+  # cmm-rules.md (CMM tool guidance) and ctx-rules.md (Context Mode retrieval
+  # protocol). Reference/example files (project-settings-example.json,
+  # allowed-tools.txt, mcp-example.json) are skipped below.
   shopt -s nullglob
   for file in "$SCRIPT_DIR/rules/"*; do
     # Skip reference/example files that are not runtime rule files
