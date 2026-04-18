@@ -100,8 +100,8 @@ _assert_exit "git commit exempt" 0 \
 _assert_exit "mkdir exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"mkdir -p .claude/hooks"}}'
 
-_assert_exit "echo exempt" 0 \
-    '{"tool_name":"Bash","tool_input":{"command":"echo hello"}}'
+_assert_exit "date exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"date"}}'
 
 _assert_exit "git status exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
@@ -155,11 +155,46 @@ _assert_exit "version flag exempt" 0 \
 echo ""
 echo "--- Git log/diff exempt tests (expect exit 0) ---"
 
-_assert_exit "git log exempt" 0 \
+_assert_exit "git log --oneline exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"git log --oneline -10"}}'
 
-_assert_exit "git diff exempt" 0 \
-    '{"tool_name":"Bash","tool_input":{"command":"git diff HEAD~1"}}'
+_assert_exit "git diff --stat exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git diff --stat"}}'
+
+# --- 47-02: bare git log/diff/show now blocked (expect exit 2) ---
+echo ""
+echo "--- 47-02: bare git log/diff/show blocked (expect exit 2) ---"
+
+_assert_exit "bare git log blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git log"}}'
+
+_assert_exit "git log with numeric flag blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git log -20"}}'
+
+_assert_exit "git diff with ref blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git diff HEAD~3"}}'
+
+_assert_exit "git show with sha blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git show abc123"}}'
+
+_assert_exit "echo command blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo hello"}}'
+
+_assert_exit "printf command blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"printf %s\\n foo"}}'
+
+# --- 47-02: new bounded git variants exempt (expect exit 0) ---
+echo ""
+echo "--- 47-02: bounded git variants exempt (expect exit 0) ---"
+
+_assert_exit "git log --name-only exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git log --name-only -5"}}'
+
+_assert_exit "git log --stat exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git log --stat -10"}}'
+
+_assert_exit "git show --name-only exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git show --name-only HEAD"}}'
 
 # --- Bypass marker test (expect exit 0 even for blocked command) ---
 echo ""
