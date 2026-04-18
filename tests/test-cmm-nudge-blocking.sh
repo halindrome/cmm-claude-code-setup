@@ -130,8 +130,30 @@ echo "--- Test 11: Top-level file_path fallback (exit 2) ---"
 _assert_exit "Test 11: top-level file_path blocked" 2 \
     "{\"file_path\":\"$PROJ/big.py\"}"
 
-echo "--- Test 12: Targeted Read with offset+limit -> allowed (exit 0) ---"
-_assert_exit "Test 12: offset+limit allowed" 0 \
+# --- Phase 47 Finding B: targeted-Read exemption requires fresh cmm-recent sentinel ---
+# Compute the project hash using the same algorithm as cmm-nudge.sh (git-toplevel path
+# via md5 -q || md5sum). Must resolve realpath because git rev-parse returns the
+# canonical path which may differ from the symlinked TMPDIR path on macOS.
+_hash_of() {
+    echo "$1" | md5 -q 2>/dev/null || echo "$1" | md5sum 2>/dev/null | awk '{print $1}'
+}
+PROJ_REAL=$(git -C "$PROJ" rev-parse --show-toplevel)
+PROJ_HASH=$(_hash_of "$PROJ_REAL")
+PROJ_SENTINEL="/tmp/cmm-recent-${PROJ_HASH}"
+
+# Portable helper: set mtime to ~90s in the past (stale for the 60s TTL)
+_touch_stale() {
+    local target="$1"
+    touch "$target"
+    # macOS: touch -t CCYYMMDDhhmm accepts an absolute timestamp; use date -v.
+    # Linux: touch -d "NN seconds ago" works directly.
+    touch -t "$(date -v-2M +%Y%m%d%H%M 2>/dev/null)" "$target" 2>/dev/null \
+        || touch -d "2 minutes ago" "$target" 2>/dev/null
+}
+
+echo "--- Test 12: Targeted Read with offset+limit + fresh sentinel -> allowed (exit 0) ---"
+touch "$PROJ_SENTINEL"
+_assert_exit "Test 12: offset+limit allowed (fresh sentinel)" 0 \
     "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":100,\"limit\":20}}"
 
 echo "--- Test 13: Non-existent file -> allowed (exit 0) ---"
@@ -149,6 +171,28 @@ _assert_exit "Test 15: offset-only still blocked" 2 \
 echo "--- Test 16: Limit only (no offset) -> blocked (exit 2) ---"
 _assert_exit "Test 16: limit-only still blocked" 2 \
     "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"limit\":20}}"
+
+# --- Phase 47 Finding B: cmm-recent sentinel gating on targeted-Read ---
+
+echo "--- Test 17: offset+limit with fresh sentinel -> allowed (exit 0) ---"
+touch "$PROJ_SENTINEL"
+_assert_exit "Test 17: offset+limit fresh sentinel" 0 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":10,\"limit\":50}}"
+
+echo "--- Test 18: offset+limit with NO sentinel -> blocked (exit 2) ---"
+rm -f "$PROJ_SENTINEL"
+_assert_exit "Test 18: offset+limit no sentinel blocks" 2 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":10,\"limit\":50}}"
+
+echo "--- Test 19: offset+limit with STALE sentinel -> blocked (exit 2) ---"
+_touch_stale "$PROJ_SENTINEL"
+_assert_exit "Test 19: offset+limit stale sentinel blocks" 2 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":10,\"limit\":50}}"
+
+echo "--- Test 20: '# cmm-exempt' marker bypasses sentinel check (exit 0) ---"
+rm -f "$PROJ_SENTINEL"
+_assert_exit "Test 20: cmm-exempt marker bypasses sentinel" 0 \
+    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py # cmm-exempt\",\"offset\":10,\"limit\":50}}"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
