@@ -71,4 +71,11 @@ with open('$TEMP', 'w') as f:
     f.write('\n')
 " 2>/dev/null && mv "$TEMP" "$COUNTER_FILE" 2>/dev/null || rm -f "$TEMP"
 
+# --- Recent-call sentinel (Phase 47 Finding B) ---
+# Library-sourced branch may not compute PROJECT_HASH; ensure we have one.
+if [ -z "${PROJECT_HASH:-}" ] && [ -n "${PROJECT_ROOT:-}" ]; then
+    PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+fi
+[ -n "${PROJECT_HASH:-}" ] && touch "/tmp/cmm-recent-${PROJECT_HASH}" 2>/dev/null || true
+
 exit 0
