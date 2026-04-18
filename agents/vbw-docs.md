@@ -28,6 +28,14 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-query-stale-advisory.sh"
+    - matcher: "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/ctx-annotate-nudge.sh"
+    - matcher: "mcp__codebase-memory-mcp__search_graph"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/cmm-orient-nudge.sh"
 ---
 
 <!-- PROJECT-LEVEL OVERRIDE: This file shadows the VBW plugin agent "vbw-docs" to inject
