@@ -774,6 +774,8 @@ install_project() {
   # Copies all hooks/project/*.sh to .claude/hooks/, including:
   #   reindex-after-commit.sh — PostToolUse:Bash hook that marks CMM sentinel stale after git commits
   #   subagent-cmm-startup.sh — SubagentStart advisory hook (injects CMM state into all subagents via additionalContext)
+  #   grep-cmm-gate.sh — PreToolUse:Grep hard-block for source-code search in indexed repos (phase 46)
+  #   ctx-execute-cmm-nudge.sh — PreToolUse:mcp__context-mode__ctx_execute hard-block for grep-laundered code search (phase 46)
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
   # NOTE: VBW agent override files (agents/*.md) ARE copied by setup.sh --project to
@@ -810,13 +812,23 @@ install_project() {
     set_executable ".claude/hooks/webfetch-nudge.sh"
   fi
 
-  # Copy ctx-search-nudge.sh from hooks/global/ to .claude/hooks/
-  # PostToolUse advisory for context-mode indexing tools (reminds the model to call
-  # ctx_search before re-indexing a similar topic). No-ops when context-mode is not
-  # installed thanks to the hook's built-in absence probe.
-  if [ -f "$SCRIPT_DIR/hooks/global/ctx-search-nudge.sh" ]; then
-    copy_file "$SCRIPT_DIR/hooks/global/ctx-search-nudge.sh" ".claude/hooks/ctx-search-nudge.sh"
-    set_executable ".claude/hooks/ctx-search-nudge.sh"
+  # Copy ctx-annotate-nudge.sh from hooks/global/ to .claude/hooks/
+  # PostToolUse additionalContext nudge for context-mode tools (replaces the
+  # retired ctx-search-nudge.sh — see phase 47). Emits a summarize-before-next-call
+  # instruction via hookSpecificOutput.additionalContext with a 120s cooldown.
+  # No-ops when context-mode is not installed thanks to the hook's built-in probe.
+  if [ -f "$SCRIPT_DIR/hooks/global/ctx-annotate-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/ctx-annotate-nudge.sh" ".claude/hooks/ctx-annotate-nudge.sh"
+    set_executable ".claude/hooks/ctx-annotate-nudge.sh"
+  fi
+
+  # Copy cmm-orient-nudge.sh from hooks/global/ to .claude/hooks/
+  # One-shot-per-session PostToolUse nudge after the first search_graph call —
+  # suggests get_architecture / trace_call_path / query_graph for unfamiliar areas.
+  # No-ops when CMM is not installed thanks to the hook's built-in probe.
+  if [ -f "$SCRIPT_DIR/hooks/global/cmm-orient-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/cmm-orient-nudge.sh" ".claude/hooks/cmm-orient-nudge.sh"
+    set_executable ".claude/hooks/cmm-orient-nudge.sh"
   fi
 
   # Copy subagent-ctx-startup.sh from hooks/global/ to .claude/hooks/
@@ -853,6 +865,7 @@ install_project() {
   deprecated_hooks=(
     "cmm-session-gate.sh"
     "context-mode-session-gate.sh"
+    "ctx-search-nudge.sh"
   )
 
   stale_hooks=()

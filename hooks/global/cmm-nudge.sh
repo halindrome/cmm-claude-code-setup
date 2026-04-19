@@ -30,8 +30,31 @@ READ_LIMIT=$(echo "$PARSED" | sed -n '3p')
 
 
 # --- Exception: Targeted Read with offset+limit (sliced edit workflow) ---
+# Phase 47 Finding B: exemption is gated on a recent CMM call (sentinel < 60s).
+# The offset+limit<=100 guard is NECESSARY but no longer SUFFICIENT.
 if [ "$HAS_OFFSET" = "1" ] && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
-  exit 0
+  # Operator bypass marker (mirrors ctx-exempt in ctx-execute-enforcer.sh).
+  if echo "$FILE_PATH" | grep -q '# cmm-exempt'; then
+    exit 0
+  fi
+  # Resolve project root + hash (fail-open if either step fails).
+  _CN_ROOT=$(git -C "$(dirname "$FILE_PATH")" rev-parse --show-toplevel 2>/dev/null)
+  if [ -z "$_CN_ROOT" ]; then
+    _CN_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
+    _CN_ROOT="${_CN_CWD:-}"
+  fi
+  if [ -n "$_CN_ROOT" ]; then
+    _CN_HASH=$(echo "$_CN_ROOT" | md5 -q 2>/dev/null || echo "$_CN_ROOT" | md5sum 2>/dev/null | awk '{print $1}')
+  fi
+  if [ -z "${_CN_HASH:-}" ]; then
+    exit 0  # fail-open: cannot derive hash
+  fi
+  _CN_SENTINEL="/tmp/cmm-recent-${_CN_HASH}"
+  _CN_MTIME=$(stat -f %m "$_CN_SENTINEL" 2>/dev/null || stat -c %Y "$_CN_SENTINEL" 2>/dev/null)
+  if [ -n "$_CN_MTIME" ] && [ "$(( $(date +%s) - _CN_MTIME ))" -lt 60 ]; then
+    exit 0
+  fi
+  # Sentinel missing or stale: fall through to normal code-file block.
 fi
 
 # --- Exception: Meta/Config Files (check BEFORE extension match) ---

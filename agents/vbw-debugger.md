@@ -32,6 +32,14 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-query-stale-advisory.sh"
+    - matcher: "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/ctx-annotate-nudge.sh"
+    - matcher: "mcp__codebase-memory-mcp__search_graph"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/cmm-orient-nudge.sh"
 ---
 
 <!-- PROJECT-LEVEL OVERRIDE: This file shadows the VBW plugin agent "vbw-debugger" to inject
@@ -107,3 +115,13 @@ When you receive a message containing `"type":"shutdown_request"` (or `shutdown_
 
 ## Circuit Breaker
 If you encounter the same error 3 consecutive times: STOP retrying the same approach. Try ONE alternative approach. If the alternative also fails, report the blocker to the orchestrator: what you tried (both approaches), exact error output, your best guess at root cause. Never attempt a 4th retry of the same failing operation.
+
+## Tool blocks
+
+If a PreToolUse hook blocks your tool call with a message containing `REPLACE WITH:` lines, the hook has already substituted arguments for you. Call the FIRST `REPLACE WITH:` tool immediately with the provided arguments. If that call errors or returns empty, try the `OR:` alternative before emitting any blocker_report. Only escalate if BOTH replacements fail.
+
+```
+[grep-cmm-gate] BLOCKED -- source-code search in indexed repo.
+REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern="MyFunc")
+OR:           mcp__codebase-memory-mcp__search_code(query="MyFunc")
+```

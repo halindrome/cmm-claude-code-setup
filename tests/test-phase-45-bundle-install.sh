@@ -1,8 +1,10 @@
 #!/bin/bash
 # test-phase-45-bundle-install.sh — Integration smoke test for phase-45 bundle install
-# Verifies that setup.sh --project installs the three phase-45 artifacts
-# (ctx-search-nudge.sh, subagent-ctx-startup.sh, ctx-rules.md) into .claude/,
-# registers both hooks in .claude/settings.json, and is idempotent on re-run.
+# Verifies that setup.sh --project installs the surviving phase-45 artifacts
+# (subagent-ctx-startup.sh, ctx-rules.md) into .claude/, registers the
+# SubagentStart hook in .claude/settings.json, and is idempotent on re-run.
+# Note: ctx-search-nudge.sh was retired in phase 47 (superseded by
+# ctx-annotate-nudge.sh); its assertions moved to test-phase-47-bundle-install.sh.
 # Usage: bash tests/test-phase-45-bundle-install.sh
 # Exit: 0 = all pass, 1 = any failure
 
@@ -42,26 +44,14 @@ echo "n" | bash "$REPO_ROOT/setup.sh" --project --yes --skip-mcp-check >/dev/nul
 }
 
 # --- Artifacts exist ---
-_assert "ctx-search-nudge.sh installed" test -f ".claude/hooks/ctx-search-nudge.sh"
-_assert "ctx-search-nudge.sh is executable" test -x ".claude/hooks/ctx-search-nudge.sh"
 _assert "subagent-ctx-startup.sh installed" test -f ".claude/hooks/subagent-ctx-startup.sh"
 _assert "subagent-ctx-startup.sh is executable" test -x ".claude/hooks/subagent-ctx-startup.sh"
 _assert "ctx-rules.md installed" test -f ".claude/rules/ctx-rules.md"
+# ctx-search-nudge.sh retired in phase 47 — must NOT be installed.
+_assert "ctx-search-nudge.sh NOT installed (retired in phase 47)" \
+    bash -c 'test ! -e ".claude/hooks/ctx-search-nudge.sh"'
 
 # --- Hook registrations present in settings.json ---
-_assert "ctx-search-nudge registered under PostToolUse" \
-    python3 -c "
-import json, sys
-with open('.claude/settings.json') as f:
-    data = json.load(f)
-entries = data.get('hooks', {}).get('PostToolUse', [])
-found = any(
-    any('ctx-search-nudge.sh' in h.get('command', '') for h in entry.get('hooks', []))
-    for entry in entries
-)
-sys.exit(0 if found else 1)
-"
-
 _assert "subagent-ctx-startup registered under SubagentStart" \
     python3 -c "
 import json, sys
@@ -75,19 +65,19 @@ found = any(
 sys.exit(0 if found else 1)
 "
 
-_assert "ctx-search-nudge matcher targets the four indexing tools" \
+# ctx-search-nudge must NOT be registered anywhere in settings.json.
+_assert "ctx-search-nudge matcher NOT registered (retired in phase 47)" \
     python3 -c "
 import json, sys
 with open('.claude/settings.json') as f:
     data = json.load(f)
-expected = 'mcp__context-mode__ctx_execute|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index|mcp__context-mode__ctx_batch_execute'
-entries = data.get('hooks', {}).get('PostToolUse', [])
-found = any(
-    entry.get('matcher', '') == expected and
-    any('ctx-search-nudge.sh' in h.get('command', '') for h in entry.get('hooks', []))
-    for entry in entries
-)
-sys.exit(0 if found else 1)
+found = False
+for entries in data.get('hooks', {}).values():
+    for entry in entries:
+        for h in entry.get('hooks', []):
+            if 'ctx-search-nudge' in h.get('command', ''):
+                found = True
+sys.exit(1 if found else 0)
 "
 
 # --- Idempotency: snapshot settings.json, re-run setup, diff ---
@@ -109,8 +99,8 @@ else
     FAIL=$((FAIL+1))
 fi
 
-# Both hook files should also be unchanged on second run.
-for h in ctx-search-nudge.sh subagent-ctx-startup.sh; do
+# Surviving phase-45 hook files should be unchanged on second run.
+for h in subagent-ctx-startup.sh; do
     # Compare against source
     if cmp -s "$REPO_ROOT/hooks/global/$h" ".claude/hooks/$h"; then
         echo "PASS: .claude/hooks/$h matches source"

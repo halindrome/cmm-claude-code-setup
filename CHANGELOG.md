@@ -6,6 +6,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Version
 
 ---
 
+## [Unreleased]
+
+### Added
+- `hooks/global/ctx-annotate-nudge.sh` — PostToolUse `additionalContext` nudge for `mcp__context-mode__ctx_(execute|search|index|fetch_and_index)`; emits a "summarize what this ctx_* result told you before running another search" advisory via `hookSpecificOutput.additionalContext` with a 120s per-project cooldown sentinel and `python3 json.dumps` escaping. Replaces the retired stderr-only `ctx-search-nudge.sh`. (Finding D)
+- `hooks/global/cmm-orient-nudge.sh` — one-shot-per-session PostToolUse nudge on `mcp__codebase-memory-mcp__search_graph`; names `get_architecture`, `trace_call_path`, and `query_graph` so agents reach the under-promoted CMM tools after their first graph query. Session-scoped sentinel (`/tmp/cmm-orient-nudged-<PROJECT_HASH>-<SESSION_ID>`), `# cmm-exempt` bypass, fail-open on every path. (Finding C)
+- `/tmp/cmm-recent-<PROJECT_HASH>` sentinel (touched by `track-cmm-calls.sh`) now gates the `cmm-nudge.sh` targeted-Read exemption — `offset+limit<=100` reads only pass when a CMM call landed within the last 60s. (Finding B)
+- `tests/test-phase-47-bundle-install.sh`, `tests/test-ctx-annotate-nudge.sh`, `tests/test-cmm-orient-nudge.sh`; `tests/test-agent-hook-overrides.sh` and `tests/test-agent-hook-enforcement.sh` extended with presence/absence assertions for the new hooks.
+
+### Changed
+- `hooks/project/ctx-execute-enforcer.sh` — tightened the Bash exemption list: removed the unbounded `git log|diff|show` catch-all (keep `--stat`/`--oneline`/`--name-only` bounded forms) and dropped `echo`/`printf` from the navigation group. Every exempt arm now calls `track-hook-blocks.sh` with a per-group label (`git-write`, `git-bounded-read`, `filesystem`, `navigation`, `short-reads`, `remote`, `vbw-planning`, `version`) for observability. (Finding A)
+- `rules/cmm-rules.md` rewritten around a six-row question-to-tool decision table naming `get_architecture`, `search_graph`, `get_code_snippet`, `trace_call_path`, `query_graph`, and `search_code`; `hooks/project/cmm-session-start.sh` agent-prompt heredoc mirrors the same mapping. (Finding C)
+- `rules/project-settings-example.json`, `setup.sh::install_project`, and every `agents/vbw-*.md` frontmatter register the two new PostToolUse matchers; `ctx-search-nudge.sh` added to `deprecated_hooks` so stale installs purge the file and its settings.json entry.
+
+### Removed
+- `hooks/global/ctx-search-nudge.sh` and `tests/test-ctx-search-nudge.sh` — superseded by `ctx-annotate-nudge.sh`.
+
+---
+
 ## [1.2.0] — 2026-03-24
 
 ### Added

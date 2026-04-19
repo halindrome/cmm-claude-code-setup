@@ -2,12 +2,16 @@
 
 Use codebase-memory-mcp tools as the primary method for code exploration.
 
-- `search_graph` — find functions, classes, modules by name pattern
-- `get_code_snippet` — retrieve source for a specific function/class
-- `trace_call_path` — callers and callees before refactoring
-- `search_code` — text search in source files (string literals, TODOs, imports)
-- `get_architecture` — codebase overview (run first in unfamiliar areas)
-- `detect_changes` — blast radius check before committing
+### CMM Tool Decision Table
+
+| Question / Intent | Use |
+|-------------------|-----|
+| Unfamiliar area / package map | `get_architecture` |
+| Find by name (function, class, module) | `search_graph` |
+| Source of a specific symbol | `get_code_snippet` |
+| Who calls X / what does X call | `trace_call_path` |
+| Cross-service or graph-wide queries (Cypher) | `query_graph` |
+| Text search in code (string literals, error msgs, TODOs) | `search_code` |
 
 Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do not jump straight to reading files.
 

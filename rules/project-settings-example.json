@@ -58,6 +58,26 @@
             "_comment": "Blocks Grep on code files; redirects to CMM graph tools (no-ops if CMM not installed)"
           }
         ]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/grep-cmm-gate.sh",
+            "_comment": "Hard-blocks Grep on indexed source code with machine-readable REPLACE WITH advisory (no-ops if CMM not installed)"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__context-mode__ctx_execute",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ctx-execute-cmm-nudge.sh",
+            "_comment": "Hard-blocks ctx_execute(code=\"grep/rg/find ... src/\") on indexed source code; redirects to CMM (no-ops if CMM not installed)"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -119,12 +139,22 @@
         ]
       },
       {
-        "matcher": "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index|mcp__context-mode__ctx_batch_execute",
+        "matcher": "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index",
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/ctx-search-nudge.sh",
-            "_comment": "Non-blocking stderr advisory reminding the model to call ctx_search before re-indexing a topic (no-ops if Context Mode not installed)"
+            "command": "bash .claude/hooks/ctx-annotate-nudge.sh",
+            "_comment": "PostToolUse additionalContext nudge after ctx_* tools (120s cooldown); replaces ctx-search-nudge (no-ops if Context Mode not installed)"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__codebase-memory-mcp__search_graph",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/cmm-orient-nudge.sh",
+            "_comment": "One-shot-per-session PostToolUse nudge after first search_graph call — suggests get_architecture/trace_call_path/query_graph (no-ops if CMM not installed)"
           }
         ]
       },

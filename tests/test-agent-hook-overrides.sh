@@ -36,7 +36,8 @@ AGENTS=(
 # (all), cmm-query-stale-advisory (all).
 _must_have_hooks() {
   local agent="$1"
-  local hooks="cmm-nudge.sh track-cmm-calls.sh cmm-query-stale-advisory.sh"
+  # Phase 47: ctx-annotate-nudge.sh and cmm-orient-nudge.sh registered in every agent.
+  local hooks="cmm-nudge.sh track-cmm-calls.sh cmm-query-stale-advisory.sh ctx-annotate-nudge.sh cmm-orient-nudge.sh"
   case "$agent" in
     vbw-dev)       hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh webfetch-nudge.sh" ;;
     vbw-debugger)  hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh" ;;
@@ -52,8 +53,9 @@ _must_have_hooks() {
 # Returns space-separated list of hooks an agent MUST NOT have.
 _must_not_have_hooks() {
   local agent="$1"
-  # Parent-only hooks — never in any agent override
-  local hooks="session-gate.sh subagent-cmm-startup.sh cmm-session-start.sh agent-cmm-gate.sh"
+  # Parent-only hooks — never in any agent override.
+  # ctx-search-nudge.sh retired in phase 47 — must not appear in any agent.
+  local hooks="session-gate.sh subagent-cmm-startup.sh cmm-session-start.sh agent-cmm-gate.sh ctx-search-nudge.sh"
   case "$agent" in
     vbw-scout)     hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh" ;;
     vbw-architect) hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh webfetch-nudge.sh" ;;

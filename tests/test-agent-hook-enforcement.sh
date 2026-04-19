@@ -74,6 +74,7 @@ FAKE_PROJ_NO_CTX_HASH=$(echo "$CANONICAL_PROJ_NO_CTX" | md5 -q 2>/dev/null || ec
 cleanup_sentinels() {
   rm -f "/tmp/ctx-enforcer-${FAKE_PROJ_HASH}" "/tmp/context-mode-ready-${FAKE_PROJ_HASH}"
   rm -f "/tmp/ctx-webfetch-avail-${FAKE_PROJ_HASH}" "/tmp/ctx-webfetch-avail-${FAKE_PROJ_NO_CTX_HASH}"
+  rm -f "/tmp/cmm-recent-${FAKE_PROJ_HASH}" "/tmp/ctx-nudge-${FAKE_PROJ_HASH}"
 }
 # Append sentinel cleanup to existing trap
 trap 'rm -rf "$TMPDIR_ROOT"; cleanup_sentinels' EXIT
@@ -126,10 +127,16 @@ for entry in "${AGENT_HOOKS[@]}"; do
   _assert_hook "$agent: Read .json config allowed" "$FAKE_CMM_NUDGE" 0 \
     "{\"tool_input\":{\"file_path\":\"$FAKE_PROJ/config.json\"}}"
 
-  # Should ALLOW: targeted read with offset+limit
+  # Should ALLOW: targeted read with offset+limit — Phase 47 Plan 01 also
+  # requires a fresh /tmp/cmm-recent-<PROJECT_HASH> sentinel (CMM call within
+  # the last 60s). Touch it to simulate a preceding CMM call.
+  touch "/tmp/cmm-recent-${FAKE_PROJ_HASH}"
   _assert_hook "$agent: Read offset+limit allowed" "$FAKE_CMM_NUDGE" 0 \
     "{\"tool_input\":{\"file_path\":\"$FAKE_PROJ/big_module.py\",\"offset\":10,\"limit\":20}}"
 done
+
+# Clean up the cmm-recent sentinel so later tests start from a known state.
+rm -f "/tmp/cmm-recent-${FAKE_PROJ_HASH}" 2>/dev/null || true
 
 # ─── Test: ctx-execute-enforcer.sh blocks large-output Bash commands ──────
 echo ""
@@ -304,6 +311,67 @@ rm -f "$FAKE_PROJ_NO_CTX/.claude/context-mode.db"
 
 # Restore pass-through state so any later tests see a clean FAKE_PROJ_NO_CTX.
 rm -f "/tmp/ctx-webfetch-avail-${FAKE_PROJ_NO_CTX_HASH}" 2>/dev/null || true
+
+# ─── Test: ctx-annotate-nudge.sh + cmm-orient-nudge.sh wiring (Phase 47) ──
+# Confirm every VBW agent references the two new PostToolUse hooks and none
+# references the retired ctx-search-nudge.sh. This complements the behavior
+# coverage in tests/test-ctx-annotate-nudge.sh and test-cmm-orient-nudge.sh.
+echo ""
+echo "=== Phase 47 hooks: agent frontmatter wiring ==="
+for entry in "${AGENT_HOOKS[@]}"; do
+  IFS='|' read -r agent has_nudge has_ctx <<< "$entry"
+  [ ! -f "$AGENTS_DIR/$agent.md" ] && continue
+
+  if grep -q 'ctx-annotate-nudge.sh' "$AGENTS_DIR/$agent.md"; then
+    pass "$agent: registers ctx-annotate-nudge.sh"
+  else
+    fail "$agent: missing ctx-annotate-nudge.sh"
+  fi
+
+  if grep -q 'cmm-orient-nudge.sh' "$AGENTS_DIR/$agent.md"; then
+    pass "$agent: registers cmm-orient-nudge.sh"
+  else
+    fail "$agent: missing cmm-orient-nudge.sh"
+  fi
+
+  if grep -q 'ctx-search-nudge' "$AGENTS_DIR/$agent.md"; then
+    fail "$agent: still references retired ctx-search-nudge"
+  else
+    pass "$agent: no ctx-search-nudge references"
+  fi
+done
+
+# ─── Test: ctx-annotate-nudge.sh emits additionalContext envelope ─────────
+# Sanity-check the hook referenced by every agent's frontmatter actually emits
+# a hookSpecificOutput.additionalContext JSON envelope on a qualifying ctx_*
+# call. The hook is installed globally in hooks/global/ so we invoke it there.
+echo ""
+echo "=== Phase 47: ctx-annotate-nudge emits additionalContext ==="
+CTX_ANNOTATE="$PROJECT_ROOT/hooks/global/ctx-annotate-nudge.sh"
+if [ ! -x "$CTX_ANNOTATE" ]; then
+  fail "ctx-annotate-nudge.sh missing or not executable at $CTX_ANNOTATE"
+else
+  # Clear any stale cooldown sentinel for this fake project so the first call emits.
+  rm -f "/tmp/ctx-nudge-${FAKE_PROJ_HASH}" 2>/dev/null || true
+  out=$(echo "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo hi\",\"intent\":\"test\"},\"cwd\":\"$FAKE_PROJ\"}" \
+    | env CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash -c "cd '$FAKE_PROJ' && bash '$CTX_ANNOTATE'" 2>/dev/null || true)
+  if echo "$out" | grep -q 'additionalContext'; then
+    pass "ctx-annotate-nudge: emits hookSpecificOutput.additionalContext on ctx_execute"
+  else
+    fail "ctx-annotate-nudge: no additionalContext envelope (got: $(printf '%s' "$out" | head -c 120))"
+  fi
+
+  # Second call within cooldown window should be silent.
+  out2=$(echo "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo hi\"},\"cwd\":\"$FAKE_PROJ\"}" \
+    | env CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash -c "cd '$FAKE_PROJ' && bash '$CTX_ANNOTATE'" 2>/dev/null || true)
+  if [ -z "$out2" ]; then
+    pass "ctx-annotate-nudge: cooldown suppresses second call within 120s"
+  else
+    fail "ctx-annotate-nudge: cooldown not honored (second-call output: $(printf '%s' "$out2" | head -c 120))"
+  fi
+
+  rm -f "/tmp/ctx-nudge-${FAKE_PROJ_HASH}" 2>/dev/null || true
+fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────
 echo ""

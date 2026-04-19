@@ -28,6 +28,14 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-query-stale-advisory.sh"
+    - matcher: "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/ctx-annotate-nudge.sh"
+    - matcher: "mcp__codebase-memory-mcp__search_graph"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/cmm-orient-nudge.sh"
 ---
 
 <!-- PROJECT-LEVEL OVERRIDE: This file shadows the VBW plugin agent "vbw-scout" to inject
@@ -179,3 +187,13 @@ If a filtered query returns an empty result (`[]`, no matches, blank response):
 2. Broaden the query once (remove filters, widen search scope, check for environment/account differences).
 3. Compare the result against the expected outcome from the task or plan.
 4. If the result still contradicts expectations, write the contradiction explicitly in your findings. Do not silently proceed as if validation passed.
+
+## Tool blocks
+
+If a PreToolUse hook blocks your tool call with a message containing `REPLACE WITH:` lines, the hook has already substituted arguments for you. Call the FIRST `REPLACE WITH:` tool immediately with the provided arguments. If that call errors or returns empty, try the `OR:` alternative before emitting any blocker_report. Only escalate if BOTH replacements fail.
+
+```
+[grep-cmm-gate] BLOCKED -- source-code search in indexed repo.
+REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern="MyFunc")
+OR:           mcp__codebase-memory-mcp__search_code(query="MyFunc")
+```

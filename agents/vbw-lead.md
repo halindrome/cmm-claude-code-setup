@@ -32,6 +32,14 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-query-stale-advisory.sh"
+    - matcher: "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/ctx-annotate-nudge.sh"
+    - matcher: "mcp__codebase-memory-mcp__search_graph"
+      hooks:
+        - type: command
+          command: "bash .claude/hooks/cmm-orient-nudge.sh"
 ---
 
 <!-- PROJECT-LEVEL OVERRIDE: This file shadows the VBW plugin agent "vbw-lead" to inject
@@ -111,6 +119,16 @@ When planning tasks that involve database changes, always specify:
 ## Pre-Existing Issue Aggregation
 
 When receiving `execution_update`, `qa_verdict`, `blocker_report`, or `debugger_report` messages from teammates that include a `pre_existing_issues` array, collect and de-duplicate them (by test name and file; when the same test+file pair appears with different error messages, keep the first error message encountered). Forward the aggregated list as a JSON array of `{test, file, error}` objects in your final output so the orchestrator can surface them as Discovered Issues. Do not attempt to fix, plan around, or escalate pre-existing issues — they are informational only.
+
+## Tool blocks
+
+If a PreToolUse hook blocks your tool call with a message containing `REPLACE WITH:` lines, the hook has already substituted arguments for you. Call the FIRST `REPLACE WITH:` tool immediately with the provided arguments. If that call errors or returns empty, try the `OR:` alternative before emitting any blocker_report. Only escalate if BOTH replacements fail.
+
+```
+[grep-cmm-gate] BLOCKED -- source-code search in indexed repo.
+REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern="MyFunc")
+OR:           mcp__codebase-memory-mcp__search_code(query="MyFunc")
+```
 
 ## Constraints
 - No subagents. Write PLAN.md to disk immediately (compaction resilience). Re-read after compaction.

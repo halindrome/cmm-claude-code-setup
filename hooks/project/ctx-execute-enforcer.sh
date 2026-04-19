@@ -7,6 +7,7 @@
 # Register in .claude/settings.json:
 #   "hooks": { "PreToolUse": [{ "matcher": "Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/ctx-execute-enforcer.sh"}] }] }
 # Matcher: PreToolUse:Bash
+# 47-02: git log/diff/show bare forms and echo/printf removed from exempt list.
 
 # --- Project root detection (shared library with /tmp cache) ---
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
@@ -113,56 +114,60 @@ if echo "$COMMAND" | grep -q "ctx-exempt"; then
 fi
 
 # --- Exempt Patterns (always allow, exit 0) ---
+# Each exempt group increments a bash-exempt counter via track-hook-blocks.sh
+# for audit instrumentation (47-02). Non-blocking; exit-0 outcome unchanged.
+_track_exempt() {
+  bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-exempt" "$1" 2>/dev/null || true
+}
 
 # Git write operations (state-changing, bounded output, required for workflow)
 case "$COMMAND" in
-  git\ commit*|git\ add*|git\ push*|git\ pull*|git\ fetch*)  exit 0 ;;
-  git\ checkout*|git\ switch*|git\ branch*|git\ tag*)         exit 0 ;;
-  git\ rebase*|git\ merge*|git\ cherry-pick*|git\ reset*)     exit 0 ;;
-  git\ stash*|git\ worktree*|git\ remote*)                    exit 0 ;;
-  git\ config*|git\ init*)                                    exit 0 ;;
+  git\ commit*|git\ add*|git\ push*|git\ pull*|git\ fetch*)  _track_exempt git-write; exit 0 ;;
+  git\ checkout*|git\ switch*|git\ branch*|git\ tag*)         _track_exempt git-write; exit 0 ;;
+  git\ rebase*|git\ merge*|git\ cherry-pick*|git\ reset*)     _track_exempt git-write; exit 0 ;;
+  git\ stash*|git\ worktree*|git\ remote*)                    _track_exempt git-write; exit 0 ;;
+  git\ config*|git\ init*)                                    _track_exempt git-write; exit 0 ;;
 esac
 
 # Git bounded read operations (output is short and predictable)
 case "$COMMAND" in
-  git\ status|git\ status\ *)                          exit 0 ;;
-  git\ diff\ --stat*|git\ log\ --oneline\ -*)          exit 0 ;;
-  git\ show\ --stat*|git\ rev-parse\ *|git\ rev-list\ --count*)  exit 0 ;;
+  git\ status|git\ status\ *)                                                _track_exempt git-bounded-read; exit 0 ;;
+  git\ diff\ --stat*|git\ log\ --oneline\ -*)                                _track_exempt git-bounded-read; exit 0 ;;
+  git\ log\ --name-only*|git\ log\ --stat*|git\ show\ --name-only*)          _track_exempt git-bounded-read; exit 0 ;;
+  git\ show\ --stat*|git\ rev-parse\ *|git\ rev-list\ --count*)              _track_exempt git-bounded-read; exit 0 ;;
 esac
 
 # Filesystem mutations (no stdout flood)
 case "$COMMAND" in
-  mkdir\ *|rmdir\ *|rm\ *|mv\ *|cp\ *|ln\ *|chmod\ *|chown\ *)  exit 0 ;;
-  touch\ *|install\ -m*|mktemp*)                                  exit 0 ;;
+  mkdir\ *|rmdir\ *|rm\ *|mv\ *|cp\ *|ln\ *|chmod\ *|chown\ *)  _track_exempt filesystem; exit 0 ;;
+  touch\ *|install\ -m*|mktemp*)                                 _track_exempt filesystem; exit 0 ;;
 esac
 
 # Navigation and short queries (output is bounded)
 case "$COMMAND" in
-  cd\ *|pwd|which\ *|type\ *|command\ -v\ *)          exit 0 ;;
-  echo\ *|printf\ *|date*|uname*|whoami|hostname)     exit 0 ;;
-  wc\ *|head\ *|tail\ -[0-9]*|tail\ -n\ [0-9]*)      exit 0 ;;
+  cd\ *|pwd|which\ *|type\ *|command\ -v\ *)     _track_exempt navigation; exit 0 ;;
+  date*|uname*|whoami|hostname)                  _track_exempt navigation; exit 0 ;;
+esac
+
+# Short-read utilities (bounded output)
+case "$COMMAND" in
+  wc\ *|head\ *|tail\ -[0-9]*|tail\ -n\ [0-9]*)  _track_exempt short-reads; exit 0 ;;
 esac
 
 # Remote commands (output belongs to remote context, not local CTX store)
 case "$COMMAND" in
-  ssh\ *|scp\ *|rsync\ *|sftp\ *)                              exit 0 ;;
+  ssh\ *|scp\ *|rsync\ *|sftp\ *)                _track_exempt remote; exit 0 ;;
 esac
 
 # VBW/planning scripts (must not break planning workflows)
 case "$COMMAND" in
-  */.vbw-planning/*|*/tmp/.vbw-plugin-root-link-*)   exit 0 ;;
-  bash\ */.vbw-planning/*|bash\ */tmp/.vbw-plugin-root-link-*)  exit 0 ;;
+  */.vbw-planning/*|*/tmp/.vbw-plugin-root-link-*)                            _track_exempt vbw-planning; exit 0 ;;
+  bash\ */.vbw-planning/*|bash\ */tmp/.vbw-plugin-root-link-*)                _track_exempt vbw-planning; exit 0 ;;
 esac
 
 # Package version queries (bounded output)
 case "$COMMAND" in
-  *--version|*\ -v|*\ -V)   exit 0 ;;
-esac
-
-# Git log/diff/show (variable output but integral to workflow)
-case "$COMMAND" in
-  git\ log|git\ log\ *|git\ diff|git\ diff\ *)  exit 0 ;;
-  git\ show\ *)                                  exit 0 ;;
+  *--version|*\ -v|*\ -V)   _track_exempt version; exit 0 ;;
 esac
 
 # --- Default: block everything not explicitly exempt ---
@@ -179,5 +184,6 @@ With:
   mcp__context-mode__ctx_execute(language="shell", code="$COMMAND")
 
 Context Mode captures only the relevant output portion, preventing context bloat.
+If this is a source-code search, prefer search_code / search_graph (CMM) over ctx_execute.
 BLOCKED
 exit 2
