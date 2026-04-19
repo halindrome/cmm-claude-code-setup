@@ -261,7 +261,7 @@ Both CMM and Context Mode can be activated for a single project only. The `claud
     },
     "context-mode": {
       "command": "npx",
-      "args": ["-y", "context-mode"]
+      "args": ["-y", "context-mode@latest"]
     }
   }
 }
