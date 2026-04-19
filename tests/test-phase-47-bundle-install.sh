@@ -202,6 +202,72 @@ for h in ctx-annotate-nudge.sh cmm-orient-nudge.sh; do
     fi
 done
 
+# --- .mcp.json context-mode pinned to @latest ---
+_assert "context-mode registered in .mcp.json with @latest pin" \
+    python3 -c "
+import json, sys
+with open('.mcp.json') as f:
+    data = json.load(f)
+entry = data.get('mcpServers', {}).get('context-mode', {})
+sys.exit(0 if entry.get('args') == ['-y', 'context-mode@latest'] else 1)
+"
+
+# --- Pre-pin entry auto-upgrades on re-run ---
+# Overwrite the context-mode args with the OLD default, re-run setup, and verify
+# setup.sh rewrites it to the @latest pin (the auto-upgrade branch).
+python3 - <<'PY'
+import json
+with open('.mcp.json') as f:
+    data = json.load(f)
+data['mcpServers']['context-mode']['args'] = ['-y', 'context-mode']
+with open('.mcp.json', 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+
+echo "n" | bash "$REPO_ROOT/setup.sh" --project --yes --skip-mcp-check >/dev/null 2>&1 || {
+    echo "FAIL: setup.sh --project auto-upgrade run exited non-zero"
+    FAIL=$((FAIL+1))
+}
+
+_assert "context-mode pre-pin entry auto-upgraded to @latest" \
+    python3 -c "
+import json, sys
+with open('.mcp.json') as f:
+    data = json.load(f)
+entry = data.get('mcpServers', {}).get('context-mode', {})
+sys.exit(0 if entry.get('args') == ['-y', 'context-mode@latest'] else 1)
+"
+
+# --- User-customized entry is preserved untouched ---
+python3 - <<'PY'
+import json
+with open('.mcp.json') as f:
+    data = json.load(f)
+data['mcpServers']['context-mode'] = {
+    "command": "npx",
+    "args": ["-y", "context-mode@1.0.50"],
+    "type": "stdio"
+}
+with open('.mcp.json', 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+
+echo "n" | bash "$REPO_ROOT/setup.sh" --project --yes --skip-mcp-check >/dev/null 2>&1 || {
+    echo "FAIL: setup.sh --project customized-entry run exited non-zero"
+    FAIL=$((FAIL+1))
+}
+
+_assert "context-mode user-customized entry left untouched" \
+    python3 -c "
+import json, sys
+with open('.mcp.json') as f:
+    data = json.load(f)
+entry = data.get('mcpServers', {}).get('context-mode', {})
+sys.exit(0 if entry.get('args') == ['-y', 'context-mode@1.0.50'] else 1)
+"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then
