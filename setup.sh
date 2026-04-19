@@ -996,19 +996,35 @@ else:
     print("  [skip] codebase-memory-mcp already in .mcp.json")
 
 # Register context-mode if requested.
-# Idempotency guard: the `not in data["mcpServers"]` check is what makes the default-on
-# behavior safe on re-runs — pre-existing context-mode entries (with any user-customized
-# command/args) are preserved untouched. Do not remove this guard.
+# We pin `context-mode@latest` so `npx` re-resolves against the npm registry on
+# every launch. Without `@latest`, npx resolves to whatever global install the
+# user has cached and silently stops picking up new releases.
+#
+# Idempotency + user-customization rule:
+# - New entry → write the `@latest` pin.
+# - Existing entry whose args match the OLD default exactly (`["-y", "context-mode"]`)
+#   → auto-upgrade to `@latest`. This case is known to be an unmodified pre-pin
+#   install, so rewriting it is safe.
+# - Existing entry with any other command/args → preserve untouched (user-customized).
 if install_ctx:
+    pinned_args = ["-y", "context-mode@latest"]
+    old_default_args = ["-y", "context-mode"]
     if "context-mode" not in data["mcpServers"]:
         data["mcpServers"]["context-mode"] = {
             "command": "npx",
-            "args": ["-y", "context-mode"],
+            "args": pinned_args,
             "type": "stdio"
         }
-        print("  [ok] Registered context-mode in .mcp.json")
+        print("  [ok] Registered context-mode in .mcp.json (pinned @latest)")
     else:
-        print("  [skip] context-mode already in .mcp.json")
+        existing = data["mcpServers"]["context-mode"]
+        if existing.get("command") == "npx" and existing.get("args") == old_default_args:
+            existing["args"] = pinned_args
+            print("  [ok] Upgraded context-mode in .mcp.json to @latest pin")
+        elif existing.get("command") == "npx" and existing.get("args") == pinned_args:
+            print("  [skip] context-mode already in .mcp.json (already pinned @latest)")
+        else:
+            print("  [skip] context-mode already in .mcp.json (user-customized; left untouched)")
 
 tmp = mcp_path + ".tmp"
 with open(tmp, "w") as f:

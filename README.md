@@ -227,14 +227,15 @@ All three Context Mode hooks are included in this repo and **gracefully no-op** 
 ### Install
 
 ```bash
-# 1. Install Context Mode
-npm install -g context-mode
+# 1. Install Context Mode (pin @latest so `npx` re-resolves instead of reusing a stale global)
+npm install -g context-mode@latest
 
-# 2. Register with Claude Code
+# 2. Register with Claude Code — always pin `@latest` so npx fetches the newest
+#    version each launch rather than reusing whatever version is cached globally.
 #    Project-scoped (recommended — only activates in this project):
-claude mcp add --scope project context-mode -- npx -y context-mode
+claude mcp add --scope project context-mode -- npx -y context-mode@latest
 #    Or globally (activates in all projects):
-claude mcp add context-mode -- npx -y context-mode
+claude mcp add context-mode -- npx -y context-mode@latest
 
 # 3. Hooks are already installed by setup.sh — no extra copy step needed
 #    If you installed manually, they're in hooks/project/context-mode-*.sh
@@ -260,7 +261,7 @@ Both CMM and Context Mode can be activated for a single project only. The `claud
     },
     "context-mode": {
       "command": "npx",
-      "args": ["-y", "context-mode"]
+      "args": ["-y", "context-mode@latest"]
     }
   }
 }

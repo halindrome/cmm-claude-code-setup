@@ -9,7 +9,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "context-mode"
+        "context-mode@latest"
       ],
       "type": "stdio"
     }
