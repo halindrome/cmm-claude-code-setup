@@ -1046,6 +1046,33 @@ MCPEOF
 }
 
 # ---------------------------------------------------------------------------
+# _prompt_with_default
+# ---------------------------------------------------------------------------
+# Prompt for a boolean with a current value as the default.
+#   $1 — prompt text (without the [Y/n]/[y/N] hint)
+#   $2 — current value: "true" or "false"
+# Prints the prompt to stderr (to avoid polluting stdout), reads one line
+# from stdin, and echoes "true" or "false" on stdout.
+# Mapping: y|Y -> true, n|N -> false, empty (Enter) -> current, other -> current.
+_prompt_with_default() {
+  local prompt_text="$1"
+  local current="$2"
+  local hint reply
+  if [ "$current" = "true" ]; then
+    hint="Y/n"
+  else
+    hint="y/N"
+  fi
+  printf "%s [%s] " "$prompt_text" "$hint" >&2
+  read -r reply
+  case "$reply" in
+    y|Y) echo true ;;
+    n|N) echo false ;;
+    *)   echo "$current" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # install_statusline
 # ---------------------------------------------------------------------------
 
