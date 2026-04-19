@@ -30,7 +30,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [ ] Phase 25: CMM Index and UI Offer in Setup
 - [ ] Phase 26: Uninstall Option
 - [x] Phase 27: CMM Touch Project Post-Commit Hook
-- [ ] Phase 28: Agent Hook Reliability Audit
+- [x] Phase 28: Agent Hook Reliability Audit
 - [x] Phase 29: Setup Drift Detection
 - [ ] Phase 30: Per-Project CMM Call Count Cache
 - [ ] Phase 31: Context Mode CMM Output Indexing
@@ -40,6 +40,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [ ] Phase 35: Expand Agent CMM Gate to Explore and Plan
 - [ ] Phase 36: Hook Block Counter and Statusline Integration
 - [x] Phase 46: Source-Code Search CMM Gate
+- [ ] Phase 48: Setup Statusline Reprompt with Defaults
 
 ### Phase 46: Source-Code Search CMM Gate
 **Goal:** Close two overlapping enforcement gaps where agents search source code via the wrong tool. (A) The `Grep` tool has no PreToolUse block — agents freely run `Grep(pattern="password|PASSWORD|db_pass", type="sh")` instead of `search_code` / `search_graph` (observed 2026-04-08 in gitops). (B) `ctx-execute-enforcer.sh` pushes `Bash` to `ctx_execute` correctly, but has no "but not for code search" carve-out — so `ctx_execute(code="grep -rn 'x' src/")` gets laundered into the blessed path and CMM is never consulted (observed 2026-04-17 in codespace session `16e19082`, post-v1.6.0 reload). Both failures share one shape: a source-code search issued against the wrong tool in an indexed CMM project. Fix with three artifacts modeled on phase-44/45 templates: (1) new `hooks/project/grep-cmm-gate.sh` — PreToolUse on `Grep`, hard-block when `type`/`glob` matches a CMM-indexed language or `path` is inside an indexed repo without a non-code narrow; advisory names `search_code(query=…)` / `search_graph(name_pattern=…)` as the preferred call; (2) new `hooks/project/ctx-execute-cmm-nudge.sh` — PreToolUse on `mcp__context-mode__ctx_execute`, inspects `tool_input.code`; blocks when the command starts with or pipes through `grep|rg|ack|ag|ugrep|find -name` against source; fails open on ambiguous multi-statement scripts or `# cmm-exempt` marker; (3) one-line message update to `ctx-execute-enforcer.sh` suggesting `search_code`/`search_graph` when the Bash command looked like a grep. All three fail-silent when CMM is absent (`.mcp.json` probe). Absorbs the STATE.md todo "MISSING GREP HOOK" (added 2026-04-08). See `46-RESEARCH.md` for full evidence and the non-code extension exemption list.
@@ -290,7 +291,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 | 25 - CMM Index and UI Offer in Setup | 0/? | pending | — |
 | 26 - Uninstall Option | 0/? | pending | — |
 | 27 - CMM Touch Project Post-Commit Hook | 4/4 | complete | 2026-03-23 |
-| 28 - Agent Hook Reliability Audit | 0/? | pending | — |
+| 28 - Agent Hook Reliability Audit | 4/4 | complete | 2026-04-16 |
 
 ### Phase 23: Enforce CMM Hooks Inside Subagents
 **Goal:** Hooks registered in `settings.json` (session gate, stale advisory, CMM call tracker) do not fire inside VBW subagents (Dev, Scout, Lead, QA). These agents make CMM queries and file edits without the enforcement layer active — they can query a stale index silently, bypass the session gate, and skip call tracking. This is a correctness gap: the tooling is designed to guarantee all CMM usage is accurate and tracked, but that guarantee breaks down exactly when subagents are doing the most work. Fix this by using the mechanisms from Claude Code's subagent hooks API: inject the session gate check via `SubagentStart` context injection, and add the stale advisory and CMM call tracking hooks to VBW agent frontmatter files so they fire inside each agent's execution context.
@@ -520,3 +521,16 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - Block counts work inside subagents (frontmatter hooks in `.claude/agents/` fire the same blocking code)
 - Block counter resets per session (or accumulates — design choice based on what's most useful)
 - Tests verify: block count increments on blocked Read, block count increments on blocked Bash, statusline displays block data
+
+### Phase 48: Setup Statusline Reprompt with Defaults
+**Goal:** When `setup.sh --project` runs and the statusline enhancement is already installed, re-prompt the user for the six component options (`cmm_total`, `cmm_details`, `blocks_total`, `block_details`, `ctx_total`, `ctx_details`) instead of silently skipping them, and show each prompt with the currently-selected value as the default so accepting Enter keeps the existing choice. Today, `install_statusline` in `setup.sh` has two gates: phase 1 detects an existing `statusLine` key in `.claude/settings.json` and asks "Overwrite? [y/N]"; phase 2 then checks for `~/.cache/codebase-memory-mcp/_statusline-config-<hash>.json` and, if present (and `RECONFIGURE_STATUSLINE=false`), silently skips all six component prompts — printing only `[info] Statusline config found`. That second skip is the bug: users have no way to adjust their component selections without remembering the `--reconfigure-statusline` flag. The fix is scoped to `install_statusline`: change phase 2's skip condition so it reads the existing six values, and always re-enters the prompt block when interactive and not `--yes`. Each `read -r` prompt uses the current value to compute a `[Y/n]` vs `[y/N]` hint; an empty Enter response maps to "keep current" (not hard-coded `true`); `--yes` and `--force` continue to non-interactively skip. Preserve `--reconfigure-statusline` for the edge case where settings were wiped but the config file survives. See `48-RESEARCH.md` for line-numbered walkthrough of the current flow and the prompt-helper shape the implementation should adopt.
+**Deps:** Phase 13 (Statusline Token Savings), Phase 36 (Hook Block Counter and Statusline Integration)
+**Reqs:** none (usability fix)
+**Success:**
+- `install_statusline` in setup.sh: when the statusline-config cache file exists, interactive session, `--yes` not set, and user is not running `--force`, re-enter the six component prompts instead of skipping.
+- Each re-prompt shows `[Y/n]` or `[y/N]` based on the currently-stored value from `~/.cache/codebase-memory-mcp/_statusline-config-<hash>.json`. Empty Enter preserves the current value.
+- `--yes` and `--force` continue to non-interactively install without re-prompting (automation path unchanged).
+- `--reconfigure-statusline` still works for the settings-wiped-config-survived edge case.
+- A new regression test (added to `tests/test-phase-47-bundle-install.sh` or a new `tests/test-phase-48-statusline-reprompt.sh`) scripts a second `setup.sh --project` run against a scratch project where the statusline is already installed, feeds scripted `y`/`n`/Enter responses, and asserts the resulting config JSON reflects the scripted choices (with Enter preserving the previous value).
+- Existing statusline tests continue to pass with no changes (they all use `--force` or `--yes`).
+- No behavior change for fresh installs (phase 2 first-time prompts are unchanged).
