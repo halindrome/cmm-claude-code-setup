@@ -1144,11 +1144,37 @@ except Exception:
     fi
 
     # --- Statusline component config ---
-    # Determine config file path based on mode
+    # Determine config file path based on mode.
+    # IMPORTANT: this resolution MUST match the generated statusline-cmm.sh reader
+    # (below, PROJECT_ROOT section) exactly, otherwise the writer and reader hash
+    # different strings and the re-prompt values silently never take effect.
+    # The reader: (1) starts from git rev-parse --show-toplevel (or pwd), (2)
+    # walks superproject, (3) escapes worktrees via _GIT_COMMON/.. — so we do
+    # the same here.
     local sl_config_path
     if [ "$mode" = "project" ]; then
       local _project_root
-      _project_root="$(pwd -P)"
+      _project_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)"
+      if [ -n "$_project_root" ]; then
+        local _walk="$_project_root"
+        while true; do
+          local _parent
+          _parent="$(git -C "$_walk" rev-parse --show-superproject-working-tree 2>/dev/null)"
+          [ -z "$_parent" ] && break
+          _walk="$_parent"
+        done
+        _project_root="$_walk"
+        local _git_dir _git_common
+        _git_dir="$(git -C "$_project_root" rev-parse --git-dir 2>/dev/null)"
+        _git_common="$(git -C "$_project_root" rev-parse --git-common-dir 2>/dev/null)"
+        [ "${_git_dir:0:1}" != "/" ]    && _git_dir="$_project_root/$_git_dir"
+        [ "${_git_common:0:1}" != "/" ] && _git_common="$_project_root/$_git_common"
+        if [ "$_git_dir" != "$_git_common" ]; then
+          local _main_root
+          _main_root="$(cd "$_git_common/.." 2>/dev/null && pwd -P)"
+          [ -n "$_main_root" ] && _project_root="$_main_root"
+        fi
+      fi
       local _project_hash
       _project_hash=$(echo "$_project_root" | md5 -q 2>/dev/null || echo "$_project_root" | md5sum | awk '{print $1}')
       sl_config_path="$HOME/.cache/codebase-memory-mcp/_statusline-config-${_project_hash}.json"

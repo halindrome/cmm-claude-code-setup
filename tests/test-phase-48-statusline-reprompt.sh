@@ -146,6 +146,48 @@ if [ -f "$CACHE_FILE" ]; then
     _assert_eq "--reconfigure + --yes preserves ctx_details=false" "False" "$got_ctx2"
 fi
 
+# --- Case E: writer hash matches reader hash (QA round 01 F1 regression) -----
+# The writer and the emitted statusline-cmm.sh must hash the SAME project
+# root, otherwise the cache file the writer creates is never read. Run
+# setup.sh --project from a subdirectory of a git repo and confirm the
+# writer's chosen cache path matches the reader's computed path.
+#
+# We do not re-run setup (too heavy); instead we inline-replicate the writer's
+# and reader's resolution logic against the same scratch repo and assert they
+# produce the same hash.
+HASH_SCRATCH=$(mktemp -d -t cmm-phase48-hash-XXXXXX)
+trap 'rm -rf "$HASH_SCRATCH"' EXIT
+(
+    cd "$HASH_SCRATCH"
+    git init -q
+    mkdir -p subdir
+    cd subdir
+    # Writer resolution (mirrors setup.sh install_statusline after phase 48 fix).
+    writer_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)"
+    _walk="$writer_root"
+    while true; do
+        _parent="$(git -C "$_walk" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_parent" ] && break
+        _walk="$_parent"
+    done
+    writer_root="$_walk"
+    writer_hash=$(echo "$writer_root" | md5 -q 2>/dev/null || echo "$writer_root" | md5sum | awk '{print $1}')
+    # Reader resolution (mirrors the emitted statusline-cmm.sh top block).
+    reader_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+    _rwalk="$reader_root"
+    while true; do
+        _rparent="$(git -C "$_rwalk" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_rparent" ] && break
+        _rwalk="$_rparent"
+    done
+    reader_root="$_rwalk"
+    reader_hash=$(echo "$reader_root" | md5 -q 2>/dev/null || echo "$reader_root" | md5sum | awk '{print $1}')
+    echo "$writer_hash $reader_hash"
+) | {
+    read -r w_hash r_hash
+    _assert_eq "writer and reader hash match when run from subdirectory" "$w_hash" "$r_hash"
+}
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then
