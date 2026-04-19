@@ -141,10 +141,18 @@ You do NOT need to call `ctx_stats` manually — the gate is already open.
 Check `.vbw-planning/STATE.md` to find the active phase and current plan, then read the
 corresponding `.vbw-planning/phases/<phase>/<plan>.md` file for your task list.
 
-## CMM Tool Workflow
+## CMM Tool Decision Table
 
 Prefer CMM tools over Read/Grep for code navigation:
-  `search_graph` → `trace_call_path` → `get_code_snippet`
+
+  Unfamiliar area / package map                             -> get_architecture
+  Find by name (function, class, module)                    -> search_graph
+  Source of a specific symbol                               -> get_code_snippet
+  Who calls X / what does X call                            -> trace_call_path
+  Cross-service or graph-wide queries (Cypher)              -> query_graph
+  Text search in code (string literals, error msgs, TODOs)  -> search_code
+
+Orient first: `get_architecture` -> `search_graph` -> `get_code_snippet`.
 PROMPT
 else
   # --- Minimal prompt for human sessions ---
