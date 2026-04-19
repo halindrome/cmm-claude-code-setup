@@ -148,22 +148,24 @@ fi
 
 # --- Case E: writer hash matches reader hash (QA round 01 F1 regression) -----
 # The writer and the emitted statusline-cmm.sh must hash the SAME project
-# root, otherwise the cache file the writer creates is never read. Run
-# setup.sh --project from a subdirectory of a git repo and confirm the
-# writer's chosen cache path matches the reader's computed path.
+# root, otherwise the cache file the writer creates is never read. Run from
+# a subdirectory of a git repo so the pre-fix bug (writer=md5(pwd -P) vs
+# reader=md5(git-toplevel)) would produce different hashes.
 #
-# We do not re-run setup (too heavy); instead we inline-replicate the writer's
-# and reader's resolution logic against the same scratch repo and assert they
-# produce the same hash.
+# We do not re-run setup (too heavy); instead we inline-replicate both
+# resolution blocks against the same scratch repo and assert:
+#   (a) post-fix writer_hash == reader_hash (the fix works)
+#   (b) the pre-fix writer (md5 of pwd -P in subdir) != reader_hash (the
+#       bug was real and the fix is load-bearing, not a no-op)
 HASH_SCRATCH=$(mktemp -d -t cmm-phase48-hash-XXXXXX)
 trap 'rm -rf "$HASH_SCRATCH"' EXIT
-(
+_hash_out=$(
     cd "$HASH_SCRATCH"
     git init -q
     mkdir -p subdir
     cd subdir
-    # Writer resolution (mirrors setup.sh install_statusline after phase 48 fix).
-    writer_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)"
+    # Post-fix writer resolution (mirrors setup.sh install_statusline).
+    writer_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
     _walk="$writer_root"
     while true; do
         _parent="$(git -C "$_walk" rev-parse --show-superproject-working-tree 2>/dev/null)"
@@ -182,11 +184,22 @@ trap 'rm -rf "$HASH_SCRATCH"' EXIT
     done
     reader_root="$_rwalk"
     reader_hash=$(echo "$reader_root" | md5 -q 2>/dev/null || echo "$reader_root" | md5sum | awk '{print $1}')
-    echo "$writer_hash $reader_hash"
-) | {
-    read -r w_hash r_hash
-    _assert_eq "writer and reader hash match when run from subdirectory" "$w_hash" "$r_hash"
-}
+    # Pre-fix writer resolution — hashes the subdir itself via pwd -P, so
+    # on any repo-subdir invocation this hash is DIFFERENT from reader_hash.
+    prefix_writer_root="$(pwd -P)"
+    prefix_hash=$(echo "$prefix_writer_root" | md5 -q 2>/dev/null || echo "$prefix_writer_root" | md5sum | awk '{print $1}')
+    echo "$writer_hash $reader_hash $prefix_hash"
+)
+read -r w_hash r_hash prefix_hash <<<"$_hash_out"
+_assert_eq "post-fix writer and reader hash match (F1 resolved)" "$w_hash" "$r_hash"
+# The pre-fix hash must NOT equal the reader hash, otherwise Case E proves nothing.
+if [ "$prefix_hash" != "$r_hash" ]; then
+    echo "PASS: pre-fix writer (md5 of pwd -P in subdir) != reader hash — F1 was load-bearing"
+    PASS=$((PASS+1))
+else
+    echo "FAIL: pre-fix writer hash matched reader hash — Case E scratch setup didn't reproduce the bug"
+    FAIL=$((FAIL+1))
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

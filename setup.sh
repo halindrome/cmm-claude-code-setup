@@ -1154,7 +1154,9 @@ except Exception:
     local sl_config_path
     if [ "$mode" = "project" ]; then
       local _project_root
-      _project_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)"
+      # IMPORTANT: fallback uses bare `pwd` (not `pwd -P`) to match the
+      # emitted statusline-cmm.sh reader on symlinked non-git paths.
+      _project_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
       if [ -n "$_project_root" ]; then
         local _walk="$_project_root"
         while true; do
