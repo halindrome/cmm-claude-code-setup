@@ -1046,6 +1046,33 @@ MCPEOF
 }
 
 # ---------------------------------------------------------------------------
+# _prompt_with_default
+# ---------------------------------------------------------------------------
+# Prompt for a boolean with a current value as the default.
+#   $1 — prompt text (without the [Y/n]/[y/N] hint)
+#   $2 — current value: "true" or "false"
+# Prints the prompt to stderr (to avoid polluting stdout), reads one line
+# from stdin, and echoes "true" or "false" on stdout.
+# Mapping: y|Y -> true, n|N -> false, empty (Enter) -> current, other -> current.
+_prompt_with_default() {
+  local prompt_text="$1"
+  local current="$2"
+  local hint reply
+  if [ "$current" = "true" ]; then
+    hint="Y/n"
+  else
+    hint="y/N"
+  fi
+  printf "%s [%s] " "$prompt_text" "$hint" >&2
+  read -r reply
+  case "$reply" in
+    y|Y) echo true ;;
+    n|N) echo false ;;
+    *)   echo "$current" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # install_statusline
 # ---------------------------------------------------------------------------
 
@@ -1117,11 +1144,39 @@ except Exception:
     fi
 
     # --- Statusline component config ---
-    # Determine config file path based on mode
+    # Determine config file path based on mode.
+    # IMPORTANT: this resolution MUST match the generated statusline-cmm.sh reader
+    # (below, PROJECT_ROOT section) exactly, otherwise the writer and reader hash
+    # different strings and the re-prompt values silently never take effect.
+    # The reader: (1) starts from git rev-parse --show-toplevel (or pwd), (2)
+    # walks superproject, (3) escapes worktrees via _GIT_COMMON/.. — so we do
+    # the same here.
     local sl_config_path
     if [ "$mode" = "project" ]; then
       local _project_root
-      _project_root="$(pwd -P)"
+      # IMPORTANT: fallback uses bare `pwd` (not `pwd -P`) to match the
+      # emitted statusline-cmm.sh reader on symlinked non-git paths.
+      _project_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+      if [ -n "$_project_root" ]; then
+        local _walk="$_project_root"
+        while true; do
+          local _parent
+          _parent="$(git -C "$_walk" rev-parse --show-superproject-working-tree 2>/dev/null)"
+          [ -z "$_parent" ] && break
+          _walk="$_parent"
+        done
+        _project_root="$_walk"
+        local _git_dir _git_common
+        _git_dir="$(git -C "$_project_root" rev-parse --git-dir 2>/dev/null)"
+        _git_common="$(git -C "$_project_root" rev-parse --git-common-dir 2>/dev/null)"
+        [ "${_git_dir:0:1}" != "/" ]    && _git_dir="$_project_root/$_git_dir"
+        [ "${_git_common:0:1}" != "/" ] && _git_common="$_project_root/$_git_common"
+        if [ "$_git_dir" != "$_git_common" ]; then
+          local _main_root
+          _main_root="$(cd "$_git_common/.." 2>/dev/null && pwd -P)"
+          [ -n "$_main_root" ] && _project_root="$_main_root"
+        fi
+      fi
       local _project_hash
       _project_hash=$(echo "$_project_root" | md5 -q 2>/dev/null || echo "$_project_root" | md5sum | awk '{print $1}')
       sl_config_path="$HOME/.cache/codebase-memory-mcp/_statusline-config-${_project_hash}.json"
@@ -1129,55 +1184,70 @@ except Exception:
       sl_config_path="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
     fi
 
-    # Write config: skip prompts if config exists (unless --reconfigure-statusline)
-    if [ -f "$sl_config_path" ] && [ "$RECONFIGURE_STATUSLINE" = false ]; then
-      echo "  [info] Statusline config found: ${sl_config_path}"
-    else
-      mkdir -p "$(dirname "$sl_config_path")"
+    # Write config. Three branches:
+    #   1. Non-interactive (--yes, --force, or no TTY): preserve existing config
+    #      if present, otherwise write all-true defaults. No prompts.
+    #   2. Fresh install (no config file), interactive: prompt with [Y/n]
+    #      defaults (all true).
+    #   3. Already-installed, interactive (or --reconfigure-statusline): re-prompt
+    #      with the current values as the defaults for each of the six keys.
+    mkdir -p "$(dirname "$sl_config_path")"
 
-      if [ "$YES_FLAG" = true ] || [ ! -t 0 ]; then
-        # Non-interactive: write defaults (all true)
-        cat > "$sl_config_path" <<'SLCFG'
-{
-  "cmm_total": true,
-  "cmm_details": true,
-  "blocks_total": true,
-  "block_details": true,
-  "ctx_total": true,
-  "ctx_details": true
-}
-SLCFG
-        echo "  [ok] Statusline config written (defaults): ${sl_config_path}"
+    # Read existing values (if any) so we can offer them as defaults.
+    local return_from_phase2=false
+    local cur_cmm_total=true cur_cmm_details=true cur_blocks_total=true
+    local cur_block_details=true cur_ctx_total=true cur_ctx_details=true
+    if [ -f "$sl_config_path" ]; then
+      local _sl_read
+      _sl_read=$(python3 -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+    keys = ['cmm_total','cmm_details','blocks_total','block_details','ctx_total','ctx_details']
+    print(' '.join('true' if d.get(k, True) else 'false' for k in keys))
+except Exception:
+    print('true true true true true true')
+" "$sl_config_path" 2>/dev/null || echo "true true true true true true")
+      read -r cur_cmm_total cur_cmm_details cur_blocks_total cur_block_details cur_ctx_total cur_ctx_details <<<"$_sl_read"
+    fi
+
+    local sl_cmm_total sl_cmm_details sl_blocks_total sl_block_details sl_ctx_total sl_ctx_details
+
+    if [ "$YES_FLAG" = true ] || [ "$FORCE" = true ] || [ ! -t 0 ]; then
+      # Branch 1: non-interactive. Preserve existing config file if present; else write defaults.
+      if [ -f "$sl_config_path" ] && [ "$RECONFIGURE_STATUSLINE" = false ]; then
+        echo "  [info] Statusline config preserved: ${sl_config_path}"
+        return_from_phase2=true
       else
-        echo ""
+        sl_cmm_total=$cur_cmm_total
+        sl_cmm_details=$cur_cmm_details
+        sl_blocks_total=$cur_blocks_total
+        sl_block_details=$cur_block_details
+        sl_ctx_total=$cur_ctx_total
+        sl_ctx_details=$cur_ctx_details
+        return_from_phase2=false
+      fi
+    else
+      # Branch 2 or 3: interactive. Re-prompt in both cases; defaults differ by source.
+      echo ""
+      if [ -f "$sl_config_path" ] || [ "$RECONFIGURE_STATUSLINE" = true ]; then
+        echo "  Statusline component selection (press Enter to keep current value):"
+      else
         echo "  Statusline component selection (press Enter for default):"
-        local sl_cmm_total sl_cmm_details sl_blocks_total sl_block_details sl_ctx_total sl_ctx_details
+      fi
+      sl_cmm_total=$(_prompt_with_default "    Show CMM total (CMM:N)?" "$cur_cmm_total")
+      sl_cmm_details=$(_prompt_with_default "    Show CMM details (sg:X cs:Y tr:Z)?" "$cur_cmm_details")
+      sl_blocks_total=$(_prompt_with_default "    Show Blocks total (Blk:N)?" "$cur_blocks_total")
+      sl_block_details=$(_prompt_with_default "    Show Block details (R:X/B:Y)?" "$cur_block_details")
+      sl_ctx_total=$(_prompt_with_default "    Show Context Mode total (CTX:N)?" "$cur_ctx_total")
+      sl_ctx_details=$(_prompt_with_default "    Show Context Mode details (ex:X bex:Y sr:Z)?" "$cur_ctx_details")
+      return_from_phase2=false
+    fi
 
-        printf "    Show CMM total (CMM:N)? [Y/n] "
-        read -r sl_cmm_total
-        case "$sl_cmm_total" in n|N) sl_cmm_total=false ;; *) sl_cmm_total=true ;; esac
-
-        printf "    Show CMM details (sg:X cs:Y tr:Z)? [Y/n] "
-        read -r sl_cmm_details
-        case "$sl_cmm_details" in n|N) sl_cmm_details=false ;; *) sl_cmm_details=true ;; esac
-
-        printf "    Show Blocks total (Blk:N)? [Y/n] "
-        read -r sl_blocks_total
-        case "$sl_blocks_total" in n|N) sl_blocks_total=false ;; *) sl_blocks_total=true ;; esac
-
-        printf "    Show Block details (R:X/B:Y)? [Y/n] "
-        read -r sl_block_details
-        case "$sl_block_details" in n|N) sl_block_details=false ;; *) sl_block_details=true ;; esac
-
-        printf "    Show Context Mode total (CTX:N)? [Y/n] "
-        read -r sl_ctx_total
-        case "$sl_ctx_total" in n|N) sl_ctx_total=false ;; *) sl_ctx_total=true ;; esac
-
-        printf "    Show Context Mode details (ex:X bex:Y sr:Z)? [Y/n] "
-        read -r sl_ctx_details
-        case "$sl_ctx_details" in n|N) sl_ctx_details=false ;; *) sl_ctx_details=true ;; esac
-
-        cat > "$sl_config_path" <<SLCFG
+    if [ "$return_from_phase2" != true ]; then
+      # Atomic write: tmp + mv.
+      cat > "${sl_config_path}.tmp" <<SLCFG
 {
   "cmm_total": ${sl_cmm_total},
   "cmm_details": ${sl_cmm_details},
@@ -1187,8 +1257,8 @@ SLCFG
   "ctx_details": ${sl_ctx_details}
 }
 SLCFG
-        echo "  [ok] Statusline config written: ${sl_config_path}"
-      fi
+      mv "${sl_config_path}.tmp" "$sl_config_path"
+      echo "  [ok] Statusline config written: ${sl_config_path}"
     fi
 
     # Create hooks dir if needed
