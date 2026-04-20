@@ -79,6 +79,13 @@ fi
 # If PROJECT_ROOT still resolves into a path containing /.git/ (e.g. a worktree
 # whose .git file points into .git/modules/<submodule>/worktrees/<name>/ from a
 # deinit'd submodule), walk up to the owning project root and re-run toplevel.
+#
+# NOTE: the */.git/* match is an intentional over-match — it also fires for
+# legitimate paths that contain `.git` as a directory component (e.g.
+# /home/x/mirrors/.git/project-foo). The inner guards keep that harmless:
+# empty _MODULES_OWNER short-circuits; any _CANDIDATE that is empty or still
+# contains /.git/ is rejected and PROJECT_ROOT is left unchanged. Worst case
+# on such a path is one extra cd + git rev-parse subprocess.
 if [ -n "$PROJECT_ROOT" ]; then
     case "$PROJECT_ROOT" in
       */.git/*)
