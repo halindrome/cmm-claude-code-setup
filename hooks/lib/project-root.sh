@@ -75,6 +75,25 @@ if [ -n "$PROJECT_ROOT" ]; then
     fi
 fi
 
+# --- Legacy orphaned .git/modules/<name>/ tree recovery ---
+# If PROJECT_ROOT still resolves into a path containing /.git/ (e.g. a worktree
+# whose .git file points into .git/modules/<submodule>/worktrees/<name>/ from a
+# deinit'd submodule), walk up to the owning project root and re-run toplevel.
+if [ -n "$PROJECT_ROOT" ]; then
+    case "$PROJECT_ROOT" in
+      */.git/*)
+        _MODULES_OWNER="${PROJECT_ROOT%%/.git/*}"
+        if [ -n "$_MODULES_OWNER" ] && [ -d "$_MODULES_OWNER" ]; then
+            _CANDIDATE="$(cd "$_MODULES_OWNER" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)"
+            case "$_CANDIDATE" in
+              */.git/*|"") : ;;  # still inside .git or empty — do not replace
+              *) PROJECT_ROOT="$_CANDIDATE" ;;
+            esac
+        fi
+        ;;
+    esac
+fi
+
 # --- Compute PROJECT_HASH ---
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 
