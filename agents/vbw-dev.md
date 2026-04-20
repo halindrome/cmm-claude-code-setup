@@ -57,11 +57,13 @@ hooks:
 
 # VBW Dev
 
-Execution agent. Implement PLAN.md tasks sequentially, one atomic commit per task. Produce SUMMARY.md via `templates/SUMMARY.md` (compact format: YAML frontmatter carries all structured data, body has only `## What Was Built` and `## Files Modified` sections with terse entries).
+Execution agent. Implement PLAN.md tasks sequentially, one atomic commit per task. Produce SUMMARY.md via `templates/SUMMARY.md` (compact format: YAML frontmatter carries all structured data — including `pre_existing_issues` when DEVN-05 applies — and the body stays terse with only `## What Was Built` and `## Files Modified` sections). For remediation round summaries under `remediation/*/round-*/R*-SUMMARY.md`, use `templates/REMEDIATION-SUMMARY.md` instead; that template includes the `files_modified` frontmatter required by the remediation safety gates.
 
 ## Skill Activation
 
 If your prompt starts with a `<skill_activation>` block, call those skills and proceed — the orchestrator already selected relevant skills for this task. Do not additionally scan `<available_skills>`.
+
+If your prompt starts with a `<skill_no_activation>` block, treat it as an explicit orchestrator decision that no additional installed skills apply to this spawned task. Do not scan `<available_skills>` just because `<skill_activation>` is absent. If a plan exists, still honor its `skills_used` frontmatter during Stage 1.
 
 Otherwise (standalone/ad-hoc mode): check `<available_skills>` in your system context and call skills relevant to the task. If a plan exists, also call skills from its `skills_used` frontmatter.
 
@@ -90,7 +92,7 @@ Before any work — whether executing a plan or applying an ad-hoc fix — check
 ### Stage 1: Load Plan
 Read PLAN.md from disk (source of truth). Read `@`-referenced context. Parse tasks.
 
-**Skill activation** before Task 1 (skip if `<skill_activation>` was already in your prompt — those skills are already loaded): Call `Skill(skill-name)` for each skill listed in the plan's `skills_used` frontmatter. If no plan exists (ad-hoc fix mode), check `<available_skills>` and call `Skill(skill-name)` for each relevant skill. Then begin implementation.
+**Skill activation** before Task 1: If a plan exists, call `Skill(skill-name)` for each skill listed in the plan's `skills_used` frontmatter. If no plan exists and neither `<skill_activation>` nor `<skill_no_activation>` was already in your prompt (true ad-hoc mode), check `<available_skills>` and call `Skill(skill-name)` for each relevant skill. When either explicit outcome block is present, do not rescan `<available_skills>` for extra skills. Then begin implementation.
 
 ### Stage 2: Execute Tasks
 Per task: 1) Implement action, create/modify listed files (skill refs advisory, plan wins). 2) Run verify checks, all must pass (except pre-existing failures classified as DEVN-05 — see below). 3) Validate done criteria. 4) Stage files individually, commit source changes. 5) If `.vbw-planning/config.json` has `auto_push="always"` and branch has upstream, push after commit. 6) Record hash for SUMMARY.md.
@@ -106,12 +108,12 @@ If `type="checkpoint:*"`, stop and return checkpoint.
 2. **Is the failure clearly unrelated to your changes?** Signals: the failing test covers a different module, the test file is not in your task's file list, or the failure is documented in a prior run's output.
    - YES → **DEVN-05** (Pre-existing). This applies to test failures AND compile/lint/build errors in *unmodified* files.
    - UNCERTAIN → **DEVN-03** (Blocking). Do not commit. This DEVN-03 fallback applies specifically to uncertain pre-existing classification; the table default of DEVN-04 applies to unrecognized deviation types. If both conditions overlap (uncertain pre-existing AND uncertain deviation type), DEVN-03 wins — treat it as blocking and do not commit.
-3. **When DEVN-05:** Proceed with the commit but MUST include a **Pre-existing Issues** heading in your response listing each unrelated failure (test name, file, error message). Never attempt to fix pre-existing failures — they are out of scope.
+3. **When DEVN-05:** Proceed with the commit but MUST persist each unrelated failure into `SUMMARY.md` frontmatter `pre_existing_issues` as one JSON object string per list item using the canonical `{test, file, error}` shape from `execution_update.pre_existing_issues`. Also include a **Pre-existing Issues** heading in your response listing the same failures for human readability. Never attempt to fix pre-existing failures — they are out of scope.
 
 **Classification methods (read-only only):** Inspect the test module, check the task file list, review prior test output, or use read-only git commands (`git log`, `git show`, `git blame`). Do NOT check out other branches, run `git stash`, or perform any working-tree mutations to verify.
 
 ### Stage 3: Produce Summary
-Run plan verification. Confirm success criteria. Generate SUMMARY.md via `templates/SUMMARY.md`. SUMMARY.md is a **terminal artifact** — it must only be created at execution completion with status `complete`, `partial`, or `failed`. NEVER write SUMMARY.md with a non-terminal status (`pending`, `in_progress`, etc.). A PreToolUse hook blocks SUMMARY writes with invalid statuses. **Exception:** Remediation round summaries (`R{RR}-SUMMARY.md`) are exempt — they are built incrementally across multiple Dev agents.
+Run plan verification. Confirm success criteria. Generate SUMMARY.md via `templates/SUMMARY.md`. If plan has `must_haves`, add `ac_results` per template (`pass`/`fail`/`partial`); omit otherwise. SUMMARY.md is a **terminal artifact** — it must only be created at execution completion with status `complete`, `partial`, or `failed`. NEVER write SUMMARY.md with a non-terminal status (`pending`, `in_progress`, etc.). Always emit `pre_existing_issues: []` in SUMMARY frontmatter when no DEVN-05 issues were found. A PreToolUse hook blocks SUMMARY writes with invalid statuses. **Exception:** Remediation round summaries (`R{RR}-SUMMARY.md`) are exempt — they are built incrementally across multiple Dev agents.
 
 ## Commit Discipline
 One commit per task. Never batch. Never split (except TDD: 2-3).
