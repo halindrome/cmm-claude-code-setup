@@ -155,9 +155,84 @@ else
     _fail "Test 11: Edit should exit 2 without sentinel (got $EXIT_CODE)"
 fi
 
+# --- Test 12: session-gate inside legacy-modules worktree -> no path-mismatch ---
+# Regression for Phase 50 Plan 02: session-gate's inline fallback must handle a worktree
+# whose git rev-parse --show-toplevel resolves into .git/modules/<name>/ from a deinit'd
+# submodule. Exit must be 0 (bypass tool) and stderr must NOT contain "path mismatch".
+# If the environment refuses `protocol.file.allow=always` we SKIP (not FAIL).
+echo "--- Test 12: legacy-modules worktree -> no path mismatch ---"
+WT_TMP=$(mktemp -d /tmp/cmm-test-wtroot-XXXXXX)
+# Canonicalize to match pwd -P resolution inside the hook (e.g. /tmp -> /private/tmp on macOS)
+WT_TMP="$(cd "$WT_TMP" && pwd -P)"
+WT_SENTINEL=""
+cleanup_test12() {
+    [ -n "$WT_SENTINEL" ] && rm -f "$WT_SENTINEL"
+    rm -rf "$WT_TMP"
+}
+trap cleanup_test12 EXIT
+
+SKIP_REASON=""
+(
+    set -e
+    mkdir -p "$WT_TMP/upstream" && cd "$WT_TMP/upstream"
+    git init -q
+    echo hi > f && git add f && git -c user.email=t@t -c user.name=t commit -q -m init
+
+    mkdir -p "$WT_TMP/codespace" && cd "$WT_TMP/codespace"
+    git init -q
+    git -c user.email=t@t -c user.name=t commit --allow-empty -q -m init
+
+    git -c protocol.file.allow=always -c user.email=t@t -c user.name=t \
+        submodule add "$WT_TMP/upstream" apps >/dev/null 2>&1
+    git -c user.email=t@t -c user.name=t commit -q -m add-apps
+
+    cd apps
+    git -c user.email=t@t -c user.name=t worktree add "$WT_TMP/codespace/.claude/worktrees/phase-23" -b phase-23 >/dev/null 2>&1
+    cd ..
+    git submodule deinit -f apps >/dev/null 2>&1
+    git rm -f apps >/dev/null 2>&1
+    rm -rf apps
+    git -c user.email=t@t -c user.name=t commit -q -m rm-apps
+) >/tmp/cmm-test12-setup.log 2>&1 || SKIP_REASON="submodule/worktree fixture setup failed (check /tmp/cmm-test12-setup.log)"
+
+if [ -n "$SKIP_REASON" ]; then
+    echo "SKIP: Test 12: $SKIP_REASON"
+else
+    # Install session-gate.sh into the worktree-hosting project. DO NOT install the lib —
+    # we want to exercise session-gate's inline fallback (Plan 02 surface), not the lib path.
+    mkdir -p "$WT_TMP/codespace/.claude/hooks"
+    cp "$SCRIPT_DIR/../hooks/project/session-gate.sh" "$WT_TMP/codespace/.claude/hooks/session-gate.sh"
+
+    # Compute expected PROJECT_HASH the same way the hook does (echo WITH newline).
+    if command -v md5sum >/dev/null 2>&1; then
+        WT_HASH=$(echo "$WT_TMP/codespace" | md5sum | awk '{print $1}')
+    else
+        WT_HASH=$(echo "$WT_TMP/codespace" | md5 -q)
+    fi
+    WT_SENTINEL="/tmp/cmm-session-ready-${WT_HASH}"
+    echo "ready" > "$WT_SENTINEL"
+
+    WT_HOOK="$WT_TMP/codespace/.claude/hooks/session-gate.sh"
+    # Use Write so the bypass list does NOT skip the path-integrity check.
+    # With the sentinel present, a correctly-detected PROJECT_ROOT yields exit 0.
+    # A broken PROJECT_ROOT (pointing into .git/modules/...) will differ from _SCRIPT_ROOT
+    # and cause the path-integrity check to emit "path mismatch" + exit 2.
+    EXIT_CODE=0
+    STDERR=$(echo '{"tool_name": "Write"}' \
+        | (cd "$WT_TMP/codespace/.claude/worktrees/phase-23" && bash "$WT_HOOK") 2>&1 >/dev/null) || EXIT_CODE=$?
+
+    if [ "$EXIT_CODE" -eq 0 ] && ! echo "$STDERR" | grep -q "path mismatch"; then
+        _pass "Test 12: legacy-modules worktree session-gate exits 0 without path mismatch"
+    else
+        _fail "Test 12: expected exit 0 and no path mismatch (got exit=$EXIT_CODE, stderr=$STDERR)"
+    fi
+fi
+
 # Cleanup
 rm -rf "$FAKE_ROOT"
 rm -f "$SENTINEL"
+cleanup_test12
+trap - EXIT
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
