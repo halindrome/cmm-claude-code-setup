@@ -3,11 +3,17 @@
 #
 # Complements tests/test-phase-51-upstream-hooks.sh (which covers settings.json
 # STRING registration) by exercising the REGISTERED commands at runtime:
-# the actual `context-mode hook claude-code <event>` CLI dispatcher is invoked
-# with synthesized hook-event JSON payloads on stdin, hook invocation order is
-# observed via a sentinel log, and the full pre-phase-51 -> phase-51 upgrade
-# path for deprecated wrapper hooks is exercised end-to-end against a real
-# setup.sh run.
+# the actual `npx -y context-mode@latest hook claude-code <event>` launcher is
+# invoked with synthesized hook-event JSON payloads on stdin, hook invocation
+# order is observed via a sentinel log, and the full pre-phase-51 -> phase-51
+# upgrade path for deprecated wrapper hooks is exercised end-to-end against a
+# real setup.sh run.
+#
+# NOTE: the dispatcher invocation in cases 1/2 uses the local `context-mode`
+# binary (when present on PATH) for speed; the registered command in
+# settings.json uses `npx -y context-mode@latest` so it works whether or not
+# the binary is globally installed. Case 3 iterates settings.json entries
+# verbatim, so it exercises the exact registered npx form.
 #
 # ==============================================================================
 # Feasibility notes (per explicit user directive — "do not invent fake tests")
@@ -341,8 +347,8 @@ for idx, entry in enumerate(entries):
     if matcher == scope or scope in parts:
         for hk in entry.get("hooks", []) or []:
             cmd = hk.get("command", "")
-            # Tag upstream (CLI dispatcher) entries for later ordering check.
-            tag = "UPSTREAM" if "context-mode hook claude-code" in cmd else "OURS"
+            # Tag upstream (npx launcher) entries for later ordering check.
+            tag = "UPSTREAM" if "context-mode@latest hook claude-code" in cmd else "OURS"
             print(f"{idx}\t{tag}\t{cmd}")
 PY
     }
@@ -543,14 +549,16 @@ else
         fi
     fi
 
-    # Assertion 3: all five upstream hook entries are present.
+    # Assertion 3: all five upstream hook entries are present, using the npx
+    # launcher form (so an accidental regression back to the bare
+    # `context-mode hook claude-code` form would fail this check).
     if [ "$C4_FAILED" -eq 0 ]; then
         upstream_count=$(jq -r '
             [.. | objects | .command? // empty
-             | select(contains("context-mode hook claude-code"))] | length
+             | select(contains("npx -y context-mode@latest hook claude-code"))] | length
         ' "$C4_SETTINGS" 2>/dev/null || echo "0")
         if [ "$upstream_count" != "5" ]; then
-            _c4_fail "expected 5 upstream context-mode hook entries, got $upstream_count"
+            _c4_fail "expected 5 upstream npx context-mode hook entries, got $upstream_count"
         fi
     fi
 

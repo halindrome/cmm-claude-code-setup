@@ -16,12 +16,15 @@ pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 # Files excluded from migration:
-# - session-gate.sh, context-mode-event-logger.sh, reindex-after-commit.sh: handled by Plans 02/03
+# - session-gate.sh, reindex-after-commit.sh: handled by Plans 02/03
 # - track-hook-blocks.sh: inline helper (called by other hooks, not registered standalone)
-# - context-mode-pre-compact.sh: PreCompact hook (not in Plan 04 migration scope)
 # - cmm-nudge.sh: uses git -C dirname pattern (not the full superproject traversal)
 # - agent-cmm-gate.sh: no project root detection needed
-EXCLUDED="session-gate.sh context-mode-event-logger.sh reindex-after-commit.sh track-hook-blocks.sh context-mode-pre-compact.sh cmm-nudge.sh agent-cmm-gate.sh"
+#
+# Phase 51 removed context-mode-event-logger.sh and context-mode-pre-compact.sh
+# (their logic is now provided by context-mode's upstream posttooluse.mjs /
+# precompact.mjs hooks registered via setup.sh::merge_context_mode_hooks).
+EXCLUDED="session-gate.sh reindex-after-commit.sh track-hook-blocks.sh cmm-nudge.sh agent-cmm-gate.sh"
 
 # Files that MUST be migrated
 MIGRATED="track-cmm-calls.sh track-ctx-calls.sh cmm-sentinel-writer.sh context-mode-sentinel-writer.sh cmm-query-stale-advisory.sh subagent-cmm-startup.sh cmm-session-start.sh ctx-execute-enforcer.sh"

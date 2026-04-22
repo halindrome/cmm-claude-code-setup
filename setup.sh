@@ -700,30 +700,25 @@ merge_context_mode_hooks() {
     return 0
   fi
 
-  # Defense-in-depth: only register upstream hooks if context-mode is actually
-  # available. "Available" means either the CLI is on PATH (global install) or
-  # the project's .mcp.json registers it (npx launcher). Writing the hooks
-  # unconditionally would leave every tool call spawning `context-mode` and
-  # exiting 127 when the binary is absent — especially problematic when
-  # `--skip-mcp-check` is combined with a project that has no context-mode
-  # registration (pre-phase-51 installs, or manual removals).
-  if ! command -v context-mode >/dev/null 2>&1; then
-    if [ ! -f ".mcp.json" ] || ! grep -q "context-mode" ".mcp.json" 2>/dev/null; then
-      echo "  [skip] context-mode not on PATH and not in .mcp.json; upstream hooks not registered"
-      return 0
-    fi
-  fi
-
   mkdir -p "$(dirname "$target_file")"
 
+  # Note: no binary-presence guard here. The registered command uses the npx
+  # launcher form `npx -y context-mode@latest hook claude-code <event>` —
+  # matching the `.mcp.json` registration pattern — so the binary is
+  # auto-fetched on first invocation. A user who does not want context-mode
+  # (offline, opted out) should pass `--skip-context-mode`, which gates this
+  # function at the install_project call site.
   if ! python3 - "$target_file" <<'PY'
 import json, os, sys
 
 target = sys.argv[1]
 
-# Hardcoded upstream hook registration block. Commands use the CLI dispatcher
-# form `context-mode hook claude-code <event>` — correct for MCP-server installs
-# (npx -y context-mode@latest) where CLAUDE_PLUGIN_ROOT is unset.
+# Hardcoded upstream hook registration block. Commands use the npx launcher
+# form `npx -y context-mode@latest hook claude-code <event>` so the hook fires
+# regardless of whether the `context-mode` CLI is globally installed —
+# mirroring the `.mcp.json` server registration (also `npx -y
+# context-mode@latest`). Using a bare `context-mode ...` command would exit
+# 127 for users who only register the MCP via npx and never install the CLI.
 #
 # The PreToolUse matcher for context-mode's own MCP tools uses the MCP-server
 # form `mcp__context-mode__*` NOT the plugin form `mcp__plugin_context-mode_*`
@@ -732,23 +727,23 @@ target = sys.argv[1]
 expected = {
     "PostToolUse": {
         "matcher": "Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__",
-        "command": "context-mode hook claude-code posttooluse",
+        "command": "npx -y context-mode@latest hook claude-code posttooluse",
     },
     "PreToolUse": {
         "matcher": "Bash|WebFetch|Read|Grep|Agent|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
-        "command": "context-mode hook claude-code pretooluse",
+        "command": "npx -y context-mode@latest hook claude-code pretooluse",
     },
     "PreCompact": {
         "matcher": "",
-        "command": "context-mode hook claude-code precompact",
+        "command": "npx -y context-mode@latest hook claude-code precompact",
     },
     "SessionStart": {
         "matcher": "",
-        "command": "context-mode hook claude-code sessionstart",
+        "command": "npx -y context-mode@latest hook claude-code sessionstart",
     },
     "UserPromptSubmit": {
         "matcher": "",
-        "command": "context-mode hook claude-code userpromptsubmit",
+        "command": "npx -y context-mode@latest hook claude-code userpromptsubmit",
     },
 }
 
@@ -768,7 +763,11 @@ if "hooks" not in data or not isinstance(data.get("hooks"), dict):
 for event, spec in expected.items():
     want_matcher = spec["matcher"]
     want_cmd = spec["command"]
-    sentinel = want_cmd  # substring we search for in existing commands
+    # Broad sentinel so we also detect legacy bare-form entries
+    # (`context-mode hook claude-code <event>`) from early phase-51 installs
+    # and heal them to the npx launcher form in-place, rather than
+    # double-registering.
+    sentinel = f"hook claude-code {event.lower()}"
 
     if event not in data["hooks"] or not isinstance(data["hooks"].get(event), list):
         data["hooks"][event] = []
@@ -783,11 +782,20 @@ for event, spec in expected.items():
                 continue
             cmd = h.get("command", "")
             if isinstance(cmd, str) and sentinel in cmd:
-                # Heal matcher drift — update matcher to expected; leave cmd
-                # untouched so a user who edited the command (e.g. to add
-                # --verbose) keeps their edit.
+                # Heal matcher drift — rewrite matcher to the upstream
+                # default so all installs stay on the same tool-coverage
+                # contract.
                 if group.get("matcher", "") != want_matcher:
                     group["matcher"] = want_matcher
+                # Heal command drift — rewrite the command to the npx
+                # launcher form when the existing entry is the legacy bare
+                # form (missing either `npx` or `context-mode@latest`).
+                # User-added flags on the npx form (e.g. appended
+                # `--verbose`) are preserved because the membership test
+                # below is false for any command that already includes both
+                # tokens.
+                if ("npx" not in cmd) or ("context-mode@latest" not in cmd):
+                    h["command"] = want_cmd
                 found = True
                 break
         if found:

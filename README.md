@@ -290,12 +290,12 @@ When `setup.sh --project` detects context-mode is installed (or installs it via 
 - **SessionStart** — injects prior-session snapshots
 - **UserPromptSubmit** — intent processing for submitted prompts
 
-Registration uses the `context-mode hook claude-code <event>` CLI dispatcher, which is path-independent and works across npx-cache versions. The merge is idempotent — re-running `setup.sh --project` does not duplicate entries. Pass `--skip-context-mode` to opt out; no upstream entries are written.
+Registration uses the `npx -y context-mode@latest hook claude-code <event>` launcher — the same npx form used in `.mcp.json`, so the hooks fire whether or not the `context-mode` CLI is globally installed. The merge is idempotent — re-running `setup.sh --project` does not duplicate entries. Pass `--skip-context-mode` to opt out; no upstream entries are written.
 
 Our own project hooks (`session-gate`, `ctx-execute-enforcer`, `cmm-nudge`, etc.) remain registered ahead of the upstream entries — their additive enforcement runs first.
 
 > **Matcher-drift heal (overwrites user matcher edits on upstream entries).**
-> On every `setup.sh --project` run, the merge finds each upstream entry by substring match on the `context-mode hook claude-code <event>` command string and rewrites its `matcher` back to the upstream default if the two diverge. This keeps all installs on the same tool-coverage contract. **User customizations to the `matcher` field on these five entries are overwritten.** The command string itself is preserved, so edits like adding `--verbose` stay. Matchers on your other (non-upstream) hook entries — including the CMM enforcement hooks and anything you added by hand — are never touched.
+> On every `setup.sh --project` run, the merge finds each upstream entry by substring match on `hook claude-code <event>` and rewrites its `matcher` back to the upstream default if the two diverge. This keeps all installs on the same tool-coverage contract. **User customizations to the `matcher` field on these five entries are overwritten.** Flags appended to the npx launcher command (e.g. `--verbose`) are preserved. Legacy bare-form entries from early phase-51 installs (`context-mode hook claude-code <event>`, no `npx`) are rewritten in-place to the npx launcher form so the `--skip-mcp-check`-without-global-CLI scenario stops failing with exit 127. Matchers on your other (non-upstream) hook entries — including the CMM enforcement hooks and anything you added by hand — are never touched.
 
 ## Benchmarks
 
