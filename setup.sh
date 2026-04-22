@@ -789,12 +789,15 @@ for event, spec in expected.items():
                     group["matcher"] = want_matcher
                 # Heal command drift — rewrite the command to the npx
                 # launcher form when the existing entry is the legacy bare
-                # form (missing either `npx` or `context-mode@latest`).
-                # User-added flags on the npx form (e.g. appended
-                # `--verbose`) are preserved because the membership test
-                # below is false for any command that already includes both
-                # tokens.
-                if ("npx" not in cmd) or ("context-mode@latest" not in cmd):
+                # form (no `npx`, no `context-mode@<version>` pin). User
+                # customizations are preserved:
+                # - `npx -y context-mode@latest hook ... --verbose` survives
+                #   because both tokens (`npx`, `context-mode@`) are present
+                # - `npx -y context-mode@0.9.3 hook ...` (pinned version)
+                #   survives because `context-mode@` is present — the heal
+                #   intentionally matches on the `@` prefix rather than
+                #   `@latest` so user-pinned versions are not clobbered.
+                if ("npx" not in cmd) or ("context-mode@" not in cmd):
                     h["command"] = want_cmd
                 found = True
                 break
