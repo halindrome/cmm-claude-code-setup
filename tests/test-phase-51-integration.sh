@@ -434,7 +434,151 @@ PY
     fi
 fi
 
-# (Case 4 added by DEV-03 in the next commit.)
+# --- Case 4: Deprecated-wrapper cleanup (real upgrade path) -----------------
+# Simulates a user upgrading from a pre-phase-51 install. Pre-populates a
+# scratch dir with the two deprecated wrapper shell files, their settings.json
+# entries, a .mcp.json containing a context-mode server entry (so
+# detect_context_mode sees it as configured), AND an unrelated user-custom
+# hook entry. Runs setup.sh --project for real and asserts:
+#   - both deprecated wrapper files are removed from .claude/hooks/
+#   - their settings.json entries are pruned
+#   - all five upstream `context-mode hook claude-code <event>` entries present
+#   - the user-custom sentinel hook entry SURVIVES unchanged
+#
+# Unlike test-phase-51-upstream-hooks.sh Case 5, this case:
+#   (a) includes a .mcp.json and a user-customization entry
+#   (b) asserts user-customization preservation as a first-class property
+CASE="case 4 - deprecated-wrapper cleanup (upgrade path)"
+
+C4_SCRATCH=$(mktemp -d -t ph51-c4-XXXXXX)
+_CLEANUP_DIRS+=("$C4_SCRATCH")
+
+(
+    cd "$C4_SCRATCH" && git init -q && git commit --allow-empty -q -m init
+
+    # Pre-populate deprecated wrappers on disk.
+    mkdir -p .claude/hooks
+    printf '#!/bin/bash\nexit 0\n' > .claude/hooks/context-mode-event-logger.sh
+    printf '#!/bin/bash\nexit 0\n' > .claude/hooks/context-mode-pre-compact.sh
+    chmod +x .claude/hooks/context-mode-event-logger.sh .claude/hooks/context-mode-pre-compact.sh
+
+    # Pre-populate a user-custom sentinel hook file too (the setup.sh
+    # bundle-install does NOT know about this file — it's purely a
+    # user customization we assert survives).
+    printf '#!/bin/bash\nexit 0\n' > .claude/hooks/user-custom-hook.sh
+    chmod +x .claude/hooks/user-custom-hook.sh
+
+    # Pre-populate settings.json with the old-style deprecated entries AND
+    # a user-custom sentinel entry on a non-colliding matcher.
+    cat > .claude/settings.json <<'J'
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{"type": "command", "command": "bash .claude/hooks/context-mode-event-logger.sh"}]
+      },
+      {
+        "matcher": "UserCustomMatcher-DoNotTouch",
+        "hooks": [{"type": "command", "command": "bash .claude/hooks/user-custom-hook.sh"}]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [{"type": "command", "command": "bash .claude/hooks/context-mode-pre-compact.sh"}]
+      }
+    ]
+  }
+}
+J
+
+    # Pre-populate .mcp.json so detect_context_mode flips INSTALL_CONTEXT_MODE=true.
+    cat > .mcp.json <<'J'
+{
+  "mcpServers": {
+    "context-mode": {
+      "command": "npx",
+      "args": ["-y", "context-mode@latest", "mcp"]
+    }
+  }
+}
+J
+)
+
+# Note: NOT passing --skip-mcp-check so detect_context_mode runs on the
+# pre-populated .mcp.json and sees context-mode configured; setup.sh
+# should therefore call merge_context_mode_hooks.
+(
+    cd "$C4_SCRATCH" && echo n | bash "$SETUP" --project --yes
+) >"$C4_SCRATCH/setup.out" 2>&1 || true
+
+C4_SETTINGS="$C4_SCRATCH/.claude/settings.json"
+C4_FAILED=0
+C4_FAIL_MSG=""
+
+_c4_fail() {
+    C4_FAILED=1
+    C4_FAIL_MSG="$1"
+}
+
+if [ ! -f "$C4_SETTINGS" ]; then
+    _fail "$CASE - settings.json missing after setup.sh (see $C4_SCRATCH/setup.out)"
+else
+    # Assertion 1: deprecated wrapper files removed from disk.
+    if [ -f "$C4_SCRATCH/.claude/hooks/context-mode-event-logger.sh" ]; then
+        _c4_fail "context-mode-event-logger.sh still present on disk"
+    elif [ -f "$C4_SCRATCH/.claude/hooks/context-mode-pre-compact.sh" ]; then
+        _c4_fail "context-mode-pre-compact.sh still present on disk"
+    fi
+
+    # Assertion 2: their settings.json entries are pruned.
+    if [ "$C4_FAILED" -eq 0 ]; then
+        leftover=$(jq -r '
+            [.. | objects | .command? // empty
+             | select(contains("context-mode-event-logger")
+                   or contains("context-mode-pre-compact"))] | length
+        ' "$C4_SETTINGS" 2>/dev/null || echo "jq_error")
+        if [ "$leftover" != "0" ]; then
+            _c4_fail "deprecated wrapper entries still in settings.json (count=$leftover)"
+        fi
+    fi
+
+    # Assertion 3: all five upstream hook entries are present.
+    if [ "$C4_FAILED" -eq 0 ]; then
+        upstream_count=$(jq -r '
+            [.. | objects | .command? // empty
+             | select(contains("context-mode hook claude-code"))] | length
+        ' "$C4_SETTINGS" 2>/dev/null || echo "0")
+        if [ "$upstream_count" != "5" ]; then
+            _c4_fail "expected 5 upstream context-mode hook entries, got $upstream_count"
+        fi
+    fi
+
+    # Assertion 4: user-custom hook entry SURVIVES unchanged.
+    if [ "$C4_FAILED" -eq 0 ]; then
+        user_count=$(jq -r '
+            [.. | objects | .command? // empty
+             | select(contains("user-custom-hook.sh"))] | length
+        ' "$C4_SETTINGS" 2>/dev/null || echo "0")
+        if [ "$user_count" = "0" ]; then
+            _c4_fail "user-custom-hook.sh entry was removed (user customization lost)"
+        fi
+        # Also verify the matcher label is intact.
+        user_matcher=$(jq -r '
+            [.. | objects
+             | select((.matcher? // "") == "UserCustomMatcher-DoNotTouch")] | length
+        ' "$C4_SETTINGS" 2>/dev/null || echo "0")
+        if [ "$user_matcher" = "0" ]; then
+            _c4_fail "UserCustomMatcher-DoNotTouch matcher was removed from settings.json"
+        fi
+    fi
+
+    if [ "$C4_FAILED" -eq 0 ]; then
+        _pass "$CASE (wrappers removed; settings entries pruned; 5 upstream entries present; user-custom hook preserved)"
+    else
+        _fail "$CASE - $C4_FAIL_MSG (see $C4_SCRATCH/setup.out)"
+    fi
+fi
 
 # --- Summary ----------------------------------------------------------------
 echo ""
