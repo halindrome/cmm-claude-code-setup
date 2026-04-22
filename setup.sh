@@ -999,6 +999,8 @@ install_project() {
     "cmm-session-gate.sh"
     "context-mode-session-gate.sh"
     "ctx-search-nudge.sh"
+    "context-mode-event-logger.sh"
+    "context-mode-pre-compact.sh"
   )
 
   stale_hooks=()
@@ -1174,6 +1176,16 @@ MCPEOF
   fi
 
   merge_settings_json ".claude/settings.json" "project"
+
+  # Register upstream context-mode hooks via the CLI dispatcher form.
+  # Guarded by INSTALL_CONTEXT_MODE=true (flipped false by --skip-context-mode).
+  # The five upstream hooks (PostToolUse/PreToolUse/PreCompact/SessionStart/
+  # UserPromptSubmit) use their own substring-dedup merge (merge_context_mode_hooks),
+  # separate from the basename-dedup used for project hook scripts above, so there
+  # is no dedup collision between the two merges.
+  if [ "$INSTALL_CONTEXT_MODE" = true ]; then
+    merge_context_mode_hooks ".claude/settings.json"
+  fi
 
   echo ""
 }
