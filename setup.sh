@@ -668,6 +668,139 @@ os.replace(tmp, target_file)
 }
 
 # ---------------------------------------------------------------------------
+# merge_context_mode_hooks
+# ---------------------------------------------------------------------------
+# Registers context-mode's five upstream hooks (PostToolUse, PreToolUse,
+# PreCompact, SessionStart, UserPromptSubmit) in the target settings.json
+# using the CLI dispatcher form `context-mode hook claude-code <event>`.
+#
+# Dedup strategy differs from merge_settings_json: this function uses a
+# SUBSTRING match on the command string (`context-mode hook claude-code
+# <event>`) rather than basename-split. Basename dedup would false-match any
+# unrelated hook whose command ends with `/posttooluse`, `/precompact`, etc.
+#
+# Idempotent: re-running heals matcher drift but does not duplicate entries.
+# Fail-open: if python3 exits non-zero (corrupt JSON, missing python3), we
+# print a warning and return 0 so setup.sh continues.
+#
+# Only called from install_project() guarded by INSTALL_CONTEXT_MODE=true.
+merge_context_mode_hooks() {
+  local target_file="$1"
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would merge context-mode upstream hooks into $target_file"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$target_file")"
+
+  if ! python3 - "$target_file" <<'PY'
+import json, os, sys
+
+target = sys.argv[1]
+
+# Hardcoded upstream hook registration block. Commands use the CLI dispatcher
+# form `context-mode hook claude-code <event>` — correct for MCP-server installs
+# (npx -y context-mode@latest) where CLAUDE_PLUGIN_ROOT is unset.
+#
+# The PreToolUse matcher for context-mode's own MCP tools uses the MCP-server
+# form `mcp__context-mode__*` NOT the plugin form `mcp__plugin_context-mode_*`
+# because setup.sh installs context-mode as an MCP server (via npx), not as a
+# Claude Code plugin.
+expected = {
+    "PostToolUse": {
+        "matcher": "Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__",
+        "command": "context-mode hook claude-code posttooluse",
+    },
+    "PreToolUse": {
+        "matcher": "Bash|WebFetch|Read|Grep|Agent|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
+        "command": "context-mode hook claude-code pretooluse",
+    },
+    "PreCompact": {
+        "matcher": "",
+        "command": "context-mode hook claude-code precompact",
+    },
+    "SessionStart": {
+        "matcher": "",
+        "command": "context-mode hook claude-code sessionstart",
+    },
+    "UserPromptSubmit": {
+        "matcher": "",
+        "command": "context-mode hook claude-code userpromptsubmit",
+    },
+}
+
+# Read existing settings.json — fail-open to {} on any read or parse error so
+# we always produce a valid file.
+try:
+    with open(target) as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        data = {}
+except (FileNotFoundError, json.JSONDecodeError, OSError):
+    data = {}
+
+if "hooks" not in data or not isinstance(data.get("hooks"), dict):
+    data["hooks"] = {}
+
+for event, spec in expected.items():
+    want_matcher = spec["matcher"]
+    want_cmd = spec["command"]
+    sentinel = want_cmd  # substring we search for in existing commands
+
+    if event not in data["hooks"] or not isinstance(data["hooks"].get(event), list):
+        data["hooks"][event] = []
+
+    # Substring search across all command entries in the event's list.
+    found = False
+    for group in data["hooks"][event]:
+        if not isinstance(group, dict):
+            continue
+        for h in group.get("hooks", []) or []:
+            if not isinstance(h, dict):
+                continue
+            cmd = h.get("command", "")
+            if isinstance(cmd, str) and sentinel in cmd:
+                # Heal matcher drift — update matcher to expected; leave cmd
+                # untouched so a user who edited the command (e.g. to add
+                # --verbose) keeps their edit.
+                if group.get("matcher", "") != want_matcher:
+                    group["matcher"] = want_matcher
+                found = True
+                break
+        if found:
+            break
+
+    if found:
+        print(f"  [ok] context-mode {event} hook already present")
+    else:
+        # Append at END of the event array so existing project hooks (ours)
+        # stay at lower indices and fire first.
+        data["hooks"][event].append({
+            "matcher": want_matcher,
+            "hooks": [{"type": "command", "command": want_cmd}],
+        })
+        print(f"  [ok] Registered context-mode {event} hook")
+
+tmp = target + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+os.replace(tmp, target)
+PY
+  then
+    echo "  [warn] merge_context_mode_hooks: python3 failed; upstream context-mode hooks not registered"
+    return 0
+  fi
+
+  if python3 -m json.tool "$target_file" >/dev/null 2>&1; then
+    :
+  else
+    echo "  [warn] JSON validation failed for $target_file after context-mode hook merge" >&2
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # install_global
 # ---------------------------------------------------------------------------
 
