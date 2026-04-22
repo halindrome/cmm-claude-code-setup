@@ -284,11 +284,13 @@ The MCP executables live wherever they're installed globally — only the regist
 
 When `setup.sh --project` detects context-mode is installed (or installs it via `.mcp.json`), it also registers context-mode's five upstream hooks in `.claude/settings.json` so the MCP's core capture/redirect machinery fires automatically:
 
-- **PostToolUse** — FTS5 indexing of Bash, Read, Write, Edit, Glob, Grep, and `mcp__*` tool results so `ctx_search` can recall them without re-running commands
-- **PreToolUse** — cache-redirect for Bash, WebFetch, Read, Grep, Agent, and context-mode's own `ctx_execute*` tools when output is already indexed
+- **PostToolUse** — fires on `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Skill`, `Agent`, `Task*`, `EnterPlanMode`/`ExitPlanMode`, `EnterWorktree`, and the broad `mcp__*` prefix. Upstream `posttooluse.mjs` delegates to `extractEvents()` which persists **semantic session events** (file reads, prompts, rules, subagent completions, task updates, intents, decisions) into a SQLite FTS5 session DB. **Note:** in current upstream `context-mode` (≤1.0.89), the extractor does NOT persist raw `mcp__*` tool outputs — jira, grafana, sentry, or other external-data MCP responses fire the hook but produce zero extractable events, so they are **not** searchable via `ctx_search`. Tracked as a known gap; see the follow-up note below.
+- **PreToolUse** — cache-redirect for Bash, WebFetch, Read, Grep, Agent, and context-mode's own `ctx_execute*` tools when the output of a prior equivalent call is already indexed in the session DB
 - **PreCompact** — writes a session snapshot before Claude Code compacts context
 - **SessionStart** — injects prior-session snapshots
 - **UserPromptSubmit** — intent processing for submitted prompts
+
+> **Known capture gap (upstream context-mode).** External-data MCP tool outputs (`mcp__jira__*`, `mcp__grafana__*`, `mcp__sentry__*`, etc.) are not indexed by the upstream `extractEvents` function — the hook matcher includes `mcp__` but the extractor's category set is semantic (file/prompt/rule/subagent/task/intent/decision), not raw tool-output. For workflows that rely on re-querying external data, explicitly `ctx_index(content, intent="…")` the tool response in the same turn, or wait for the upstream PR that adds an `mcp_tool_result` category. Field-validated against `context-mode@1.0.89` on 2026-04-22 during a scout run that issued 9 jira/sentry/grafana calls — capture worked for the scout's file-read / rule / subagent events (38.6% context compression) but zero jira/grafana responses were retrievable via `ctx_search`.
 
 Registration uses the `npx -y context-mode@latest hook claude-code <event>` launcher — the same npx form used in `.mcp.json`, so the hooks fire whether or not the `context-mode` CLI is globally installed. The merge is idempotent — re-running `setup.sh --project` does not duplicate entries. Pass `--skip-context-mode` to opt out; no upstream entries are written.
 
