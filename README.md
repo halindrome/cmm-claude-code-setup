@@ -95,9 +95,12 @@ hooks/
     reindex-after-commit.sh             # PostToolUse:Bash — marks sentinel stale after git commit; calls touch_project to nudge watcher (5–60s reindex)
     agent-cmm-gate.sh                   # PreToolUse:Agent — blocks agents without MCP instructions
     track-cmm-calls.sh                  # PostToolUse — tracks call counts per CMM tool
-    context-mode-session-gate.sh        # PreToolUse:* — gates tools until Context Mode ready (no-op if not installed)
-    context-mode-event-logger.sh        # PostToolUse — logs tool calls to SQLite (no-op if not installed)
-    context-mode-pre-compact.sh         # PreCompact — snapshots session state (no-op if not installed)
+    context-mode-sentinel-writer.sh     # PostToolUse:mcp__context-mode__ctx_* — writes sentinel so session-gate unblocks
+    # context-mode upstream hooks (PostToolUse capture, PreToolUse cache-redirect,
+    # PreCompact snapshot, SessionStart inject, UserPromptSubmit intent) are
+    # registered directly in .claude/settings.json via the `context-mode hook
+    # claude-code <event>` CLI dispatcher — see "Upstream hook registration
+    # (phase 51+)" below.
 rules/
   cmm-rules.md                          # CMM tool guidance (installed globally and per-project)
   ctx-rules.md                          # Context Mode tool guidance (ctx_search retrieval protocol)
@@ -129,7 +132,7 @@ Claude explores code
   -> cmm-nudge.sh fires: use search_graph / get_code_snippet instead
   -> Claude uses CMM graph tools
   -> track-cmm-calls.sh logs the call
-  -> context-mode-event-logger.sh records the event to SQLite
+  -> context-mode upstream PostToolUse hook captures the event into the session FTS5 index
 
 Claude runs a command
   -> With Context Mode: uses ctx_execute (output sandboxed, only relevant portion enters context)
@@ -141,7 +144,7 @@ Claude spawns a subagent
   -> Present? Allowed
 
 Context window approaches limit
-  -> context-mode-pre-compact.sh fires (if installed)
+  -> context-mode upstream PreCompact hook fires (if installed)
   -> Snapshots last 20 events + git HEAD into SQLite
   -> After compaction: Claude can query history via ctx_search
 ```
@@ -276,6 +279,20 @@ The MCP executables live wherever they're installed globally — only the regist
 - PreCompact snapshot — records session state before context compression for later resume via `ctx_search`
 - CLAUDE.md rules for `ctx_execute`, `ctx_search`, `ctx_fetch_and_index`
 - Agent gate accepts `ctx_*` keywords alongside CMM keywords
+
+### Upstream hook registration (phase 51+)
+
+When `setup.sh --project` detects context-mode is installed (or installs it via `.mcp.json`), it also registers context-mode's five upstream hooks in `.claude/settings.json` so the MCP's core capture/redirect machinery fires automatically:
+
+- **PostToolUse** — FTS5 indexing of Bash, Read, Write, Edit, Glob, Grep, and `mcp__*` tool results so `ctx_search` can recall them without re-running commands
+- **PreToolUse** — cache-redirect for Bash, WebFetch, Read, Grep, Agent, and context-mode's own `ctx_execute*` tools when output is already indexed
+- **PreCompact** — writes a session snapshot before Claude Code compacts context
+- **SessionStart** — injects prior-session snapshots
+- **UserPromptSubmit** — intent processing for submitted prompts
+
+Registration uses the `context-mode hook claude-code <event>` CLI dispatcher, which is path-independent and works across npx-cache versions. The merge is idempotent — re-running `setup.sh --project` does not duplicate entries. Pass `--skip-context-mode` to opt out; no upstream entries are written.
+
+Our own project hooks (`session-gate`, `ctx-execute-enforcer`, `cmm-nudge`, etc.) remain registered ahead of the upstream entries — their additive enforcement runs first.
 
 ## Benchmarks
 
