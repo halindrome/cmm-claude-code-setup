@@ -5,10 +5,12 @@
 # Covers:
 #   Case 1 — Registration: fresh `setup.sh --project` writes the five upstream
 #            hook entries (PostToolUse, PreToolUse, PreCompact, SessionStart,
-#            UserPromptSubmit) with the literal npx launcher command string
-#            `npx -y context-mode@latest hook claude-code <event>`. The npx
-#            form mirrors the `.mcp.json` registration so the hook works
-#            even when `context-mode` is not globally installed.
+#            UserPromptSubmit) as `bash <abs-path>/.claude/hooks/context-mode-hook-dispatch.sh <event>`.
+#            The dispatcher is a small shell helper that exec's the global
+#            `context-mode` binary when present and falls back to
+#            `npx -y context-mode@latest` otherwise — eliminating the
+#            ENOTEMPTY race that bare `npx -y @latest` suffers under
+#            concurrent hook fires on rapid tool-call sessions.
 #   Case 2 — Idempotency: running setup.sh twice produces identical settings.json
 #            and each upstream command appears exactly once.
 #   Case 3 — --skip-context-mode: no upstream entries written; regular project
@@ -83,16 +85,16 @@ if [ ! -f "$SETTINGS1" ]; then
 else
     for event in PostToolUse PreToolUse PreCompact SessionStart UserPromptSubmit; do
         lower=$(echo "$event" | tr '[:upper:]' '[:lower:]')
-        cmd_count=$(jq "[.. | objects | .command? // empty | select(. == \"npx -y context-mode@latest hook claude-code $lower\")] | length" "$SETTINGS1")
+        cmd_count=$(jq "[.. | objects | .command? // empty | select(contains(\"context-mode-hook-dispatch.sh $lower\"))] | length" "$SETTINGS1")
         if [ "$cmd_count" = "1" ]; then
-            _pass "$CASE - $event registered with npx launcher command"
+            _pass "$CASE - $event registered with dispatcher command"
         else
-            _fail "$CASE - $event command count is $cmd_count (expected 1)"
+            _fail "$CASE - $event dispatcher command count is $cmd_count (expected 1)"
         fi
     done
 
     # PostToolUse matcher: broad tool list including mcp__
-    ptu_matcher=$(jq -r '.hooks.PostToolUse[] | select(.hooks[0].command == "npx -y context-mode@latest hook claude-code posttooluse") | .matcher' "$SETTINGS1")
+    ptu_matcher=$(jq -r '.hooks.PostToolUse[] | select(.hooks[0].command | contains("context-mode-hook-dispatch.sh posttooluse")) | .matcher' "$SETTINGS1")
     expected_ptu="Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__"
     if [ "$ptu_matcher" = "$expected_ptu" ]; then
         _pass "$CASE - PostToolUse matcher is exact broad matcher string"
@@ -102,7 +104,7 @@ else
 
     # PreToolUse matcher: must contain mcp__context-mode__ctx_execute AND must NOT
     # contain the plugin form mcp__plugin_context-mode_context-mode__.
-    pre_matcher=$(jq -r '.hooks.PreToolUse[] | select(.hooks[0].command == "npx -y context-mode@latest hook claude-code pretooluse") | .matcher' "$SETTINGS1")
+    pre_matcher=$(jq -r '.hooks.PreToolUse[] | select(.hooks[0].command | contains("context-mode-hook-dispatch.sh pretooluse")) | .matcher' "$SETTINGS1")
     if [[ "$pre_matcher" == *"mcp__context-mode__ctx_execute"* ]]; then
         _pass "$CASE - PreToolUse matcher uses MCP-server form (mcp__context-mode__)"
     else
@@ -130,7 +132,7 @@ else
     _fail "$CASE - settings.json diverged between run 1 and run 2"
 fi
 
-upstream_count=$(jq '[.. | objects | .command? // empty | select(contains("context-mode@latest hook claude-code"))] | length' "$SETTINGS1")
+upstream_count=$(jq '[.. | objects | .command? // empty | select(contains("context-mode-hook-dispatch.sh"))] | length' "$SETTINGS1")
 if [ "$upstream_count" = "5" ]; then
     _pass "$CASE - exactly 5 upstream entries after double-install"
 else
@@ -153,7 +155,7 @@ SETTINGS3="$SCRATCH3/.claude/settings.json"
 if [ ! -f "$SETTINGS3" ]; then
     _fail "$CASE - settings.json not created"
 else
-    skip_upstream=$(jq '[.. | objects | .command? // empty | select(contains("context-mode@latest hook claude-code"))] | length' "$SETTINGS3")
+    skip_upstream=$(jq '[.. | objects | .command? // empty | select(contains("context-mode-hook-dispatch.sh"))] | length' "$SETTINGS3")
     if [ "$skip_upstream" = "0" ]; then
         _pass "$CASE - no upstream entries written with --skip-context-mode"
     else
@@ -187,7 +189,7 @@ pre = data.get("hooks", {}).get("PreToolUse", [])
 
 # Find the upstream entry's index
 upstream_idx = next(
-    (i for i, e in enumerate(pre) if "context-mode@latest hook claude-code pretooluse" in cmd(e)),
+    (i for i, e in enumerate(pre) if "context-mode-hook-dispatch.sh pretooluse" in cmd(e)),
     None,
 )
 if upstream_idx is None:
@@ -202,7 +204,7 @@ else:
             errors.append(f"{needle} at index {idx} must be BEFORE upstream at {upstream_idx}")
 
 # First entry in PreToolUse should not be the upstream context-mode entry.
-if pre and "context-mode@latest hook claude-code pretooluse" in cmd(pre[0]):
+if pre and "context-mode-hook-dispatch.sh pretooluse" in cmd(pre[0]):
     errors.append("first PreToolUse entry is context-mode upstream (should be one of ours)")
 
 if errors:
@@ -285,7 +287,7 @@ else
 fi
 
 # Upstream hooks should be registered now (clean upgrade)
-upgrade_upstream=$(jq '[.. | objects | .command? // empty | select(contains("context-mode@latest hook claude-code"))] | length' "$SETTINGS5")
+upgrade_upstream=$(jq '[.. | objects | .command? // empty | select(contains("context-mode-hook-dispatch.sh"))] | length' "$SETTINGS5")
 if [ "$upgrade_upstream" = "5" ]; then
     _pass "$CASE - five upstream hooks registered after clean upgrade"
 else

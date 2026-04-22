@@ -702,48 +702,56 @@ merge_context_mode_hooks() {
 
   mkdir -p "$(dirname "$target_file")"
 
-  # Note: no binary-presence guard here. The registered command uses the npx
-  # launcher form `npx -y context-mode@latest hook claude-code <event>` —
-  # matching the `.mcp.json` registration pattern — so the binary is
-  # auto-fetched on first invocation. A user who does not want context-mode
-  # (offline, opted out) should pass `--skip-context-mode`, which gates this
-  # function at the install_project call site.
-  if ! python3 - "$target_file" <<'PY'
+  # Resolve absolute dispatcher path from the settings.json path. `.claude`
+  # is the parent of settings.json; the dispatcher lives at
+  # `.claude/hooks/context-mode-hook-dispatch.sh`. Absolute paths are required
+  # in settings.json hook commands because hooks may be invoked from any CWD.
+  local claude_dir
+  claude_dir="$(cd "$(dirname "$target_file")" && pwd -P)"
+  local dispatch_abspath="$claude_dir/hooks/context-mode-hook-dispatch.sh"
+
+  # Why a dispatcher helper instead of bare `npx -y context-mode@latest`:
+  # concurrent hook fires (every tool call triggers PreToolUse+PostToolUse —
+  # rapid Bash/Read/mcp__ sessions hit this constantly) race to refresh the
+  # npx cache and fail with ENOTEMPTY during atomic rename of
+  # ~/.npm/_npx/<hash>/. Failures are non-blocking (harness continues) but
+  # silently skip capture for that event. The dispatcher short-circuits to a
+  # globally-installed `context-mode` binary when present (no npx → no race)
+  # and falls back to `npx -y context-mode@latest` only when no global
+  # install exists. See hooks/project/context-mode-hook-dispatch.sh.
+  #
+  # The PreToolUse matcher for context-mode's own MCP tools uses the MCP-server
+  # form `mcp__context-mode__*` NOT the plugin form `mcp__plugin_context-mode_*`
+  # because setup.sh installs context-mode as an MCP server (via npx), not as a
+  # Claude Code plugin.
+  if ! python3 - "$target_file" "$dispatch_abspath" <<'PY'
 import json, os, sys
 
 target = sys.argv[1]
+dispatch = sys.argv[2]
 
-# Hardcoded upstream hook registration block. Commands use the npx launcher
-# form `npx -y context-mode@latest hook claude-code <event>` so the hook fires
-# regardless of whether the `context-mode` CLI is globally installed —
-# mirroring the `.mcp.json` server registration (also `npx -y
-# context-mode@latest`). Using a bare `context-mode ...` command would exit
-# 127 for users who only register the MCP via npx and never install the CLI.
-#
-# The PreToolUse matcher for context-mode's own MCP tools uses the MCP-server
-# form `mcp__context-mode__*` NOT the plugin form `mcp__plugin_context-mode_*`
-# because setup.sh installs context-mode as an MCP server (via npx), not as a
-# Claude Code plugin.
+# Commands invoke the hook dispatcher which resolves context-mode (global
+# install → fast path; npx fallback → first-run primes cache, no race after).
 expected = {
     "PostToolUse": {
         "matcher": "Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__",
-        "command": "npx -y context-mode@latest hook claude-code posttooluse",
+        "command": f"bash {dispatch} posttooluse",
     },
     "PreToolUse": {
         "matcher": "Bash|WebFetch|Read|Grep|Agent|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
-        "command": "npx -y context-mode@latest hook claude-code pretooluse",
+        "command": f"bash {dispatch} pretooluse",
     },
     "PreCompact": {
         "matcher": "",
-        "command": "npx -y context-mode@latest hook claude-code precompact",
+        "command": f"bash {dispatch} precompact",
     },
     "SessionStart": {
         "matcher": "",
-        "command": "npx -y context-mode@latest hook claude-code sessionstart",
+        "command": f"bash {dispatch} sessionstart",
     },
     "UserPromptSubmit": {
         "matcher": "",
-        "command": "npx -y context-mode@latest hook claude-code userpromptsubmit",
+        "command": f"bash {dispatch} userpromptsubmit",
     },
 }
 
@@ -763,11 +771,14 @@ if "hooks" not in data or not isinstance(data.get("hooks"), dict):
 for event, spec in expected.items():
     want_matcher = spec["matcher"]
     want_cmd = spec["command"]
-    # Broad sentinel so we also detect legacy bare-form entries
-    # (`context-mode hook claude-code <event>`) from early phase-51 installs
-    # and heal them to the npx launcher form in-place, rather than
-    # double-registering.
-    sentinel = f"hook claude-code {event.lower()}"
+    # Two sentinels so we detect AND heal every prior phase-51 form:
+    # - dispatcher (current)            → `context-mode-hook-dispatch.sh <event>`
+    # - npx launcher (intermediate fix) → `npx ... hook claude-code <event>`
+    # - bare (early phase-51)           → `context-mode hook claude-code <event>`
+    # Matching either sentinel lets us find the existing entry; the heal
+    # condition below rewrites non-dispatcher forms to the dispatcher.
+    sentinel_legacy = f"hook claude-code {event.lower()}"
+    sentinel_dispatch = f"context-mode-hook-dispatch.sh {event.lower()}"
 
     if event not in data["hooks"] or not isinstance(data["hooks"].get(event), list):
         data["hooks"][event] = []
@@ -781,23 +792,23 @@ for event, spec in expected.items():
             if not isinstance(h, dict):
                 continue
             cmd = h.get("command", "")
-            if isinstance(cmd, str) and sentinel in cmd:
+            if isinstance(cmd, str) and (sentinel_legacy in cmd or sentinel_dispatch in cmd):
                 # Heal matcher drift — rewrite matcher to the upstream
                 # default so all installs stay on the same tool-coverage
                 # contract.
                 if group.get("matcher", "") != want_matcher:
                     group["matcher"] = want_matcher
-                # Heal command drift — rewrite the command to the npx
-                # launcher form when the existing entry is the legacy bare
-                # form (no `npx`, no `context-mode@<version>` pin). User
-                # customizations are preserved:
-                # - `npx -y context-mode@latest hook ... --verbose` survives
-                #   because both tokens (`npx`, `context-mode@`) are present
-                # - `npx -y context-mode@0.9.3 hook ...` (pinned version)
-                #   survives because `context-mode@` is present — the heal
-                #   intentionally matches on the `@` prefix rather than
-                #   `@latest` so user-pinned versions are not clobbered.
-                if ("npx" not in cmd) or ("context-mode@" not in cmd):
+                # Heal command drift — rewrite to the dispatcher form if the
+                # existing entry is an older phase-51 form (legacy bare or
+                # intermediate npx launcher). The dispatcher eliminates the
+                # npx ENOTEMPTY race that the launcher form suffers under
+                # concurrent hook fires. User customizations are preserved:
+                # - `bash /path/dispatch.sh <event> --verbose` survives
+                #   because the dispatcher basename+event substring is present
+                # - Any hand-written command containing
+                #   `context-mode-hook-dispatch.sh <event>` (including flags
+                #   or redirections) is left untouched.
+                if sentinel_dispatch not in cmd:
                     h["command"] = want_cmd
                 found = True
                 break
