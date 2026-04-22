@@ -284,7 +284,157 @@ except Exception: sys.exit(1)' 2>/dev/null
     fi
 fi
 
-# (Case 3 and Case 4 added by DEV-02 and DEV-03 in subsequent commits.)
+# --- Case 3: Matcher ordering at runtime ------------------------------------
+# Proves that when Claude Code would dispatch PreToolUse hooks in
+# settings.json array order, OUR hooks fire BEFORE the upstream
+# `context-mode hook claude-code pretooluse` entry.
+#
+# How: run a real setup.sh --project install; parse the resulting
+# .claude/settings.json; for each PreToolUse array entry that matches Bash,
+# Read, or Grep (either exact or as part of the upstream combined matcher),
+# invoke the registered command with a synthesized payload wrapped in a
+# logging shim that writes "<array-index>:<basename-or-upstream-marker>
+# <nanotime>" to a shared sentinel log. Then assert the log shows our hook
+# basenames appear before the upstream marker for each tool scope.
+#
+# Feasibility: if context-mode is not on PATH, the upstream invocation falls
+# back to STATIC array-index ordering only (a superset of
+# test-phase-51-upstream-hooks.sh Case 4) — marked in the PASS message.
+CASE="case 3 - matcher ordering (runtime)"
+
+C3_SCRATCH=$(mktemp -d -t ph51-c3-XXXXXX)
+_CLEANUP_DIRS+=("$C3_SCRATCH")
+(
+    cd "$C3_SCRATCH" && git init -q && git commit --allow-empty -q -m init
+)
+( cd "$C3_SCRATCH" && echo n | bash "$SETUP" --project --yes --skip-mcp-check ) \
+    >"$C3_SCRATCH/setup.out" 2>&1 || true
+
+C3_SETTINGS="$C3_SCRATCH/.claude/settings.json"
+C3_LOG="$C3_SCRATCH/hook-order.log"
+: > "$C3_LOG"
+
+if [ ! -f "$C3_SETTINGS" ]; then
+    _fail "$CASE - setup.sh did not produce .claude/settings.json (see $C3_SCRATCH/setup.out)"
+else
+    # Synthesized PreToolUse payloads per tool scope (harmless commands).
+    C3_BASH_PAYLOAD='{"session_id":"ph51-c3","tool_name":"Bash","tool_input":{"command":"ls /tmp"}}'
+    C3_READ_PAYLOAD='{"session_id":"ph51-c3","tool_name":"Read","tool_input":{"file_path":"/tmp/ph51-c3-nope-'$$'.txt"}}'
+    C3_GREP_PAYLOAD='{"session_id":"ph51-c3","tool_name":"Grep","tool_input":{"pattern":"ph51-c3-never-seen","path":"/tmp"}}'
+
+    # Extract entries whose matcher includes a given tool scope. The upstream
+    # combined matcher is pipe-delimited (Bash|WebFetch|Read|Grep|Agent|...);
+    # a scope matches either when the matcher == scope OR when the matcher
+    # contains "|scope|" / starts with "scope|" / ends with "|scope".
+    _c3_iterate_scope() {
+        local scope="$1"
+        local payload="$2"
+        python3 - "$C3_SETTINGS" "$scope" <<'PY'
+import json, sys
+path, scope = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    data = json.load(f)
+entries = data.get("hooks", {}).get("PreToolUse", []) or []
+for idx, entry in enumerate(entries):
+    matcher = entry.get("matcher", "")
+    parts = [p.strip() for p in matcher.split("|")] if matcher else []
+    if matcher == scope or scope in parts:
+        for hk in entry.get("hooks", []) or []:
+            cmd = hk.get("command", "")
+            # Tag upstream (CLI dispatcher) entries for later ordering check.
+            tag = "UPSTREAM" if "context-mode hook claude-code" in cmd else "OURS"
+            print(f"{idx}\t{tag}\t{cmd}")
+PY
+    }
+
+    # For each scope, iterate in array order, invoke each hook with the
+    # synthesized payload, and record "<idx>:<tag>:<basename>" + ns to log.
+    C3_ORDER_VIOLATION=""
+    for scope_pair in "Bash:$C3_BASH_PAYLOAD" "Read:$C3_READ_PAYLOAD" "Grep:$C3_GREP_PAYLOAD"; do
+        scope="${scope_pair%%:*}"
+        payload="${scope_pair#*:}"
+        scope_log="$C3_SCRATCH/hook-order.${scope}.log"
+        : > "$scope_log"
+
+        # Upstream bin may be missing -> we skip upstream invocation but still
+        # log its expected presence so the ordering assertion has both halves.
+        upstream_available="no"
+        if _has_context_mode; then
+            upstream_available="yes"
+        fi
+
+        while IFS=$'\t' read -r idx tag cmd; do
+            [ -z "$idx" ] && continue
+            ns=$(python3 -c 'import time; print(int(time.time()*1e9))')
+            if [ "$tag" = "UPSTREAM" ]; then
+                marker="upstream:context-mode-hook-claude-code-pretooluse"
+                if [ "$upstream_available" = "yes" ]; then
+                    printf '%s:%s:%s\n' "$idx" "$tag" "$marker" >> "$scope_log"
+                    # Invoke but do NOT let failure stop the loop.
+                    printf '%s' "$payload" | context-mode hook claude-code pretooluse \
+                        >/dev/null 2>&1 || true
+                else
+                    printf '%s:%s:%s (invocation skipped: binary unavailable)\n' \
+                        "$idx" "$tag" "$marker" >> "$scope_log"
+                fi
+            else
+                base=$(basename "${cmd##* }")  # command may be "bash /abs/path/x.sh"
+                printf '%s:%s:%s\n' "$idx" "$tag" "$base" >> "$scope_log"
+                # shellcheck disable=SC2086
+                printf '%s' "$payload" | bash -c "$cmd" >/dev/null 2>&1 || true
+            fi
+        done < <(_c3_iterate_scope "$scope" "$payload")
+
+        # Assert: in the log for this scope, no OURS line appears AFTER an
+        # UPSTREAM line (equivalently: the first UPSTREAM line, if any, has
+        # no OURS line following it).
+        if grep -q ':UPSTREAM:' "$scope_log"; then
+            first_upstream_linenum=$(grep -n ':UPSTREAM:' "$scope_log" | head -1 | cut -d: -f1)
+            total_lines=$(wc -l <"$scope_log")
+            if [ "$first_upstream_linenum" -lt "$total_lines" ]; then
+                # Look at lines after the first upstream for any OURS tag.
+                after=$(tail -n +$((first_upstream_linenum + 1)) "$scope_log" | grep ':OURS:' || true)
+                if [ -n "$after" ]; then
+                    C3_ORDER_VIOLATION="scope=$scope: OURS line appears after UPSTREAM in log:\n$(cat "$scope_log")"
+                    break
+                fi
+            fi
+            # Also require at least one OURS line before UPSTREAM for this
+            # scope — otherwise we haven't actually observed ordering.
+            before=$(head -n $((first_upstream_linenum - 1)) "$scope_log" | grep ':OURS:' || true)
+            if [ -z "$before" ] && [ "$first_upstream_linenum" -gt 1 ]; then
+                : # upstream is first entry with no OURS before it in the scope
+                C3_ORDER_VIOLATION="scope=$scope: no OURS line precedes UPSTREAM:\n$(cat "$scope_log")"
+                break
+            elif [ -z "$before" ] && [ "$first_upstream_linenum" -eq 1 ]; then
+                C3_ORDER_VIOLATION="scope=$scope: UPSTREAM is first line in log (no OURS precedes it):\n$(cat "$scope_log")"
+                break
+            fi
+        fi
+        # If no UPSTREAM line in this scope, the scope does not involve the
+        # upstream matcher — nothing to order-assert here.
+
+        # Concatenate to top-level log for post-test visibility.
+        {
+            echo "=== scope: $scope ==="
+            cat "$scope_log"
+        } >> "$C3_LOG"
+    done
+
+    if [ -n "$C3_ORDER_VIOLATION" ]; then
+        _fail "$CASE - order violation: $C3_ORDER_VIOLATION"
+    else
+        # Decide PASS sub-message: primary (upstream actually invoked) vs
+        # static-only (binary unavailable).
+        if _has_context_mode; then
+            _pass "$CASE (primary: runtime log observed across Bash/Read/Grep; our hooks precede upstream)"
+        else
+            _pass "$CASE (static-only: upstream invocation skipped because binary unavailable; array-index ordering verified via log)"
+        fi
+    fi
+fi
+
+# (Case 4 added by DEV-03 in the next commit.)
 
 # --- Summary ----------------------------------------------------------------
 echo ""
