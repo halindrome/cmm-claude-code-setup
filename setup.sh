@@ -514,7 +514,15 @@ print_preflight_summary() {
 # ---------------------------------------------------------------------------
 
 check_mcp_availability() {
+  # --skip-mcp-check suppresses the CMM registration/tools/preflight probes but
+  # must NOT short-circuit detect_context_mode: --skip-context-mode and
+  # --skip-mcp-check are advertised as orthogonal (see --help), and the upstream
+  # context-mode hook merge downstream in install_project is gated on the
+  # INSTALL_CONTEXT_MODE flag that detect_context_mode owns. Running
+  # detect_context_mode unconditionally guarantees --skip-context-mode is honored
+  # regardless of flag ordering. Stdout is silenced so the skip path stays quiet.
   if [ "$SKIP_MCP_CHECK" = true ]; then
+    detect_context_mode >/dev/null
     return 0
   fi
 
@@ -690,6 +698,20 @@ merge_context_mode_hooks() {
   if [ "$DRY_RUN" = true ]; then
     echo "  [DRY RUN] Would merge context-mode upstream hooks into $target_file"
     return 0
+  fi
+
+  # Defense-in-depth: only register upstream hooks if context-mode is actually
+  # available. "Available" means either the CLI is on PATH (global install) or
+  # the project's .mcp.json registers it (npx launcher). Writing the hooks
+  # unconditionally would leave every tool call spawning `context-mode` and
+  # exiting 127 when the binary is absent — especially problematic when
+  # `--skip-mcp-check` is combined with a project that has no context-mode
+  # registration (pre-phase-51 installs, or manual removals).
+  if ! command -v context-mode >/dev/null 2>&1; then
+    if [ ! -f ".mcp.json" ] || ! grep -q "context-mode" ".mcp.json" 2>/dev/null; then
+      echo "  [skip] context-mode not on PATH and not in .mcp.json; upstream hooks not registered"
+      return 0
+    fi
   fi
 
   mkdir -p "$(dirname "$target_file")"
@@ -1003,21 +1025,29 @@ install_project() {
     "context-mode-pre-compact.sh"
   )
 
-  stale_hooks=()
+  # Remove any deprecated hook files still on disk. Use `rm -f` so read-only
+  # or concurrently-removed files don't abort the loop.
   for name in "${deprecated_hooks[@]}"; do
     installed=".claude/hooks/$name"
     if [ -f "$installed" ]; then
-      stale_hooks+=("$name")
       if [ "$DRY_RUN" = true ]; then
         echo "  [DRY RUN] Would remove deprecated hook: $name"
       else
-        rm "$installed"
+        rm -f "$installed"
         echo "  [removed] Deprecated hook: $name"
       fi
     fi
   done
 
-  if [ "${#stale_hooks[@]}" -gt 0 ] && [ "$DRY_RUN" = false ] && [ -f ".claude/settings.json" ]; then
+  # Always prune deprecated entries from settings.json, regardless of whether
+  # the hook file is still on disk. Orphaned entries (wrapper deleted by hand
+  # but settings entry left behind) previously never got cleaned up because the
+  # prune was gated on stale_hooks being populated from the disk scan above.
+  # Decoupling the two lets us clean up pre-existing orphan registrations on
+  # every re-run.
+  if [ "$DRY_RUN" = false ] && [ -f ".claude/settings.json" ]; then
+    # Pass the full deprecated_hooks list (not just files still on disk) so
+    # settings.json entries are always prunable.
     python3 -c '
 import json, os, sys
 target = sys.argv[1]
@@ -1027,13 +1057,24 @@ try:
         data = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
     sys.exit(0)
+
+def _last_token_basename(cmd):
+    # Guard against empty/whitespace-only commands: "".split() -> [], [][-1]
+    # raises IndexError. Return "" so the membership test is a safe no-match.
+    if not isinstance(cmd, str):
+        return ""
+    parts = cmd.split()
+    if not parts:
+        return ""
+    return os.path.basename(parts[-1])
+
 changed = False
 for hook_type in list(data.get("hooks", {})):
     before = len(data["hooks"][hook_type])
     data["hooks"][hook_type] = [
         entry for entry in data["hooks"][hook_type]
         if not any(
-            os.path.basename(h.get("command", "").split()[-1]) in stale
+            _last_token_basename(h.get("command", "")) in stale
             for h in entry.get("hooks", [])
         )
     ]
@@ -1046,7 +1087,7 @@ if changed:
         f.write("\n")
     os.replace(tmp, target)
     print("  [ok] Pruned deprecated hook entries from settings.json")
-' ".claude/settings.json" "${stale_hooks[*]}"
+' ".claude/settings.json" "${deprecated_hooks[*]}"
   fi
 
   # Copies all runtime rule files from rules/ to .claude/rules/, including

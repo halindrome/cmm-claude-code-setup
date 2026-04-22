@@ -294,6 +294,9 @@ Registration uses the `context-mode hook claude-code <event>` CLI dispatcher, wh
 
 Our own project hooks (`session-gate`, `ctx-execute-enforcer`, `cmm-nudge`, etc.) remain registered ahead of the upstream entries — their additive enforcement runs first.
 
+> **Matcher-drift heal (overwrites user matcher edits on upstream entries).**
+> On every `setup.sh --project` run, the merge finds each upstream entry by substring match on the `context-mode hook claude-code <event>` command string and rewrites its `matcher` back to the upstream default if the two diverge. This keeps all installs on the same tool-coverage contract. **User customizations to the `matcher` field on these five entries are overwritten.** The command string itself is preserved, so edits like adding `--verbose` stay. Matchers on your other (non-upstream) hook entries — including the CMM enforcement hooks and anything you added by hand — are never touched.
+
 ## Benchmarks
 
 The `benchmarks/` directory contains a reproducible benchmark suite comparing three variants:
