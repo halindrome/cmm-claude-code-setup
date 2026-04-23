@@ -50,7 +50,7 @@ if [ "$HAS_OFFSET" = "1" ] && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
     exit 0  # fail-open: cannot derive hash
   fi
   _CN_SENTINEL="/tmp/cmm-recent-${_CN_HASH}"
-  _CN_MTIME=$(stat -f %m "$_CN_SENTINEL" 2>/dev/null || stat -c %Y "$_CN_SENTINEL" 2>/dev/null)
+  _CN_MTIME=$(date -r "$_CN_SENTINEL" +%s 2>/dev/null)
   if [ -n "$_CN_MTIME" ] && [ "$(( $(date +%s) - _CN_MTIME ))" -lt 60 ]; then
     exit 0
   fi
