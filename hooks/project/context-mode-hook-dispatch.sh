@@ -20,9 +20,10 @@
 # Events: posttooluse | pretooluse | precompact | sessionstart | userpromptsubmit
 #
 # Behavior:
-#   - Global install present  → exec context-mode hook claude-code <event>
-#   - No global install        → exec npx -y context-mode@latest hook claude-code <event>
-#   - No event arg             → exit 0 (fail-open; hook is non-blocking anyway)
+#   - Global install present        → exec context-mode hook claude-code <event>
+#   - No global install, npx present → exec npx -y context-mode@latest hook claude-code <event>
+#   - No global install, no npx      → exit 0 with one-shot stderr notice (fail-open)
+#   - No event arg                   → exit 0 (fail-open; hook is non-blocking anyway)
 #
 # Input: Claude Code passes the hook payload JSON on stdin. `exec` replaces
 # this shell with the target binary, so stdin passes through unmodified.
@@ -37,6 +38,21 @@ fi
 
 if command -v context-mode >/dev/null 2>&1; then
   exec context-mode hook claude-code "$event"
-else
+elif command -v npx >/dev/null 2>&1; then
   exec npx -y context-mode@latest hook claude-code "$event"
+else
+  # Neither a global `context-mode` binary nor `npx` is available on this host.
+  # Rather than letting `exec npx` fail under `set -e` (which emits a noisy
+  # "exec: npx: not found" per hook fire), bail out fail-open with a one-shot
+  # notice. The hook is non-blocking by contract, so exit 0 lets the user's
+  # tool call proceed unaffected; the notice is rate-limited to once per
+  # 5-minute window per user so we don't spam the terminal.
+  _CMHD_STAMP="/tmp/cmhd-no-runtime-notice-$(id -u)"
+  _CMHD_NOW=$(date +%s 2>/dev/null || echo 0)
+  _CMHD_LAST=$(date -r "$_CMHD_STAMP" +%s 2>/dev/null || echo 0)
+  if [ "$((_CMHD_NOW - _CMHD_LAST))" -ge 300 ]; then
+    echo "context-mode-hook-dispatch: neither 'context-mode' nor 'npx' found on PATH; skipping. Install context-mode globally (npm i -g context-mode) to enable capture." >&2
+    touch "$_CMHD_STAMP" 2>/dev/null || true
+  fi
+  exit 0
 fi
