@@ -97,12 +97,15 @@ else
     _fail "CHECKSUMS.sha256 verification failed"
 fi
 
-# Also confirm all 6 agents/vbw-*.md entries are present and OK
+# Also confirm all phase-49-sync agents/vbw-*.md entries are present and OK.
+# Use >= 6 (not equality) so additional tracked agents outside the phase 49
+# VBW v1.35.0 sync scope (e.g. vbw-architect, added in phase 37) do not
+# break this assertion once CHECKSUMS.sha256 rightly tracks them too.
 agent_ok_count=$(shasum -a 256 -c CHECKSUMS.sha256 2>&1 | grep -cE 'agents/vbw-.*:.*OK')
-if [ "$agent_ok_count" = "6" ]; then
-    _pass "All 6 agents/vbw-*.md entries verify OK in CHECKSUMS.sha256"
+if [ "$agent_ok_count" -ge 6 ]; then
+    _pass "At least 6 agents/vbw-*.md entries verify OK in CHECKSUMS.sha256 (got $agent_ok_count)"
 else
-    _fail "Expected 6 agent entries OK, got $agent_ok_count"
+    _fail "Expected at least 6 agent entries OK, got $agent_ok_count"
 fi
 
 echo ""

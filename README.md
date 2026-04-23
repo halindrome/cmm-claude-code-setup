@@ -95,9 +95,12 @@ hooks/
     reindex-after-commit.sh             # PostToolUse:Bash — marks sentinel stale after git commit; calls touch_project to nudge watcher (5–60s reindex)
     agent-cmm-gate.sh                   # PreToolUse:Agent — blocks agents without MCP instructions
     track-cmm-calls.sh                  # PostToolUse — tracks call counts per CMM tool
-    context-mode-session-gate.sh        # PreToolUse:* — gates tools until Context Mode ready (no-op if not installed)
-    context-mode-event-logger.sh        # PostToolUse — logs tool calls to SQLite (no-op if not installed)
-    context-mode-pre-compact.sh         # PreCompact — snapshots session state (no-op if not installed)
+    context-mode-sentinel-writer.sh     # PostToolUse:mcp__context-mode__ctx_* — writes sentinel so session-gate unblocks
+    # context-mode upstream hooks (PostToolUse capture, PreToolUse cache-redirect,
+    # PreCompact snapshot, SessionStart inject, UserPromptSubmit intent) are
+    # registered directly in .claude/settings.json via the `context-mode hook
+    # claude-code <event>` CLI dispatcher — see "Upstream hook registration
+    # (phase 51+)" below.
 rules/
   cmm-rules.md                          # CMM tool guidance (installed globally and per-project)
   ctx-rules.md                          # Context Mode tool guidance (ctx_search retrieval protocol)
@@ -129,7 +132,7 @@ Claude explores code
   -> cmm-nudge.sh fires: use search_graph / get_code_snippet instead
   -> Claude uses CMM graph tools
   -> track-cmm-calls.sh logs the call
-  -> context-mode-event-logger.sh records the event to SQLite
+  -> context-mode upstream PostToolUse hook captures the event into the session FTS5 index
 
 Claude runs a command
   -> With Context Mode: uses ctx_execute (output sandboxed, only relevant portion enters context)
@@ -141,7 +144,7 @@ Claude spawns a subagent
   -> Present? Allowed
 
 Context window approaches limit
-  -> context-mode-pre-compact.sh fires (if installed)
+  -> context-mode upstream PreCompact hook fires (if installed)
   -> Snapshots last 20 events + git HEAD into SQLite
   -> After compaction: Claude can query history via ctx_search
 ```
@@ -276,6 +279,27 @@ The MCP executables live wherever they're installed globally — only the regist
 - PreCompact snapshot — records session state before context compression for later resume via `ctx_search`
 - CLAUDE.md rules for `ctx_execute`, `ctx_search`, `ctx_fetch_and_index`
 - Agent gate accepts `ctx_*` keywords alongside CMM keywords
+
+### Upstream hook registration (phase 51+)
+
+When `setup.sh --project` detects context-mode is installed (or installs it via `.mcp.json`), it also registers context-mode's five upstream hooks in `.claude/settings.json` so the MCP's core capture/redirect machinery fires automatically:
+
+- **PostToolUse** — fires on `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Skill`, `Agent`, `Task*`, `EnterPlanMode`/`ExitPlanMode`, `EnterWorktree`, and the broad `mcp__*` prefix. Upstream `posttooluse.mjs` delegates to `extractEvents()` which persists **semantic session events** (file reads, prompts, rules, subagent completions, task updates, intents, decisions) into a SQLite FTS5 session DB. **Note:** in current upstream `context-mode` (≤1.0.89), the extractor does NOT persist raw `mcp__*` tool outputs — jira, grafana, sentry, or other external-data MCP responses fire the hook but produce zero extractable events, so they are **not** searchable via `ctx_search`. Tracked as a known gap; see the follow-up note below.
+- **PreToolUse** — cache-redirect for Bash, WebFetch, Read, Grep, Agent, and context-mode's own `ctx_execute*` tools when the output of a prior equivalent call is already indexed in the session DB
+- **PreCompact** — writes a session snapshot before Claude Code compacts context
+- **SessionStart** — injects prior-session snapshots
+- **UserPromptSubmit** — intent processing for submitted prompts
+
+> **Known capture gap (upstream context-mode).** External-data MCP tool outputs (`mcp__jira__*`, `mcp__grafana__*`, `mcp__sentry__*`, etc.) are not indexed by the upstream `extractEvents` function — the hook matcher includes `mcp__` but the extractor's category set is semantic (file/prompt/rule/subagent/task/intent/decision), not raw tool-output. For workflows that rely on re-querying external data, explicitly `ctx_index(content, intent="…")` the tool response in the same turn, or wait for the upstream PR that adds an `mcp_tool_result` category. Field-validated against `context-mode@1.0.89` on 2026-04-22 during a scout run that issued 9 jira/sentry/grafana calls — capture worked for the scout's file-read / rule / subagent events (38.6% context compression) but zero jira/grafana responses were retrievable via `ctx_search`.
+
+Registration uses a small dispatcher helper at `hooks/project/context-mode-hook-dispatch.sh` (installed into `.claude/hooks/` by `setup.sh --project`). The registered command is `bash <abs>/.claude/hooks/context-mode-hook-dispatch.sh <event>`; the dispatcher exec's the global `context-mode` binary when present and falls back to `npx -y context-mode@latest` only when no global install exists. This ensures hooks fire correctly whether or not `context-mode` is globally installed **and** eliminates the ENOTEMPTY race that bare `npx -y @latest` suffers under rapid concurrent hook fires (see "Why a dispatcher" below). The merge is idempotent — re-running `setup.sh --project` does not duplicate entries. Pass `--skip-context-mode` to opt out; no upstream entries are written.
+
+Our own project hooks (`session-gate`, `ctx-execute-enforcer`, `cmm-nudge`, etc.) remain registered ahead of the upstream entries — their additive enforcement runs first.
+
+> **Why a dispatcher (not bare `npx -y context-mode@latest`).** Every tool call triggers both PreToolUse and PostToolUse hooks. In active sessions with rapid Bash/Read/`mcp__*` calls, parallel `npx -y context-mode@latest` invocations race to refresh the `~/.npm/_npx/<hash>/` cache against `@latest` and collide during atomic rename with `ENOTEMPTY`. Claude Code reports these as "non-blocking" (session continues) but the losing hook silently skips capture. The dispatcher short-circuits to the global `context-mode` binary when it's on PATH, avoiding `npx` entirely on the hot path and eliminating the race for the vast majority of setups. Users with no global install still work via the `npx` fallback — the first invocation primes the cache and subsequent calls hit it serially.
+
+> **Matcher-drift heal (overwrites user matcher edits on upstream entries).**
+> On every `setup.sh --project` run, the merge finds each upstream entry by substring match on either `hook claude-code <event>` (legacy/npx form) or `context-mode-hook-dispatch.sh <event>` (current form). It rewrites the `matcher` field back to the upstream default if the two diverge; this keeps all installs on the same tool-coverage contract. **User customizations to the `matcher` field on these five entries are overwritten.** User customizations appended to the dispatcher command (e.g. `bash /path/dispatch.sh posttooluse --verbose`) are preserved — the heal only rewrites the command when `context-mode-hook-dispatch.sh <event>` is absent. Early phase-51 installs using the bare-form or npx-launcher commands are rewritten in-place to the dispatcher form on re-run. Matchers on your other (non-upstream) hook entries — including the CMM enforcement hooks and anything you added by hand — are never touched.
 
 ## Benchmarks
 

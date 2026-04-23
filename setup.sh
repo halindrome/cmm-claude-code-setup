@@ -514,7 +514,15 @@ print_preflight_summary() {
 # ---------------------------------------------------------------------------
 
 check_mcp_availability() {
+  # --skip-mcp-check suppresses the CMM registration/tools/preflight probes but
+  # must NOT short-circuit detect_context_mode: --skip-context-mode and
+  # --skip-mcp-check are advertised as orthogonal (see --help), and the upstream
+  # context-mode hook merge downstream in install_project is gated on the
+  # INSTALL_CONTEXT_MODE flag that detect_context_mode owns. Running
+  # detect_context_mode unconditionally guarantees --skip-context-mode is honored
+  # regardless of flag ordering. Stdout is silenced so the skip path stays quiet.
   if [ "$SKIP_MCP_CHECK" = true ]; then
+    detect_context_mode >/dev/null
     return 0
   fi
 
@@ -664,6 +672,175 @@ os.replace(tmp, target_file)
   else
     echo "[ERROR] JSON validation failed for $target_file" >&2
     exit 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# merge_context_mode_hooks
+# ---------------------------------------------------------------------------
+# Registers context-mode's five upstream hooks (PostToolUse, PreToolUse,
+# PreCompact, SessionStart, UserPromptSubmit) in the target settings.json
+# using the CLI dispatcher form `context-mode hook claude-code <event>`.
+#
+# Dedup strategy differs from merge_settings_json: this function uses a
+# SUBSTRING match on the command string (`context-mode hook claude-code
+# <event>`) rather than basename-split. Basename dedup would false-match any
+# unrelated hook whose command ends with `/posttooluse`, `/precompact`, etc.
+#
+# Idempotent: re-running heals matcher drift but does not duplicate entries.
+# Fail-open: if python3 exits non-zero (corrupt JSON, missing python3), we
+# print a warning and return 0 so setup.sh continues.
+#
+# Only called from install_project() guarded by INSTALL_CONTEXT_MODE=true.
+merge_context_mode_hooks() {
+  local target_file="$1"
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would merge context-mode upstream hooks into $target_file"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$target_file")"
+
+  # Resolve absolute dispatcher path from the settings.json path. `.claude`
+  # is the parent of settings.json; the dispatcher lives at
+  # `.claude/hooks/context-mode-hook-dispatch.sh`. Absolute paths are required
+  # in settings.json hook commands because hooks may be invoked from any CWD.
+  local claude_dir
+  claude_dir="$(cd "$(dirname "$target_file")" && pwd -P)"
+  local dispatch_abspath="$claude_dir/hooks/context-mode-hook-dispatch.sh"
+
+  # Why a dispatcher helper instead of bare `npx -y context-mode@latest`:
+  # concurrent hook fires (every tool call triggers PreToolUse+PostToolUse —
+  # rapid Bash/Read/mcp__ sessions hit this constantly) race to refresh the
+  # npx cache and fail with ENOTEMPTY during atomic rename of
+  # ~/.npm/_npx/<hash>/. Failures are non-blocking (harness continues) but
+  # silently skip capture for that event. The dispatcher short-circuits to a
+  # globally-installed `context-mode` binary when present (no npx → no race)
+  # and falls back to `npx -y context-mode@latest` only when no global
+  # install exists. See hooks/project/context-mode-hook-dispatch.sh.
+  #
+  # The PreToolUse matcher for context-mode's own MCP tools uses the MCP-server
+  # form `mcp__context-mode__*` NOT the plugin form `mcp__plugin_context-mode_*`
+  # because setup.sh installs context-mode as an MCP server (via npx), not as a
+  # Claude Code plugin.
+  if ! python3 - "$target_file" "$dispatch_abspath" <<'PY'
+import json, os, sys
+
+target = sys.argv[1]
+dispatch = sys.argv[2]
+
+# Commands invoke the hook dispatcher which resolves context-mode (global
+# install → fast path; npx fallback → first-run primes cache, no race after).
+expected = {
+    "PostToolUse": {
+        "matcher": "Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__",
+        "command": f"bash {dispatch} posttooluse",
+    },
+    "PreToolUse": {
+        "matcher": "Bash|WebFetch|Read|Grep|Agent|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
+        "command": f"bash {dispatch} pretooluse",
+    },
+    "PreCompact": {
+        "matcher": "",
+        "command": f"bash {dispatch} precompact",
+    },
+    "SessionStart": {
+        "matcher": "",
+        "command": f"bash {dispatch} sessionstart",
+    },
+    "UserPromptSubmit": {
+        "matcher": "",
+        "command": f"bash {dispatch} userpromptsubmit",
+    },
+}
+
+# Read existing settings.json — fail-open to {} on any read or parse error so
+# we always produce a valid file.
+try:
+    with open(target) as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        data = {}
+except (FileNotFoundError, json.JSONDecodeError, OSError):
+    data = {}
+
+if "hooks" not in data or not isinstance(data.get("hooks"), dict):
+    data["hooks"] = {}
+
+for event, spec in expected.items():
+    want_matcher = spec["matcher"]
+    want_cmd = spec["command"]
+    # Two sentinels so we detect AND heal every prior phase-51 form:
+    # - dispatcher (current)            → `context-mode-hook-dispatch.sh <event>`
+    # - npx launcher (intermediate fix) → `npx ... hook claude-code <event>`
+    # - bare (early phase-51)           → `context-mode hook claude-code <event>`
+    # Matching either sentinel lets us find the existing entry; the heal
+    # condition below rewrites non-dispatcher forms to the dispatcher.
+    sentinel_legacy = f"hook claude-code {event.lower()}"
+    sentinel_dispatch = f"context-mode-hook-dispatch.sh {event.lower()}"
+
+    if event not in data["hooks"] or not isinstance(data["hooks"].get(event), list):
+        data["hooks"][event] = []
+
+    # Substring search across all command entries in the event's list.
+    found = False
+    for group in data["hooks"][event]:
+        if not isinstance(group, dict):
+            continue
+        for h in group.get("hooks", []) or []:
+            if not isinstance(h, dict):
+                continue
+            cmd = h.get("command", "")
+            if isinstance(cmd, str) and (sentinel_legacy in cmd or sentinel_dispatch in cmd):
+                # Heal matcher drift — rewrite matcher to the upstream
+                # default so all installs stay on the same tool-coverage
+                # contract.
+                if group.get("matcher", "") != want_matcher:
+                    group["matcher"] = want_matcher
+                # Heal command drift — rewrite to the dispatcher form if the
+                # existing entry is an older phase-51 form (legacy bare or
+                # intermediate npx launcher). The dispatcher eliminates the
+                # npx ENOTEMPTY race that the launcher form suffers under
+                # concurrent hook fires. User customizations are preserved:
+                # - `bash /path/dispatch.sh <event> --verbose` survives
+                #   because the dispatcher basename+event substring is present
+                # - Any hand-written command containing
+                #   `context-mode-hook-dispatch.sh <event>` (including flags
+                #   or redirections) is left untouched.
+                if sentinel_dispatch not in cmd:
+                    h["command"] = want_cmd
+                found = True
+                break
+        if found:
+            break
+
+    if found:
+        print(f"  [ok] context-mode {event} hook already present")
+    else:
+        # Append at END of the event array so existing project hooks (ours)
+        # stay at lower indices and fire first.
+        data["hooks"][event].append({
+            "matcher": want_matcher,
+            "hooks": [{"type": "command", "command": want_cmd}],
+        })
+        print(f"  [ok] Registered context-mode {event} hook")
+
+tmp = target + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+os.replace(tmp, target)
+PY
+  then
+    echo "  [warn] merge_context_mode_hooks: python3 failed; upstream context-mode hooks not registered"
+    return 0
+  fi
+
+  if python3 -m json.tool "$target_file" >/dev/null 2>&1; then
+    :
+  else
+    echo "  [warn] JSON validation failed for $target_file after context-mode hook merge" >&2
   fi
 }
 
@@ -866,23 +1043,33 @@ install_project() {
     "cmm-session-gate.sh"
     "context-mode-session-gate.sh"
     "ctx-search-nudge.sh"
+    "context-mode-event-logger.sh"
+    "context-mode-pre-compact.sh"
   )
 
-  stale_hooks=()
+  # Remove any deprecated hook files still on disk. Use `rm -f` so read-only
+  # or concurrently-removed files don't abort the loop.
   for name in "${deprecated_hooks[@]}"; do
     installed=".claude/hooks/$name"
     if [ -f "$installed" ]; then
-      stale_hooks+=("$name")
       if [ "$DRY_RUN" = true ]; then
         echo "  [DRY RUN] Would remove deprecated hook: $name"
       else
-        rm "$installed"
+        rm -f "$installed"
         echo "  [removed] Deprecated hook: $name"
       fi
     fi
   done
 
-  if [ "${#stale_hooks[@]}" -gt 0 ] && [ "$DRY_RUN" = false ] && [ -f ".claude/settings.json" ]; then
+  # Always prune deprecated entries from settings.json, regardless of whether
+  # the hook file is still on disk. Orphaned entries (wrapper deleted by hand
+  # but settings entry left behind) previously never got cleaned up because the
+  # prune was gated on stale_hooks being populated from the disk scan above.
+  # Decoupling the two lets us clean up pre-existing orphan registrations on
+  # every re-run.
+  if [ "$DRY_RUN" = false ] && [ -f ".claude/settings.json" ]; then
+    # Pass the full deprecated_hooks list (not just files still on disk) so
+    # settings.json entries are always prunable.
     python3 -c '
 import json, os, sys
 target = sys.argv[1]
@@ -892,13 +1079,24 @@ try:
         data = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
     sys.exit(0)
+
+def _last_token_basename(cmd):
+    # Guard against empty/whitespace-only commands: "".split() -> [], [][-1]
+    # raises IndexError. Return "" so the membership test is a safe no-match.
+    if not isinstance(cmd, str):
+        return ""
+    parts = cmd.split()
+    if not parts:
+        return ""
+    return os.path.basename(parts[-1])
+
 changed = False
 for hook_type in list(data.get("hooks", {})):
     before = len(data["hooks"][hook_type])
     data["hooks"][hook_type] = [
         entry for entry in data["hooks"][hook_type]
         if not any(
-            os.path.basename(h.get("command", "").split()[-1]) in stale
+            _last_token_basename(h.get("command", "")) in stale
             for h in entry.get("hooks", [])
         )
     ]
@@ -911,7 +1109,7 @@ if changed:
         f.write("\n")
     os.replace(tmp, target)
     print("  [ok] Pruned deprecated hook entries from settings.json")
-' ".claude/settings.json" "${stale_hooks[*]}"
+' ".claude/settings.json" "${deprecated_hooks[*]}"
   fi
 
   # Copies all runtime rule files from rules/ to .claude/rules/, including
@@ -1041,6 +1239,16 @@ MCPEOF
   fi
 
   merge_settings_json ".claude/settings.json" "project"
+
+  # Register upstream context-mode hooks via the CLI dispatcher form.
+  # Guarded by INSTALL_CONTEXT_MODE=true (flipped false by --skip-context-mode).
+  # The five upstream hooks (PostToolUse/PreToolUse/PreCompact/SessionStart/
+  # UserPromptSubmit) use their own substring-dedup merge (merge_context_mode_hooks),
+  # separate from the basename-dedup used for project hook scripts above, so there
+  # is no dedup collision between the two merges.
+  if [ "$INSTALL_CONTEXT_MODE" = true ]; then
+    merge_context_mode_hooks ".claude/settings.json"
+  fi
 
   echo ""
 }
