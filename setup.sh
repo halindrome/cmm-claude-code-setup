@@ -734,7 +734,7 @@ dispatch = sys.argv[2]
 # install → fast path; npx fallback → first-run primes cache, no race after).
 expected = {
     "PostToolUse": {
-        "matcher": "Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__",
+        "matcher": "Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|WebFetch|WebSearch|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__",
         "command": f"bash {dispatch} posttooluse",
     },
     "PreToolUse": {
@@ -773,11 +773,17 @@ for event, spec in expected.items():
     want_cmd = spec["command"]
     # Two sentinels so we detect AND heal every prior phase-51 form:
     # - dispatcher (current)            → `context-mode-hook-dispatch.sh <event>`
-    # - npx launcher (intermediate fix) → `npx ... hook claude-code <event>`
+    # - npx launcher (intermediate fix) → `npx ... context-mode@latest hook claude-code <event>`
     # - bare (early phase-51)           → `context-mode hook claude-code <event>`
-    # Matching either sentinel lets us find the existing entry; the heal
-    # condition below rewrites non-dispatcher forms to the dispatcher.
-    sentinel_legacy = f"hook claude-code {event.lower()}"
+    # The legacy sentinel REQUIRES both `context-mode` and the event phrase
+    # in the command string — a tighter anchor than matching just
+    # `hook claude-code <event>`, which would false-match any user-authored
+    # shim whose command happens to contain that phrase (e.g. a hand-rolled
+    # wrapper that translates an unrelated CLI's arguments). Both legitimate
+    # legacy forms contain `context-mode` (bare: `context-mode hook ...`;
+    # npx launcher: `... context-mode@latest ...`), so this anchoring is
+    # safe for the upgrade path while reducing false-match surface area.
+    sentinel_legacy_phrase = f"hook claude-code {event.lower()}"
     sentinel_dispatch = f"context-mode-hook-dispatch.sh {event.lower()}"
 
     if event not in data["hooks"] or not isinstance(data["hooks"].get(event), list):
@@ -792,7 +798,10 @@ for event, spec in expected.items():
             if not isinstance(h, dict):
                 continue
             cmd = h.get("command", "")
-            if isinstance(cmd, str) and (sentinel_legacy in cmd or sentinel_dispatch in cmd):
+            if not isinstance(cmd, str):
+                continue
+            legacy_match = ("context-mode" in cmd) and (sentinel_legacy_phrase in cmd)
+            if legacy_match or sentinel_dispatch in cmd:
                 # Heal matcher drift — rewrite matcher to the upstream
                 # default so all installs stay on the same tool-coverage
                 # contract.
@@ -1102,6 +1111,9 @@ for hook_type in list(data.get("hooks", {})):
     ]
     if len(data["hooks"][hook_type]) < before:
         changed = True
+    # Drop empty event arrays left behind by pruning — keeps settings.json tidy.
+    if not data["hooks"][hook_type]:
+        del data["hooks"][hook_type]
 if changed:
     tmp = target + ".tmp"
     with open(tmp, "w") as f:

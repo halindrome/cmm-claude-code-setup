@@ -74,7 +74,7 @@ SENTINEL=""
 if [ -n "$PROJECT_HASH" ]; then
     SENTINEL="/tmp/ctx-nudge-${PROJECT_HASH}"
     if [ -f "$SENTINEL" ]; then
-        MTIME=$(stat -f %m "$SENTINEL" 2>/dev/null || stat -c %Y "$SENTINEL" 2>/dev/null)
+        MTIME=$(date -r "$SENTINEL" +%s 2>/dev/null)
         NOW=$(date +%s 2>/dev/null)
         if [ -n "$MTIME" ] && [ -n "$NOW" ] && [ "$((NOW - MTIME))" -lt 120 ]; then
             exit 0

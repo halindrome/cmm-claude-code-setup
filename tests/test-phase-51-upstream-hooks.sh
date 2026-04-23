@@ -95,7 +95,7 @@ else
 
     # PostToolUse matcher: broad tool list including mcp__
     ptu_matcher=$(jq -r '.hooks.PostToolUse[] | select(.hooks[0].command | contains("context-mode-hook-dispatch.sh posttooluse")) | .matcher' "$SETTINGS1")
-    expected_ptu="Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__"
+    expected_ptu="Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|WebFetch|WebSearch|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__"
     if [ "$ptu_matcher" = "$expected_ptu" ]; then
         _pass "$CASE - PostToolUse matcher is exact broad matcher string"
     else
