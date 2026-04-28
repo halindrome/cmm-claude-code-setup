@@ -37,8 +37,23 @@ if [ "$HAS_OFFSET" = "1" ] && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
   if echo "$FILE_PATH" | grep -q '# cmm-exempt'; then
     exit 0
   fi
-  # Resolve project root + hash (fail-open if either step fails).
+  # Resolve project root + hash. Anchor on FILE_PATH's git toplevel, then walk the
+  # superproject chain to the outermost root. This MUST match track-cmm-calls.sh's
+  # PROJECT_HASH derivation (lib/project-root.sh) so the sentinel writer and reader
+  # agree on the hash. Previously this used only `git rev-parse --show-toplevel`,
+  # which returned the SUBMODULE root for files inside a submodule while the writer
+  # used the SUPERPROJECT root — names diverged, the freshness check always failed,
+  # and the offset+limit<=100 exemption was unreachable in submodule contexts.
   _CN_ROOT=$(git -C "$(dirname "$FILE_PATH")" rev-parse --show-toplevel 2>/dev/null)
+  if [ -n "$_CN_ROOT" ]; then
+    _CN_WALK="$_CN_ROOT"
+    while true; do
+      _CN_PARENT="$(git -C "$_CN_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+      [ -z "$_CN_PARENT" ] && break
+      _CN_WALK="$_CN_PARENT"
+    done
+    _CN_ROOT="$_CN_WALK"
+  fi
   if [ -z "$_CN_ROOT" ]; then
     _CN_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
     _CN_ROOT="${_CN_CWD:-}"

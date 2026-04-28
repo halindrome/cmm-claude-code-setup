@@ -194,6 +194,43 @@ rm -f "$PROJ_SENTINEL"
 _assert_exit "Test 20: cmm-exempt marker bypasses sentinel" 0 \
     "{\"tool_input\":{\"file_path\":\"$PROJ/big.py # cmm-exempt\",\"offset\":10,\"limit\":50}}"
 
+# --- Submodule sentinel-hash agreement (regression for cmm-nudge/track-cmm-calls drift) ---
+# Bug: when FILE_PATH lived inside a git submodule, cmm-nudge.sh hashed the SUBMODULE
+# root via `git rev-parse --show-toplevel`, but track-cmm-calls.sh (via lib/project-root.sh)
+# walked the superproject chain and hashed the OUTERMOST root. The two hooks named
+# different /tmp/cmm-recent-* sentinels, so the offset+limit<=100 exemption never fired
+# inside submodules. Fix: cmm-nudge.sh now also walks the superproject chain. This test
+# pins that contract by touching ONLY the superproject-hash sentinel and asserting that
+# a Read inside the submodule passes the freshness gate.
+echo "--- Test 21: submodule Read uses superproject hash (exit 0) ---"
+SUPER="$TMPDIR_ROOT/super"
+SUB_DIR="$SUPER/sub"
+mkdir -p "$SUPER"
+git -C "$SUPER" init -q
+echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$SUPER/.mcp.json"
+# Build a real submodule (file:// URL ensures git accepts it without a remote).
+SUB_SRC="$TMPDIR_ROOT/sub-src"
+mkdir -p "$SUB_SRC"
+git -C "$SUB_SRC" init -q
+for i in $(seq 1 60); do echo "sub line $i"; done > "$SUB_SRC/sub-big.py"
+git -C "$SUB_SRC" add . >/dev/null 2>&1
+git -C "$SUB_SRC" -c user.email=t@t -c user.name=t commit -qm init
+git -C "$SUPER" -c protocol.file.allow=always submodule add -q "$SUB_SRC" sub 2>/dev/null
+git -C "$SUPER" -c user.email=t@t -c user.name=t commit -qm super-init 2>/dev/null
+SUPER_REAL=$(git -C "$SUPER" rev-parse --show-toplevel)
+SUPER_HASH=$(_hash_of "$SUPER_REAL")
+SUPER_SENTINEL="/tmp/cmm-recent-${SUPER_HASH}"
+SUB_REAL=$(git -C "$SUB_DIR" rev-parse --show-toplevel)
+SUB_HASH=$(_hash_of "$SUB_REAL")
+SUB_SENTINEL="/tmp/cmm-recent-${SUB_HASH}"
+# Touch ONLY the superproject sentinel; explicitly remove the submodule one.
+touch "$SUPER_SENTINEL"
+rm -f "$SUB_SENTINEL"
+_assert_exit "Test 21: submodule Read honors superproject sentinel" 0 \
+    "{\"tool_input\":{\"file_path\":\"$SUB_DIR/sub-big.py\",\"offset\":1,\"limit\":50}}"
+# Cleanup the test sentinels we wrote.
+rm -f "$SUPER_SENTINEL" "$SUB_SENTINEL"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
