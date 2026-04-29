@@ -82,11 +82,14 @@ if [ -n "$PROJECT_HASH" ]; then
     fi
 fi
 
-# --- Advisory Message (architect voice; terse; imperative) ---
+# --- Advisory Message (intra-turn guidance; terse; imperative) ---
+# Framed as intra-turn guidance (NOT a turn boundary) so an LLM cannot misread
+# this reminder as a session/turn-end directive. Avoid leading ALLCAPS imperatives
+# like "STOP" / "HALT" anywhere in the message.
 # Contains the three load-bearing phrases: "state in ONE sentence",
 # "do NOT run another ctx_* call", "try ctx_search".
 read -r -d '' MSG <<'EOF'
-STOP. Before your next tool call, state in ONE sentence what this ctx_* result told you. If it already answers the user, answer directly -- do NOT run another ctx_* call. For a topic you have indexed this session, try ctx_search(queries=[...]) before re-running ctx_execute / ctx_fetch_and_index.
+Intra-turn reminder (not a turn boundary): before your next ctx_* tool call, state in ONE sentence what this ctx_* result told you, then continue the current task. If the result already answers the user, answer directly -- do NOT run another ctx_* call. For a topic you have indexed this session, try ctx_search(queries=[...]) before re-running ctx_execute / ctx_fetch_and_index.
 EOF
 
 # --- Emit JSON envelope via python3 json.dumps (handles quotes/backslashes/newlines correctly) ---
