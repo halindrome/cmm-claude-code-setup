@@ -156,6 +156,49 @@ for entries in data.get('hooks', {}).values():
 sys.exit(1 if found else 0)
 "
 
+# --- Deprecated hook purge: parity coverage for ctx-annotate-nudge.sh ---
+# This is the headline migration claim of the PR that retired ctx-annotate-nudge
+# (its reminder duplicated rules/ctx-rules.md guidance and was misread as a
+# turn-terminator). Pre-seed the wrapper file + settings entry, re-run setup,
+# confirm both are gone — directly proves the deprecated_hooks path covers
+# this entry, not just by analogy with ctx-search-nudge above.
+echo "#!/bin/bash" > .claude/hooks/ctx-annotate-nudge.sh
+chmod +x .claude/hooks/ctx-annotate-nudge.sh
+python3 - <<'PY'
+import json
+with open('.claude/settings.json') as f:
+    data = json.load(f)
+data.setdefault('hooks', {}).setdefault('PostToolUse', []).append({
+    "matcher": "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index",
+    "hooks": [{"type": "command", "command": "bash .claude/hooks/ctx-annotate-nudge.sh"}]
+})
+with open('.claude/settings.json', 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+
+echo "n" | bash "$REPO_ROOT/setup.sh" --project --yes --skip-mcp-check >/dev/null 2>&1 || {
+    echo "FAIL: setup.sh --project ctx-annotate purge-rerun exited non-zero"
+    FAIL=$((FAIL+1))
+}
+
+_assert "ctx-annotate-nudge.sh purged after re-install" \
+    bash -c 'test ! -e ".claude/hooks/ctx-annotate-nudge.sh"'
+
+_assert "ctx-annotate-nudge settings entry pruned after re-install" \
+    python3 -c "
+import json, sys
+with open('.claude/settings.json') as f:
+    data = json.load(f)
+found = False
+for entries in data.get('hooks', {}).values():
+    for entry in entries:
+        for h in entry.get('hooks', []):
+            if 'ctx-annotate-nudge' in h.get('command', ''):
+                found = True
+sys.exit(1 if found else 0)
+"
+
 # --- Idempotency: snapshot settings.json, re-run setup, diff ---
 cp .claude/settings.json .claude/settings.json.snap1
 sha_before=$(shasum .claude/settings.json.snap1 | awk '{print $1}')
