@@ -140,16 +140,6 @@
         ]
       },
       {
-        "matcher": "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/ctx-annotate-nudge.sh",
-            "_comment": "PostToolUse additionalContext nudge after ctx_* tools (120s cooldown); replaces ctx-search-nudge (no-ops if Context Mode not installed)"
-          }
-        ]
-      },
-      {
         "matcher": "mcp__codebase-memory-mcp__search_graph",
         "hooks": [
           {

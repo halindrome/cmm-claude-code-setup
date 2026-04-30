@@ -3,8 +3,9 @@
 # Verifies that setup.sh --project installs the surviving phase-45 artifacts
 # (subagent-ctx-startup.sh, ctx-rules.md) into .claude/, registers the
 # SubagentStart hook in .claude/settings.json, and is idempotent on re-run.
-# Note: ctx-search-nudge.sh was retired in phase 47 (superseded by
-# ctx-annotate-nudge.sh); its assertions moved to test-phase-47-bundle-install.sh.
+# Note: ctx-search-nudge.sh was retired in phase 47, and ctx-annotate-nudge.sh
+# was retired post-phase-51 (its reminder duplicated rules/ctx-rules.md guidance);
+# their absence assertions live in test-phase-47-bundle-install.sh.
 # Usage: bash tests/test-phase-45-bundle-install.sh
 # Exit: 0 = all pass, 1 = any failure
 

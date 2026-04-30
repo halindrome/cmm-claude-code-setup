@@ -998,15 +998,11 @@ install_project() {
     set_executable ".claude/hooks/webfetch-nudge.sh"
   fi
 
-  # Copy ctx-annotate-nudge.sh from hooks/global/ to .claude/hooks/
-  # PostToolUse additionalContext nudge for context-mode tools (replaces the
-  # retired ctx-search-nudge.sh — see phase 47). Emits a summarize-before-next-call
-  # instruction via hookSpecificOutput.additionalContext with a 120s cooldown.
-  # No-ops when context-mode is not installed thanks to the hook's built-in probe.
-  if [ -f "$SCRIPT_DIR/hooks/global/ctx-annotate-nudge.sh" ]; then
-    copy_file "$SCRIPT_DIR/hooks/global/ctx-annotate-nudge.sh" ".claude/hooks/ctx-annotate-nudge.sh"
-    set_executable ".claude/hooks/ctx-annotate-nudge.sh"
-  fi
+  # ctx-annotate-nudge.sh removed: the PostToolUse additionalContext reminder
+  # duplicated guidance already loaded from rules/ctx-rules.md into every turn,
+  # and the duplication itself caused the model to misread the reminder as a
+  # turn-terminator (silent stops mid-investigation). Cleanup of existing
+  # installs is handled by the deprecated_hooks list below.
 
   # Copy cmm-orient-nudge.sh from hooks/global/ to .claude/hooks/
   # One-shot-per-session PostToolUse nudge after the first search_graph call —
@@ -1054,6 +1050,7 @@ install_project() {
     "ctx-search-nudge.sh"
     "context-mode-event-logger.sh"
     "context-mode-pre-compact.sh"
+    "ctx-annotate-nudge.sh"
   )
 
   # Remove any deprecated hook files still on disk. Use `rm -f` so read-only
