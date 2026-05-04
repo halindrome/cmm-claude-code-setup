@@ -343,6 +343,50 @@ for entry in "${AGENT_HOOKS[@]}"; do
   fi
 done
 
+# --- Phase 52 additions ---
+# Assert agent body content shipped in Phase 52 Plan 01 is present.
+# Pure greps over agents/*.md — no hook invocation required.
+echo ""
+echo "=== Phase 52: agent body content assertions ==="
+
+# (a) vbw-qa.md: write-verification.sh NON-NEGOTIABLE gate present (>=1)
+_qa_count=$(grep -c 'write-verification.sh' "$AGENTS_DIR/vbw-qa.md" || true)
+if [ "${_qa_count:-0}" -ge 1 ]; then
+  pass "vbw-qa: write-verification.sh keyword present (count=$_qa_count, need >=1)"
+else
+  fail "vbw-qa: write-verification.sh keyword missing (count=$_qa_count, need >=1)"
+fi
+
+# (b) vbw-dev.md: pre_existing_issues mentioned in DEVN-05 rule + Stage 3 (>=2)
+_dev_pei_count=$(grep -c 'pre_existing_issues' "$AGENTS_DIR/vbw-dev.md" || true)
+if [ "${_dev_pei_count:-0}" -ge 2 ]; then
+  pass "vbw-dev: pre_existing_issues keyword present (count=$_dev_pei_count, need >=2)"
+else
+  fail "vbw-dev: pre_existing_issues keyword underrepresented (count=$_dev_pei_count, need >=2)"
+fi
+
+# (c) <skill_no_activation> handling in each of the 6 target agents (>=1 per file)
+for _agent in vbw-dev vbw-scout vbw-lead vbw-qa vbw-debugger vbw-docs; do
+  if [ ! -f "$AGENTS_DIR/$_agent.md" ]; then
+    fail "$_agent: agent file missing (cannot check skill_no_activation)"
+    continue
+  fi
+  _sna_count=$(grep -c 'skill_no_activation' "$AGENTS_DIR/$_agent.md" || true)
+  if [ "${_sna_count:-0}" -ge 1 ]; then
+    pass "$_agent: skill_no_activation keyword present (count=$_sna_count, need >=1)"
+  else
+    fail "$_agent: skill_no_activation keyword missing (count=$_sna_count, need >=1)"
+  fi
+done
+
+# (d) vbw-dev.md: '## Context Mode Web Fetch' preservation (count == 1)
+_dev_cmwf_count=$(grep -c '^## Context Mode Web Fetch' "$AGENTS_DIR/vbw-dev.md" || true)
+if [ "${_dev_cmwf_count:-0}" -eq 1 ]; then
+  pass "vbw-dev: '## Context Mode Web Fetch' heading preserved (count=$_dev_cmwf_count)"
+else
+  fail "vbw-dev: '## Context Mode Web Fetch' heading count=$_dev_cmwf_count (expected exactly 1)"
+fi
+
 # ─── Summary ─────────────────────────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════"
