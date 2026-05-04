@@ -11,40 +11,44 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [x] Phase 6: Token Consumption Benchmarks
 - [x] Phase 7: Agent Initialization Context
 - [x] Phase 8: Context Mode Integration
-- [x] Phase 9: Setup MCP Availability Check
-- [x] Phase 10: Benchmark Context Mode
+- [ ] Phase 9: Setup MCP Availability Check
+- [ ] Phase 10: Benchmark Context Mode
 - [x] Phase 11: Statusline Setup Offer
 - [x] Phase 12: Context Mode Bootstrap
 - [x] Phase 13: Statusline Token Savings
 - [x] Phase 14: Fix Statusline Relative Path
-- [x] Phase 15: Single Gate + Monorepo Path Fix
+- [ ] Phase 15: Single Gate + Monorepo Path Fix
 - [x] Phase 16: jmunch Security Hardening
-- [x] Phase 17: Git Branching Strategy
+- [ ] Phase 17: Git Branching Strategy
 - [x] Phase 18: Implement Branching Strategy
-- [x] Phase 19: Fix Session-Gate CMM Deadlock
+- [ ] Phase 19: Fix Session-Gate CMM Deadlock
 - [x] Phase 20: CMM Sentinel Staleness After Commits
 - [x] Phase 21: Require index_repository for Stale Sentinel
 - [x] Phase 22: Context Mode Monorepo Root Path Fix
-- [ ] Phase 23: Enforce CMM Hooks Inside Subagents
+- [x] Phase 23: Enforce CMM Hooks Inside Subagents
 - [ ] Phase 24: Context Mode Integration Verification
-- [ ] Phase 25: CMM Index and UI Offer in Setup
-- [ ] Phase 26: Uninstall Option
+- [x] Phase 25: CMM Index and UI Offer in Setup
+- [x] Phase 26: Uninstall Option
 - [x] Phase 27: CMM Touch Project Post-Commit Hook
 - [x] Phase 28: Agent Hook Reliability Audit
 - [x] Phase 29: Setup Drift Detection
-- [ ] Phase 30: Per-Project CMM Call Count Cache
-- [ ] Phase 31: Context Mode CMM Output Indexing
-- [ ] Phase 32: ctx_execute Enforcement Hook
-- [ ] Phase 33: Context Mode Server PATH Detection
-- [ ] Phase 34: Hard-Block Read on Code Files
-- [ ] Phase 35: Expand Agent CMM Gate to Explore and Plan
+- [x] Phase 30: Per-Project CMM Call Count Cache
+- [x] Phase 31: Context Mode CMM Output Indexing
+- [x] Phase 32: ctx_execute Enforcement Hook
+- [x] Phase 33: Context Mode Server PATH Detection
+- [x] Phase 34: Hard-Block Read on Code Files
+- [x] Phase 35: Expand Agent CMM Gate to Explore and Plan
 - [ ] Phase 36: Hook Block Counter and Statusline Integration
 - [x] Phase 46: Source-Code Search CMM Gate
 - [ ] Phase 48: Setup Statusline Reprompt with Defaults
-- [ ] Phase 49: Align with VBW Agent Updates (v1.35.0)
+- [ ] Phase 49: Align with VBW Agent Updates (v1.35.0) (superseded by Phase 52)
 - [x] Phase 51: Promote Context-Mode Hooks to First-Class
+- [ ] Phase 52: Audit VBW v1.36.1+ Upstream Changes
+- [ ] Phase 53: Review Context-Mode Updates for Tool Guidance
 
 ### Phase 49: Align with VBW Agent Updates (v1.35.0)
+> **Superseded by Phase 52** (2026-05-04): Phase 52 absorbs the v1.35.0 alignment scope into a broader audit covering all VBW changes through v1.36.1+ on `origin/main`. Phase 49's specific gaps (vbw-qa write-verification gate, vbw-dev pre_existing_issues rule, `<skill_no_activation>` handling, agent frontmatter `tools:` allowlists) remain in scope and will be addressed inside Phase 52's planning.
+
 **Goal:** Re-sync this tool's agent override bodies and frontmatter with the VBW v1.35.0 source so VBW subagents running under CMM enforcement behave identically to stock VBW. Research (`49-RESEARCH.md`) confirms VBW v1.35.0 is stable on agent inventory (still 6: dev/scout/lead/qa/debugger/docs), hook events, and `subagent_type` strings — the breaking drift is entirely in agent body content and one `tools:` allowlist mismatch. Concrete gaps: (1) `vbw-qa` body is missing the NON-NEGOTIABLE `write-verification.sh` gate, `plan_ref` / `plans_verified` validation, `Debug Session QA Mode` section, and expanded deviation/remediation rules — QA agents currently produce payloads that `write-verification.sh` rejects at exit 1; (2) `vbw-dev` body is missing the DEVN-05 structured `pre_existing_issues` JSON rule and the `## Tool blocks` section explaining how to follow `REPLACE WITH:` instructions emitted by `cmm-grep-nudge.sh` (phase 46); (3) all 6 agents are missing `<skill_no_activation>` handling (two-line addition); (4) `vbw-qa` frontmatter adds a `tools:` allowlist that VBW source does not have — revert to `disallowedTools: Task` only so future VBW tool additions to QA are not silently blocked. **Caveman (VBW v1.35.0 prose-directive compression framework) explicitly out of scope** — orthogonal to CMM/context-mode token reduction (output-side vs input-side), no MCP/hook surface, default-off, no regressions when absent. Future caveman adoption is tracked as a separate follow-up phase.
 **Deps:** Phase 47 (enforcement audit established the agent override baseline), Phase 23 (subagent hook frontmatter)
 **Reqs:** none (DX / correctness alignment with upstream VBW)
@@ -312,6 +316,8 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 | 27 - CMM Touch Project Post-Commit Hook | 4/4 | complete | 2026-03-23 |
 | 28 - Agent Hook Reliability Audit | 4/4 | complete | 2026-04-16 |
 | 51 - Promote Context-Mode Hooks to First-Class | 4/4 | complete | 2026-04-22 |
+| 52 - Audit VBW v1.36.1+ Upstream Changes | 0/2 | planned | - |
+| 53 - Review Context-Mode Updates for Tool Guidance | 0/? | pending | — |
 
 ### Phase 23: Enforce CMM Hooks Inside Subagents
 **Goal:** Hooks registered in `settings.json` (session gate, stale advisory, CMM call tracker) do not fire inside VBW subagents (Dev, Scout, Lead, QA). These agents make CMM queries and file edits without the enforcement layer active — they can query a stale index silently, bypass the session gate, and skip call tracking. This is a correctness gap: the tooling is designed to guarantee all CMM usage is accurate and tracked, but that guarantee breaks down exactly when subagents are doing the most work. Fix this by using the mechanisms from Claude Code's subagent hooks API: inject the session gate check via `SubagentStart` context injection, and add the stale advisory and CMM call tracking hooks to VBW agent frontmatter files so they fire inside each agent's execution context.
@@ -568,3 +574,36 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - `rules/ctx-rules.md` updated to document the new always-on capture behavior (vs. today's opt-in via `intent=` param on `ctx_execute`)
 - Re-install safety: running `setup.sh --project` a second time does not duplicate hook entries, does not re-install deprecated wrappers, and respects existing user customizations in `.claude/settings.json` (non-context-mode matchers untouched)
 - Regression test covers: merge idempotency (second setup run produces no diff in settings.json), `--skip-context-mode` path (no upstream entries written), deprecated-wrapper cleanup (wrapper files removed on re-install if present from prior version)
+
+### Phase 53: Review Context-Mode Updates for Tool Guidance
+**Goal:** Diff our currently-installed context-mode (v1.0.75 at `~/.local/bin/context-mode-server` and the npx-cached install) against `../context-mode` `origin/main` (v1.0.107, ~120 commits in range), focused on whether our tool-use guidance still matches reality. Scope is the user's question: which of our user-facing tool-use docs and agent overrides drift from the current upstream? Confirmed scope of impact (per `53-RESEARCH.md`): **2 files need text changes plus 3-4 agent overrides need a verification pass**, and **0 of our 16 hooks need changes** (upstream deleted its duplicate `hooks.json` in commit `ece3abb`, which actually reduces overlap with our enforcement layer). Concrete deltas to absorb: (1) tool list expands from the 6 tools currently documented in `rules/ctx-rules.md` (`ctx_execute`, `ctx_search`, `ctx_index`, `ctx_fetch_and_index`, `ctx_batch_execute`, `ctx_stats`) to 11 tools — add `ctx_execute_file`, `ctx_doctor`, `ctx_upgrade`, `ctx_purge`, `ctx_insight` (verify each tool's earliest version vs the installed v1.0.75 binary before promoting it as a stable directive); (2) `intent=` parameter semantics are stale — it is now a search-mode trigger gated on the `INTENT_SEARCH_THRESHOLD = 5_000` byte threshold at `src/server.ts:1187`, not a simple indexing toggle, and our rules still describe the older behavior; (3) `ctx_batch_execute` `concurrency: 1-8` parameter (added v1.0.104, commit `1d991a2`) is missing from our guidance — concrete win for I/O-bound batches (network calls, multi-fetch); (4) `label` field on batch commands is required, not optional — our examples treat it as optional. Out of scope: refactoring upstream context-mode, contributing changes back, upgrading our installed binary to v1.0.107 (separate operational task — the user can run `npm install -g context-mode@latest` independently when ready). Phase 51's hook layer is unaffected; this is a pure docs/guidance refresh.
+**Deps:** Phase 51 (Promote Context-Mode Hooks to First-Class — established the hook layer and `setup.sh` integration this audit verifies still applies)
+**Reqs:** none (correctness/maintenance alignment with upstream context-mode)
+**Success:**
+- `53-RESEARCH.md` produced: per-commit impact table for the v1.0.75 → v1.0.107 range, classifying each commit into one of {`affects-rules-md`, `affects-hooks`, `affects-agents`, `internal-no-impact`}
+- Tool surface delta verified: every newly-added tool in our updated `rules/ctx-rules.md` was confirmed to exist in the installed v1.0.75 binary (or explicitly noted as "available in upstream main only — install upgrade required to use")
+- `rules/ctx-rules.md` updated with: (a) full 11-tool list, (b) corrected `intent=` semantics (search-mode trigger at 5KB threshold), (c) `ctx_batch_execute` `concurrency: 1-8` guidance for I/O-bound batches, (d) batch `label` field documented as required, (e) any tool that requires upgrading past v1.0.75 explicitly flagged so users on older installs don't get failed tool calls
+- `rules/cmm-rules.md` confirmed unchanged (Scout: no updates needed — context-mode tool changes don't affect CMM/context-mode boundary doc)
+- Agent override audit: `agents/vbw-{scout,dev,debugger}.md` updated to reference `ctx_execute_file` and `concurrency` where relevant; `agents/vbw-{lead,qa,docs,architect}.md` verification pass completed and either updated or explicitly noted as "no change needed"
+- Hook audit: confirmed 0 of `hooks/{global,project}/*` need changes — upstream's `hooks.json` deletion (commit `ece3abb`) reduces matcher overlap with our enforcement layer; no upstream hook changes touch our PreToolUse blocks or PostToolUse capture wrappers
+- Drift-detection follow-up captured: the existing STATE.md todo (`ref:6f269994`, "compare installed .vbw files against local mods; warn if .vbw upstream has been updated since install") should extend to context-mode source — note as a candidate next phase if this manual audit proves painful to repeat
+- Optional: a one-line `setup.sh` advisory printed when the installed `context-mode-server` is more than N minor versions behind `npm view context-mode version` — leave to user judgement whether to include in this phase
+
+**Research pre-loaded:** `53-RESEARCH.md` — installed binary at `~/.local/bin/context-mode-server` reports v1.0.75 vs upstream `main` at v1.0.107; ~120 commits in range; 0 hooks need changes; `rules/cmm-rules.md` unchanged; rules/ctx-rules.md and 3-4 agent overrides need updates as enumerated above.
+
+### Phase 52: Audit VBW v1.36.1+ Upstream Changes
+**Goal:** Diff installed VBW v1.36.1 (`/Users/ahby/.config/claude-code/plugins/cache/vbw-marketplace/vbw/1.36.1`) against `../vibe-better-with-claude-code-vbw` `origin/main` (~30 commits, 25 files, +3,664/-156 lines spanning PR #564 release through PR #573 linked-roadmap-drift fix), categorize every change by impact area (state-drift repair, UAT remediation artifact stabilization, QA gate validation, phase-detect / state-updater hardening, agent prompt updates), and decide for each whether: (a) the upstream fix resolves a live issue we are currently hitting (notably the `state_vs_filesystem`, `roadmap_vs_summaries`, `state_vs_state` drift warnings emitted by phase-detect at session start), (b) the change touches surface our hooks/agents intercept (e.g., new validators that our PreToolUse blocks must allow, new artifact paths our cmm-nudge / ctx-execute-enforcer must exempt), (c) the change is internal to VBW workflow with no impact on us, or (d) the change requires a corresponding update to our setup.sh/agents/rules. Absorbs Phase 49's v1.35.0 alignment scope (vbw-qa write-verification gate, vbw-dev pre_existing_issues rule, `<skill_no_activation>` handling, agent frontmatter `tools:` allowlists) so the audit covers v1.35.0 → latest in one pass. Out of scope: refactoring VBW itself, contributing fixes upstream, or upgrading to a yet-unreleased VBW version (we wait for the next packaged release before triggering plugin re-install). Concrete starting evidence: `git log --oneline 168c2606..origin/main` in the VBW source repo lists the 30 commits; `git diff --stat 168c2606..origin/main` shows the 25 changed files concentrated in `scripts/` (9 files, ~1,475 lines), `tests/` + `testing/` (12 files, ~1,899 lines), `references/` (2 files, 23 lines), and `commands/` (2 files, 87 lines).
+**Deps:** Phase 47 (Enforcement Audit established the agent override baseline that this audit extends), Phase 51 (Context-Mode hook promotion — relevant because context-mode capture interacts with VBW's new state-reconciliation scripts)
+**Reqs:** none (correctness/maintenance alignment with upstream VBW)
+**Success:**
+- `52-RESEARCH.md` produced: per-commit and per-file impact table covering all ~30 commits since `168c2606` (v1.36.1 release tag), classifying each into one of {`absorbs-our-issue`, `affects-our-hooks`, `vbw-internal-no-impact`, `requires-our-update`}
+- State-drift repair (`reconcile-state-md.sh`, `state-updater.sh +292`, `verify-state-consistency.sh +99`) evaluated against the live `state_vs_filesystem` / `roadmap_vs_summaries` / `state_vs_roadmap` warnings currently in our session — confirmed whether re-running `setup.sh --project` after the next VBW release fixes them, or whether we need a one-off reconciliation
+- UAT remediation artifact path stabilization (`uat-remediation-state.sh +180`, `validate-uat-remediation-artifact.sh` NEW +297, `uat-utils.sh` NEW +52) reviewed against our remediation phase outputs — confirmed our existing remediation rounds remain readable and our `host-repository` artifact-path guidance still holds
+- QA gate validation (`qa-result-gate.sh +125`, `commands/qa.md` +4) reviewed against our `vbw-qa.md` agent override — confirmed our override still produces gate-compatible payloads, or list the override deltas needed
+- Phase-detect changes (`phase-detect.sh +163`, `phase-state-utils.sh` NEW +210, `references/phase-detection.md` +22, `commands/vibe.md` +83) reviewed against any custom routing we depend on — confirmed our `/vbw:vibe` invocations still route correctly
+- Phase 49's v1.35.0 alignment items (vbw-qa write-verification gate, vbw-dev pre_existing_issues rule, `<skill_no_activation>` block on all 6 CMM agent overrides, agent frontmatter `tools:` allowlist revert) merged into the Phase 52 plan — Phase 49 marked complete-by-supersession in roadmap once Phase 52 ships
+- For each `affects-our-hooks` or `requires-our-update` change, an actionable plan task is produced (which file we touch, what the change is, how we test it)
+- Drift-detection follow-up captured: existing STATE.md todo (`ref:6f269994`, added 2026-04-22) — "compare installed .vbw files against local mods; warn if .vbw upstream has been updated since install" — referenced as a candidate next phase if Phase 52 confirms the manual diff workflow is too painful to repeat
+- No-op confirmation for items judged `vbw-internal-no-impact` is recorded with one-line rationale per item (don't silently drop)
+
+**Research pre-loaded:** `52-RESEARCH.md` will be generated by the Add Phase Scout spawn — confirmed inputs are `git log 168c2606..origin/main` and `git diff --stat 168c2606..origin/main` from `../vibe-better-with-claude-code-vbw`; installed plugin path is `~/.config/claude-code/plugins/cache/vbw-marketplace/vbw/1.36.1`.
