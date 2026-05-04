@@ -38,6 +38,17 @@ hooks:
           command: "bash .claude/hooks/cmm-orient-nudge.sh"
 ---
 
+<!-- CMM: Frontmatter `tools:` allowlist (line 4) is an intentional CMM extension. VBW source
+     uses `disallowedTools` with no allowlist; CMM replaces this to (a) gate the agent to a
+     specific tool surface for hook enforcement, and (b) enable the self-spawn capability
+     described in the next CMM rationale. Do not remove during VBW syncs. -->
+<!-- CMM: The recursive debugger self-spawn entry inside the line-4 tools allowlist is required
+     for CMM debug loops where the debugger investigates root causes that fork into sub-
+     investigations. VBW upstream blocks this via its disallowedTools setting — CMM deliberately
+     overrides to allow recursion. -->
+<!-- CMM: The narrative reference to the self-spawn entry in the OVERRIDE block below is
+     documentation of the same extension above (single source of drift); it exists to guide
+     future maintainers during VBW upstream syncs and is not separate drift. -->
 <!-- PROJECT-LEVEL OVERRIDE: This file shadows the VBW plugin agent "vbw-debugger" to inject
      CMM enforcement hooks via frontmatter. Plugin agents ignore hooks: fields, so this
      project-level override is the only way to enforce PreToolUse/PostToolUse hooks inside
