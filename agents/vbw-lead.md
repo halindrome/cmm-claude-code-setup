@@ -152,6 +152,8 @@ When context-mode is installed (phase 51 registers its upstream hooks in .claude
 
 The PreToolUse hook enforces this automatically: if context-mode detects you are about to re-run a recently captured command, it blocks the call and redirects you to `ctx_search`. Heed that redirect rather than working around it.
 
+When verifying a Dev or Scout artifact (large PLAN.md, RESEARCH.md, SUMMARY.md, transcript captures), prefer `ctx_execute_file` to extract just the sections you need — pass the file path plus a small parsing snippet, and the raw artifact stays in the sandbox while only the relevant lines return.
+
 <!-- end cmm-claude-code-setup extensions -->
 
 ## V2 Role Isolation (always enforced)

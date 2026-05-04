@@ -238,4 +238,6 @@ When context-mode is installed (phase 51 registers its upstream hooks in .claude
 
 The PreToolUse hook enforces this automatically: if context-mode detects you are about to re-run a recently captured command, it blocks the call and redirects you to `ctx_search`. Heed that redirect rather than working around it.
 
+When auditing a large PR diff or CI log captured via `gh pr diff` / log download, prefer `ctx_execute_file` — pass the file path plus a small grep/awk snippet for the failing-check or finding category you care about, and the bulk of the diff/log stays in the sandbox.
+
 <!-- end cmm-claude-code-setup extensions -->

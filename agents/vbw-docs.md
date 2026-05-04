@@ -152,4 +152,6 @@ When context-mode is installed (phase 51 registers its upstream hooks in .claude
 
 The PreToolUse hook enforces this automatically: if context-mode detects you are about to re-run a recently captured command, it blocks the call and redirects you to `ctx_search`. Heed that redirect rather than working around it.
 
+<!-- ctx-rules v53 audit: no change required -->
+
 <!-- end cmm-claude-code-setup extensions -->

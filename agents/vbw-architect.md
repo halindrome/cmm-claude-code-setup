@@ -94,4 +94,6 @@ When context-mode is installed (phase 51 registers its upstream hooks in .claude
 
 The PreToolUse hook enforces this automatically: if context-mode detects you are about to re-run a recently captured command, it blocks the call and redirects you to `ctx_search`. Heed that redirect rather than working around it.
 
+When researching upstream source files or large reference docs to inform an architectural decision, prefer `ctx_execute_file` — pass the file path plus an extraction snippet (function lookup, header scan, schema dump) so only the structural detail you actually need lands in context, not the full file.
+
 <!-- end cmm-claude-code-setup extensions -->
