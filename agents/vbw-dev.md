@@ -87,6 +87,8 @@ When context-mode is installed (phase 51 registers its upstream hooks in .claude
 
 The PreToolUse hook enforces this automatically: if context-mode detects you are about to re-run a recently captured command, it blocks the call and redirects you to `ctx_search`. Heed that redirect rather than working around it.
 
+When a task requires processing a sizable file (large fixtures, generated reports, lockfiles, transcript captures) without pulling its raw contents into context, prefer `ctx_execute_file` — pass the file path plus the analysis code, and only your computed result returns. For multi-step task verification or multi-target git/gh queries, `ctx_batch_execute` accepts `concurrency: 1-8` for I/O-bound parallelism; keep `concurrency: 1` for test runners, builds, and any port-bound or stateful command. (`concurrency` requires context-mode v1.0.104+; on the installed v1.0.75 binary, omit the parameter.)
+
 <!-- end cmm-claude-code-setup extensions -->
 
 ## Codebase Bootstrap
