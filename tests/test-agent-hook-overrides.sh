@@ -36,8 +36,10 @@ AGENTS=(
 # (all), cmm-query-stale-advisory (all).
 _must_have_hooks() {
   local agent="$1"
-  # Phase 47: ctx-annotate-nudge.sh and cmm-orient-nudge.sh registered in every agent.
-  local hooks="cmm-nudge.sh track-cmm-calls.sh cmm-query-stale-advisory.sh ctx-annotate-nudge.sh cmm-orient-nudge.sh"
+  # Phase 47: cmm-orient-nudge.sh registered in every agent.
+  # (ctx-annotate-nudge.sh removed — duplicated rules/ctx-rules.md guidance and
+  # was misread as a turn-terminator. See must-not-have list below.)
+  local hooks="cmm-nudge.sh track-cmm-calls.sh cmm-query-stale-advisory.sh cmm-orient-nudge.sh"
   case "$agent" in
     vbw-dev)       hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh webfetch-nudge.sh" ;;
     vbw-debugger)  hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh" ;;
@@ -53,9 +55,20 @@ _must_have_hooks() {
 # Returns space-separated list of hooks an agent MUST NOT have.
 _must_not_have_hooks() {
   local agent="$1"
-  # Parent-only hooks — never in any agent override.
-  # ctx-search-nudge.sh retired in phase 47 — must not appear in any agent.
-  local hooks="session-gate.sh subagent-cmm-startup.sh cmm-session-start.sh agent-cmm-gate.sh ctx-search-nudge.sh"
+  # Parent-only hooks — never in any agent override (architectural: these run
+  # only against the orchestrator session, not subagents).
+  local parent_only="session-gate.sh subagent-cmm-startup.sh cmm-session-start.sh agent-cmm-gate.sh"
+
+  # Retired-from-frontmatter hooks — were per-agent PostToolUse hooks until the
+  # phase that retired them; must not reappear in any agent override.
+  #   - ctx-search-nudge.sh: retired in phase 47 (superseded by ctx-annotate-nudge,
+  #     which itself was later retired below).
+  #   - ctx-annotate-nudge.sh: retired post-phase-51 (its reminder duplicated
+  #     rules/ctx-rules.md guidance loaded every turn, and the duplication caused
+  #     the model to misread the nudge as a turn-terminator).
+  local retired_from_frontmatter="ctx-search-nudge.sh ctx-annotate-nudge.sh"
+
+  local hooks="$parent_only $retired_from_frontmatter"
   case "$agent" in
     vbw-scout)     hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh" ;;
     vbw-architect) hooks="$hooks ctx-execute-enforcer.sh reindex-after-commit.sh webfetch-nudge.sh" ;;

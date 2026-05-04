@@ -1,10 +1,10 @@
 #!/bin/bash
 # test-phase-47-bundle-install.sh — Integration smoke test for phase-47 bundle install
-# Verifies that setup.sh --project installs the two new phase-47 global hooks
-# (ctx-annotate-nudge.sh, cmm-orient-nudge.sh), registers both in
-# .claude/settings.json under PostToolUse, retires ctx-search-nudge.sh
-# (must NOT be installed, must NOT be registered), and is idempotent on
-# re-run.
+# Verifies that setup.sh --project installs cmm-orient-nudge.sh and registers it
+# in .claude/settings.json under PostToolUse, retires ctx-search-nudge.sh and
+# ctx-annotate-nudge.sh (must NOT be installed, must NOT be registered), and is
+# idempotent on re-run. ctx-annotate-nudge was removed because its reminder
+# duplicated guidance already loaded from rules/ctx-rules.md every turn.
 # Usage: bash tests/test-phase-47-bundle-install.sh
 # Exit: 0 = all pass, 1 = any failure
 
@@ -42,33 +42,32 @@ echo "n" | bash "$REPO_ROOT/setup.sh" --project --yes --skip-mcp-check >/dev/nul
     exit 1
 }
 
-# --- New hooks exist and are executable ---
-_assert "ctx-annotate-nudge.sh installed" test -f ".claude/hooks/ctx-annotate-nudge.sh"
-_assert "ctx-annotate-nudge.sh is executable" test -x ".claude/hooks/ctx-annotate-nudge.sh"
+# --- New hook exists and is executable ---
 _assert "cmm-orient-nudge.sh installed" test -f ".claude/hooks/cmm-orient-nudge.sh"
 _assert "cmm-orient-nudge.sh is executable" test -x ".claude/hooks/cmm-orient-nudge.sh"
 
-# --- Retired hook is absent ---
+# --- Retired hooks are absent ---
 _assert "ctx-search-nudge.sh NOT installed (retired)" \
     bash -c 'test ! -e ".claude/hooks/ctx-search-nudge.sh"'
+_assert "ctx-annotate-nudge.sh NOT installed (retired — duplicated ctx-rules.md guidance)" \
+    bash -c 'test ! -e ".claude/hooks/ctx-annotate-nudge.sh"'
 
 # --- settings.json is valid JSON ---
 _assert "settings.json is valid JSON" python3 -m json.tool .claude/settings.json
 
-# --- ctx-annotate-nudge registered with the expected matcher ---
-_assert "ctx-annotate-nudge registered under PostToolUse with ctx_* matcher" \
+# --- ctx-annotate-nudge is NOT registered anywhere ---
+_assert "ctx-annotate-nudge NOT registered in settings.json (retired)" \
     python3 -c "
 import json, sys
 with open('.claude/settings.json') as f:
     data = json.load(f)
-expected = 'mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index'
-entries = data.get('hooks', {}).get('PostToolUse', [])
-found = any(
-    entry.get('matcher', '') == expected and
-    any('ctx-annotate-nudge.sh' in h.get('command', '') for h in entry.get('hooks', []))
-    for entry in entries
-)
-sys.exit(0 if found else 1)
+found = False
+for entries in data.get('hooks', {}).values():
+    for entry in entries:
+        for h in entry.get('hooks', []):
+            if 'ctx-annotate-nudge' in h.get('command', ''):
+                found = True
+sys.exit(1 if found else 0)
 "
 
 # --- cmm-orient-nudge registered with search_graph matcher ---
@@ -101,22 +100,7 @@ for entries in data.get('hooks', {}).values():
 sys.exit(1 if found else 0)
 "
 
-# --- No duplicate matcher-command pairs for the new hooks ---
-_assert "no duplicate ctx-annotate-nudge entries" \
-    python3 -c "
-import json, sys
-with open('.claude/settings.json') as f:
-    data = json.load(f)
-count = sum(
-    1
-    for entries in data.get('hooks', {}).values()
-    for entry in entries
-    for h in entry.get('hooks', [])
-    if 'ctx-annotate-nudge.sh' in h.get('command', '')
-)
-sys.exit(0 if count == 1 else 1)
-"
-
+# --- No duplicate matcher-command pairs ---
 _assert "no duplicate cmm-orient-nudge entries" \
     python3 -c "
 import json, sys
@@ -172,6 +156,49 @@ for entries in data.get('hooks', {}).values():
 sys.exit(1 if found else 0)
 "
 
+# --- Deprecated hook purge: parity coverage for ctx-annotate-nudge.sh ---
+# This is the headline migration claim of the PR that retired ctx-annotate-nudge
+# (its reminder duplicated rules/ctx-rules.md guidance and was misread as a
+# turn-terminator). Pre-seed the wrapper file + settings entry, re-run setup,
+# confirm both are gone — directly proves the deprecated_hooks path covers
+# this entry, not just by analogy with ctx-search-nudge above.
+echo "#!/bin/bash" > .claude/hooks/ctx-annotate-nudge.sh
+chmod +x .claude/hooks/ctx-annotate-nudge.sh
+python3 - <<'PY'
+import json
+with open('.claude/settings.json') as f:
+    data = json.load(f)
+data.setdefault('hooks', {}).setdefault('PostToolUse', []).append({
+    "matcher": "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index",
+    "hooks": [{"type": "command", "command": "bash .claude/hooks/ctx-annotate-nudge.sh"}]
+})
+with open('.claude/settings.json', 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+
+echo "n" | bash "$REPO_ROOT/setup.sh" --project --yes --skip-mcp-check >/dev/null 2>&1 || {
+    echo "FAIL: setup.sh --project ctx-annotate purge-rerun exited non-zero"
+    FAIL=$((FAIL+1))
+}
+
+_assert "ctx-annotate-nudge.sh purged after re-install" \
+    bash -c 'test ! -e ".claude/hooks/ctx-annotate-nudge.sh"'
+
+_assert "ctx-annotate-nudge settings entry pruned after re-install" \
+    python3 -c "
+import json, sys
+with open('.claude/settings.json') as f:
+    data = json.load(f)
+found = False
+for entries in data.get('hooks', {}).values():
+    for entry in entries:
+        for h in entry.get('hooks', []):
+            if 'ctx-annotate-nudge' in h.get('command', ''):
+                found = True
+sys.exit(1 if found else 0)
+"
+
 # --- Idempotency: snapshot settings.json, re-run setup, diff ---
 cp .claude/settings.json .claude/settings.json.snap1
 sha_before=$(shasum .claude/settings.json.snap1 | awk '{print $1}')
@@ -192,7 +219,7 @@ else
 fi
 
 # New hook files should be unchanged on second run.
-for h in ctx-annotate-nudge.sh cmm-orient-nudge.sh; do
+for h in cmm-orient-nudge.sh; do
     if cmp -s "$REPO_ROOT/hooks/global/$h" ".claude/hooks/$h"; then
         echo "PASS: .claude/hooks/$h matches source"
         PASS=$((PASS+1))

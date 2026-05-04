@@ -312,21 +312,17 @@ rm -f "$FAKE_PROJ_NO_CTX/.claude/context-mode.db"
 # Restore pass-through state so any later tests see a clean FAKE_PROJ_NO_CTX.
 rm -f "/tmp/ctx-webfetch-avail-${FAKE_PROJ_NO_CTX_HASH}" 2>/dev/null || true
 
-# ─── Test: ctx-annotate-nudge.sh + cmm-orient-nudge.sh wiring (Phase 47) ──
-# Confirm every VBW agent references the two new PostToolUse hooks and none
-# references the retired ctx-search-nudge.sh. This complements the behavior
-# coverage in tests/test-ctx-annotate-nudge.sh and test-cmm-orient-nudge.sh.
+# ─── Test: cmm-orient-nudge.sh wiring + retired ctx hooks absent (Phase 47) ─
+# Confirm every VBW agent references cmm-orient-nudge.sh and none references the
+# retired ctx-search-nudge.sh or ctx-annotate-nudge.sh. ctx-annotate-nudge was
+# removed because its reminder duplicated rules/ctx-rules.md guidance loaded
+# every turn, and the duplication caused the model to misread the nudge as a
+# turn-terminator (silent stops mid-investigation).
 echo ""
 echo "=== Phase 47 hooks: agent frontmatter wiring ==="
 for entry in "${AGENT_HOOKS[@]}"; do
   IFS='|' read -r agent has_nudge has_ctx <<< "$entry"
   [ ! -f "$AGENTS_DIR/$agent.md" ] && continue
-
-  if grep -q 'ctx-annotate-nudge.sh' "$AGENTS_DIR/$agent.md"; then
-    pass "$agent: registers ctx-annotate-nudge.sh"
-  else
-    fail "$agent: missing ctx-annotate-nudge.sh"
-  fi
 
   if grep -q 'cmm-orient-nudge.sh' "$AGENTS_DIR/$agent.md"; then
     pass "$agent: registers cmm-orient-nudge.sh"
@@ -339,39 +335,13 @@ for entry in "${AGENT_HOOKS[@]}"; do
   else
     pass "$agent: no ctx-search-nudge references"
   fi
+
+  if grep -q 'ctx-annotate-nudge' "$AGENTS_DIR/$agent.md"; then
+    fail "$agent: still references retired ctx-annotate-nudge"
+  else
+    pass "$agent: no ctx-annotate-nudge references"
+  fi
 done
-
-# ─── Test: ctx-annotate-nudge.sh emits additionalContext envelope ─────────
-# Sanity-check the hook referenced by every agent's frontmatter actually emits
-# a hookSpecificOutput.additionalContext JSON envelope on a qualifying ctx_*
-# call. The hook is installed globally in hooks/global/ so we invoke it there.
-echo ""
-echo "=== Phase 47: ctx-annotate-nudge emits additionalContext ==="
-CTX_ANNOTATE="$PROJECT_ROOT/hooks/global/ctx-annotate-nudge.sh"
-if [ ! -x "$CTX_ANNOTATE" ]; then
-  fail "ctx-annotate-nudge.sh missing or not executable at $CTX_ANNOTATE"
-else
-  # Clear any stale cooldown sentinel for this fake project so the first call emits.
-  rm -f "/tmp/ctx-nudge-${FAKE_PROJ_HASH}" 2>/dev/null || true
-  out=$(echo "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo hi\",\"intent\":\"test\"},\"cwd\":\"$FAKE_PROJ\"}" \
-    | env CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash -c "cd '$FAKE_PROJ' && bash '$CTX_ANNOTATE'" 2>/dev/null || true)
-  if echo "$out" | grep -q 'additionalContext'; then
-    pass "ctx-annotate-nudge: emits hookSpecificOutput.additionalContext on ctx_execute"
-  else
-    fail "ctx-annotate-nudge: no additionalContext envelope (got: $(printf '%s' "$out" | head -c 120))"
-  fi
-
-  # Second call within cooldown window should be silent.
-  out2=$(echo "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo hi\"},\"cwd\":\"$FAKE_PROJ\"}" \
-    | env CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash -c "cd '$FAKE_PROJ' && bash '$CTX_ANNOTATE'" 2>/dev/null || true)
-  if [ -z "$out2" ]; then
-    pass "ctx-annotate-nudge: cooldown suppresses second call within 120s"
-  else
-    fail "ctx-annotate-nudge: cooldown not honored (second-call output: $(printf '%s' "$out2" | head -c 120))"
-  fi
-
-  rm -f "/tmp/ctx-nudge-${FAKE_PROJ_HASH}" 2>/dev/null || true
-fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────
 echo ""

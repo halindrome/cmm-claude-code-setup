@@ -37,8 +37,38 @@ if [ "$HAS_OFFSET" = "1" ] && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
   if echo "$FILE_PATH" | grep -q '# cmm-exempt'; then
     exit 0
   fi
-  # Resolve project root + hash (fail-open if either step fails).
+  # Resolve project root + hash. Anchor on FILE_PATH's git toplevel, then walk the
+  # superproject chain to the outermost root, then re-anchor on the main project
+  # root if FILE_PATH lives inside a `git worktree add`-created worktree. This MUST
+  # match track-cmm-calls.sh's PROJECT_HASH derivation (lib/project-root.sh) so the
+  # sentinel writer and reader agree on the hash.
+  #
+  # The walk + worktree detection is intentionally INLINED rather than sourced from
+  # lib/project-root.sh because the lib derives its cache key from $(pwd) and would
+  # mis-resolve when the test harness invokes the hook from an unrelated tmp dir
+  # (regresses tests 12/17). Keep this block in lockstep with project-root.sh's
+  # superproject walk + git-common-dir worktree branch.
   _CN_ROOT=$(git -C "$(dirname "$FILE_PATH")" rev-parse --show-toplevel 2>/dev/null)
+  if [ -n "$_CN_ROOT" ]; then
+    _CN_WALK="$_CN_ROOT"
+    while true; do
+      _CN_PARENT="$(git -C "$_CN_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
+      [ -z "$_CN_PARENT" ] && break
+      _CN_WALK="$_CN_PARENT"
+    done
+    _CN_ROOT="$_CN_WALK"
+    # Worktree detection: worktrees are NOT submodules — show-superproject-working-tree
+    # returns empty for them. Detect via git-common-dir != git-dir and re-anchor on
+    # the main project root (parent of the common .git dir).
+    _CN_GIT_DIR="$(git -C "$_CN_ROOT" rev-parse --git-dir 2>/dev/null)"
+    _CN_GIT_COMMON="$(git -C "$_CN_ROOT" rev-parse --git-common-dir 2>/dev/null)"
+    [ -n "$_CN_GIT_DIR" ] && [ "${_CN_GIT_DIR:0:1}" != "/" ]       && _CN_GIT_DIR="$_CN_ROOT/$_CN_GIT_DIR"
+    [ -n "$_CN_GIT_COMMON" ] && [ "${_CN_GIT_COMMON:0:1}" != "/" ] && _CN_GIT_COMMON="$_CN_ROOT/$_CN_GIT_COMMON"
+    if [ -n "$_CN_GIT_DIR" ] && [ -n "$_CN_GIT_COMMON" ] && [ "$_CN_GIT_DIR" != "$_CN_GIT_COMMON" ]; then
+      _CN_MAIN="$(cd "$_CN_GIT_COMMON/.." 2>/dev/null && pwd -P)"
+      [ -n "$_CN_MAIN" ] && _CN_ROOT="$_CN_MAIN"
+    fi
+  fi
   if [ -z "$_CN_ROOT" ]; then
     _CN_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
     _CN_ROOT="${_CN_CWD:-}"
