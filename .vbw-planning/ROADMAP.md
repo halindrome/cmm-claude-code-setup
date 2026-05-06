@@ -317,7 +317,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 | 28 - Agent Hook Reliability Audit | 4/4 | complete | 2026-04-16 |
 | 51 - Promote Context-Mode Hooks to First-Class | 4/4 | complete | 2026-04-22 |
 | 52 - Audit VBW v1.36.1+ Upstream Changes | 2/2 | complete | 2026-05-04 |
-| 53 - Review Context-Mode Updates for Tool Guidance | 0/1 | planned | - |
+| 53 - Review Context-Mode Updates for Tool Guidance | 1/1 | complete | 2026-05-04 |
 
 ### Phase 23: Enforce CMM Hooks Inside Subagents
 **Goal:** Hooks registered in `settings.json` (session gate, stale advisory, CMM call tracker) do not fire inside VBW subagents (Dev, Scout, Lead, QA). These agents make CMM queries and file edits without the enforcement layer active — they can query a stale index silently, bypass the session gate, and skip call tracking. This is a correctness gap: the tooling is designed to guarantee all CMM usage is accurate and tracked, but that guarantee breaks down exactly when subagents are doing the most work. Fix this by using the mechanisms from Claude Code's subagent hooks API: inject the session gate check via `SubagentStart` context injection, and add the stale advisory and CMM call tracking hooks to VBW agent frontmatter files so they fire inside each agent's execution context.
