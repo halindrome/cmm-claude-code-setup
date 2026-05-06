@@ -134,6 +134,10 @@ _assert_exit "Test 11: top-level file_path blocked" 2 \
 # Compute the project hash using the same algorithm as cmm-nudge.sh (git-toplevel path
 # via md5 -q || md5sum). Must resolve realpath because git rev-parse returns the
 # canonical path which may differ from the symlinked TMPDIR path on macOS.
+# IMPORTANT: this one-liner must stay byte-equivalent to the inline hash command in
+# hooks/global/cmm-nudge.sh (and lib/project-root.sh:105). If either side changes the
+# echo flags, md5 fallback chain, or whitespace handling, the sentinel names will
+# silently diverge again and Tests 21/22 may falsely pass.
 _hash_of() {
     echo "$1" | md5 -q 2>/dev/null || echo "$1" | md5sum 2>/dev/null | awk '{print $1}'
 }
@@ -193,6 +197,85 @@ echo "--- Test 20: '# cmm-exempt' marker bypasses sentinel check (exit 0) ---"
 rm -f "$PROJ_SENTINEL"
 _assert_exit "Test 20: cmm-exempt marker bypasses sentinel" 0 \
     "{\"tool_input\":{\"file_path\":\"$PROJ/big.py # cmm-exempt\",\"offset\":10,\"limit\":50}}"
+
+# --- Submodule sentinel-hash agreement (regression for cmm-nudge/track-cmm-calls drift) ---
+# Bug: when FILE_PATH lived inside a git submodule, cmm-nudge.sh hashed the SUBMODULE
+# root via `git rev-parse --show-toplevel`, but track-cmm-calls.sh (via lib/project-root.sh)
+# walked the superproject chain and hashed the OUTERMOST root. The two hooks named
+# different /tmp/cmm-recent-* sentinels, so the offset+limit<=100 exemption never fired
+# inside submodules. Fix: cmm-nudge.sh now also walks the superproject chain. This test
+# pins that contract by touching ONLY the superproject-hash sentinel and asserting that
+# a Read inside the submodule passes the freshness gate.
+echo "--- Test 21: submodule Read uses superproject hash (exit 0) ---"
+SUPER="$TMPDIR_ROOT/super"
+SUB_DIR="$SUPER/sub"
+mkdir -p "$SUPER"
+git -C "$SUPER" init -q
+echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$SUPER/.mcp.json"
+# Build a real submodule (file:// URL ensures git accepts it without a remote).
+SUB_SRC="$TMPDIR_ROOT/sub-src"
+mkdir -p "$SUB_SRC"
+git -C "$SUB_SRC" init -q
+for i in $(seq 1 60); do echo "sub line $i"; done > "$SUB_SRC/sub-big.py"
+git -C "$SUB_SRC" add . >/dev/null 2>&1
+git -C "$SUB_SRC" -c user.email=t@t -c user.name=t commit -qm init
+git -C "$SUPER" -c protocol.file.allow=always submodule add -q "$SUB_SRC" sub
+git -C "$SUPER" -c user.email=t@t -c user.name=t commit -qm super-init
+# Sanity: submodule fixture must exist — guards against silent submodule-add failure
+# on hardened CI that rejects file:// despite the -c flag (vacuous-pass risk).
+[ -f "$SUB_DIR/sub-big.py" ] || { echo "FAIL: submodule fixture missing — submodule add silently failed"; exit 1; }
+SUPER_REAL=$(git -C "$SUPER" rev-parse --show-toplevel)
+SUPER_HASH=$(_hash_of "$SUPER_REAL")
+SUPER_SENTINEL="/tmp/cmm-recent-${SUPER_HASH}"
+SUB_REAL=$(git -C "$SUB_DIR" rev-parse --show-toplevel)
+SUB_HASH=$(_hash_of "$SUB_REAL")
+SUB_SENTINEL="/tmp/cmm-recent-${SUB_HASH}"
+# Sanity: the bug only reproduces when the submodule and superproject hash to
+# different sentinel names. If they collapse to the same value, Test 21 would
+# pass vacuously without exercising the walk.
+[ "$SUPER_HASH" != "$SUB_HASH" ] || { echo "FAIL: Test 21 setup — submodule hash equals superproject hash (bug not reproducible in this fixture)"; exit 1; }
+# Touch ONLY the superproject sentinel; explicitly remove the submodule one.
+touch "$SUPER_SENTINEL"
+rm -f "$SUB_SENTINEL"
+_assert_exit "Test 21: submodule Read honors superproject sentinel" 0 \
+    "{\"tool_input\":{\"file_path\":\"$SUB_DIR/sub-big.py\",\"offset\":1,\"limit\":50}}"
+# Cleanup the test sentinels we wrote.
+rm -f "$SUPER_SENTINEL" "$SUB_SENTINEL"
+
+# --- Worktree sentinel-hash agreement (regression for cmm-nudge/track-cmm-calls drift) ---
+# Same bug class as Test 21, different trigger: `git worktree add` creates a worktree
+# whose toplevel differs from the main repo, but show-superproject-working-tree returns
+# empty for it (worktrees are not submodules). Without git-common-dir worktree detection,
+# cmm-nudge.sh hashed the WORKTREE path while the writer (lib/project-root.sh) hashed
+# the MAIN repo path — names diverged, and the offset+limit<=100 exemption was
+# unreachable inside worktrees. Fix: cmm-nudge.sh now mirrors project-root.sh's
+# git-common-dir worktree branch. This test pins that contract.
+echo "--- Test 22: worktree Read uses main project hash (exit 0) ---"
+WT_MAIN="$TMPDIR_ROOT/wt-main"
+mkdir -p "$WT_MAIN"
+git -C "$WT_MAIN" init -q
+echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$WT_MAIN/.mcp.json"
+for i in $(seq 1 60); do echo "main line $i"; done > "$WT_MAIN/main-big.py"
+git -C "$WT_MAIN" add . >/dev/null 2>&1
+git -C "$WT_MAIN" -c user.email=t@t -c user.name=t commit -qm init
+WT_DIR="$TMPDIR_ROOT/wt-feature"
+git -C "$WT_MAIN" -c user.email=t@t -c user.name=t worktree add -q "$WT_DIR"
+for i in $(seq 1 60); do echo "wt line $i"; done > "$WT_DIR/wt-file.py"
+[ -f "$WT_DIR/wt-file.py" ] || { echo "FAIL: worktree fixture missing — worktree add failed"; exit 1; }
+WT_MAIN_REAL=$(git -C "$WT_MAIN" rev-parse --show-toplevel)
+WT_REAL=$(git -C "$WT_DIR" rev-parse --show-toplevel)
+WT_MAIN_HASH=$(_hash_of "$WT_MAIN_REAL")
+WT_HASH=$(_hash_of "$WT_REAL")
+WT_MAIN_SENTINEL="/tmp/cmm-recent-${WT_MAIN_HASH}"
+WT_SENTINEL="/tmp/cmm-recent-${WT_HASH}"
+# Sanity: worktree path must differ from main repo path → different hashes
+[ "$WT_MAIN_HASH" != "$WT_HASH" ] || { echo "FAIL: Test 22 setup — worktree hash equals main hash (bug not reproducible in this fixture)"; exit 1; }
+# Touch ONLY the main-project sentinel; explicitly remove the worktree-path one.
+touch "$WT_MAIN_SENTINEL"
+rm -f "$WT_SENTINEL"
+_assert_exit "Test 22: worktree Read honors main-project sentinel" 0 \
+    "{\"tool_input\":{\"file_path\":\"$WT_DIR/wt-file.py\",\"offset\":1,\"limit\":50}}"
+rm -f "$WT_MAIN_SENTINEL" "$WT_SENTINEL"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

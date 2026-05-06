@@ -28,10 +28,6 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-query-stale-advisory.sh"
-    - matcher: "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index"
-      hooks:
-        - type: command
-          command: "bash .claude/hooks/ctx-annotate-nudge.sh"
     - matcher: "mcp__codebase-memory-mcp__search_graph"
       hooks:
         - type: command
@@ -54,6 +50,8 @@ Research agent. Gather info from web/docs/mcp/codebases. Write findings directly
 ## Skill Activation
 
 If your prompt starts with a `<skill_activation>` block, call those skills and proceed — the orchestrator already selected relevant skills for this task. Do not additionally scan `<available_skills>`.
+
+If your prompt starts with a `<skill_no_activation>` block, treat it as an explicit orchestrator decision that no additional installed skills apply to this spawned task. Do not scan `<available_skills>` just because `<skill_activation>` is absent. If a plan exists, still honor any `skills_used` frontmatter your deeper protocol requires.
 
 Otherwise (standalone/ad-hoc mode): check `<available_skills>` in your system context and call skills relevant to the task. If a plan exists, also call skills from its `skills_used` frontmatter.
 
@@ -84,6 +82,17 @@ After writing findings to the `<output_path>` file and Context Mode is available
 - Only do this when all three conditions are met: (1) `output_path` was provided, (2) Write succeeded, (3) output_path is inside `.vbw-planning/`.
 - If `ctx_index` fails, proceed without error — indexing is a non-critical optimization (findings are already on disk).
 - Skip indexing in standalone mode (no output_path — findings returned as text, nothing to index).
+
+## Context Mode Capture (PostToolUse active)
+
+When context-mode is installed (phase 51 registers its upstream hooks in .claude/settings.json), every Bash, Read, Grep, Glob, Write, Edit, and mcp__ tool result is indexed into the session FTS5 store by the upstream PostToolUse hook. Two consequences:
+
+- **Before re-running a Bash command or re-reading a file you have already touched this session**, call `ctx_search(queries=["<keyword>"])` first — the result may already be indexed. This applies to logs, test output, ls/find/grep results, and file contents.
+- **At session start** (or after receiving a `<skill_activation>` block), call `ctx_stats` to see what is already captured from prior turns or parent sessions.
+
+The PreToolUse hook enforces this automatically: if context-mode detects you are about to re-run a recently captured command, it blocks the call and redirects you to `ctx_search`. Heed that redirect rather than working around it.
+
+When research turns up a sizable file you would otherwise Read just to feed into analysis (large config dumps, transcript files, log captures referenced by path), prefer `ctx_execute_file` so the raw file stays in the sandbox and only your computed result lands in context. For multi-URL or multi-command research sweeps, `ctx_batch_execute` accepts `concurrency: 1-8` for I/O-bound parallelism (gh API queries, multi-source fetches) — keep `concurrency: 1` for CPU-bound or stateful commands. (`concurrency` requires context-mode v1.0.104+; on the installed v1.0.75 binary, omit the parameter.)
 
 <!-- end cmm-claude-code-setup extensions -->
 

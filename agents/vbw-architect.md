@@ -24,10 +24,6 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-query-stale-advisory.sh"
-    - matcher: "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index"
-      hooks:
-        - type: command
-          command: "bash .claude/hooks/ctx-annotate-nudge.sh"
     - matcher: "mcp__codebase-memory-mcp__search_graph"
       hooks:
         - type: command
@@ -86,3 +82,18 @@ Architect is a planning-only agent and does not participate as a teammate in exe
 
 ## Circuit Breaker
 If you encounter the same error 3 consecutive times: STOP retrying the same approach. Try ONE alternative approach. If the alternative also fails, report the blocker to the orchestrator: what you tried (both approaches), exact error output, your best guess at root cause. Never attempt a 4th retry of the same failing operation.
+
+<!-- cmm-claude-code-setup: Context Mode extensions — re-apply after plugin updates -->
+
+## Context Mode Capture (PostToolUse active)
+
+When context-mode is installed (phase 51 registers its upstream hooks in .claude/settings.json), every Bash, Read, Grep, Glob, Write, Edit, and mcp__ tool result is indexed into the session FTS5 store by the upstream PostToolUse hook. Two consequences:
+
+- **Before re-running a Bash command or re-reading a file you have already touched this session**, call `ctx_search(queries=["<keyword>"])` first — the result may already be indexed. This applies to logs, test output, ls/find/grep results, and file contents.
+- **At session start** (or after receiving a `<skill_activation>` block), call `ctx_stats` to see what is already captured from prior turns or parent sessions.
+
+The PreToolUse hook enforces this automatically: if context-mode detects you are about to re-run a recently captured command, it blocks the call and redirects you to `ctx_search`. Heed that redirect rather than working around it.
+
+When researching upstream source files or large reference docs to inform an architectural decision, prefer `ctx_execute_file` — pass the file path plus an extraction snippet (function lookup, header scan, schema dump) so only the structural detail you actually need lands in context, not the full file.
+
+<!-- end cmm-claude-code-setup extensions -->

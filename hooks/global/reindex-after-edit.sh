@@ -40,8 +40,8 @@ is_cmm_ext "$FILE" || exit 0
 # Debounce: skip if we prompted within the last 60 seconds
 STAMP="/tmp/cmm-reindex-stamp-$(id -u)"
 if [ -f "$STAMP" ]; then
-  # Cross-platform stat: macOS uses -f %m, Linux uses -c %Y
-  LAST=$(stat -f %m "$STAMP" 2>/dev/null || stat -c %Y "$STAMP" 2>/dev/null || echo 0)
+  # Cross-platform mtime: date -r works on both BSD (macOS) and GNU (Linux)
+  LAST=$(date -r "$STAMP" +%s 2>/dev/null || echo 0)
   NOW=$(date +%s)
   if [ $((NOW - LAST)) -lt 60 ]; then
     exit 0

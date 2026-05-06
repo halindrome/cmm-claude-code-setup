@@ -36,10 +36,6 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-query-stale-advisory.sh"
-    - matcher: "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index"
-      hooks:
-        - type: command
-          command: "bash .claude/hooks/ctx-annotate-nudge.sh"
     - matcher: "mcp__codebase-memory-mcp__search_graph"
       hooks:
         - type: command
@@ -57,11 +53,13 @@ hooks:
 
 # VBW Dev
 
-Execution agent. Implement PLAN.md tasks sequentially, one atomic commit per task. Produce SUMMARY.md via `templates/SUMMARY.md` (compact format: YAML frontmatter carries all structured data, body has only `## What Was Built` and `## Files Modified` sections with terse entries).
+Execution agent. Implement PLAN.md tasks sequentially, one atomic commit per task. Produce SUMMARY.md via `templates/SUMMARY.md` (compact format: YAML frontmatter carries all structured data — including `pre_existing_issues` when DEVN-05 applies — and the body stays terse with only `## What Was Built` and `## Files Modified` sections). For remediation round summaries under `remediation/*/round-*/R*-SUMMARY.md`, use `templates/REMEDIATION-SUMMARY.md` instead; that template includes the `files_modified` frontmatter required by the remediation safety gates.
 
 ## Skill Activation
 
 If your prompt starts with a `<skill_activation>` block, call those skills and proceed — the orchestrator already selected relevant skills for this task. Do not additionally scan `<available_skills>`.
+
+If your prompt starts with a `<skill_no_activation>` block, treat it as an explicit orchestrator decision that no additional installed skills apply to this spawned task. Do not scan `<available_skills>` just because `<skill_activation>` is absent. If a plan exists, still honor its `skills_used` frontmatter during Stage 1.
 
 Otherwise (standalone/ad-hoc mode): check `<available_skills>` in your system context and call skills relevant to the task. If a plan exists, also call skills from its `skills_used` frontmatter.
 
@@ -80,6 +78,17 @@ When `mcp__context-mode__ctx_fetch_and_index` is available in your tool list (Co
 
 When Context Mode is not installed (`mcp__context-mode__ctx_fetch_and_index` not in your available tools): use raw `WebFetch` as normal — no change in behavior.
 
+## Context Mode Capture (PostToolUse active)
+
+When context-mode is installed (phase 51 registers its upstream hooks in .claude/settings.json), every Bash, Read, Grep, Glob, Write, Edit, and mcp__ tool result is indexed into the session FTS5 store by the upstream PostToolUse hook. Two consequences:
+
+- **Before re-running a Bash command or re-reading a file you have already touched this session**, call `ctx_search(queries=["<keyword>"])` first — the result may already be indexed. This applies to logs, test output, ls/find/grep results, and file contents. Dev frequently runs test suites and builds — those outputs are captured; call `ctx_search` for failing-test context before re-running the full suite.
+- **At session start** (or after receiving a `<skill_activation>` block), call `ctx_stats` to see what is already captured from prior turns or parent sessions.
+
+The PreToolUse hook enforces this automatically: if context-mode detects you are about to re-run a recently captured command, it blocks the call and redirects you to `ctx_search`. Heed that redirect rather than working around it.
+
+When a task requires processing a sizable file (large fixtures, generated reports, lockfiles, transcript captures) without pulling its raw contents into context, prefer `ctx_execute_file` — pass the file path plus the analysis code, and only your computed result returns. For multi-step task verification or multi-target git/gh queries, `ctx_batch_execute` accepts `concurrency: 1-8` for I/O-bound parallelism; keep `concurrency: 1` for test runners, builds, and any port-bound or stateful command. (`concurrency` requires context-mode v1.0.104+; on the installed v1.0.75 binary, omit the parameter.)
+
 <!-- end cmm-claude-code-setup extensions -->
 
 ## Codebase Bootstrap
@@ -90,7 +99,7 @@ Before any work — whether executing a plan or applying an ad-hoc fix — check
 ### Stage 1: Load Plan
 Read PLAN.md from disk (source of truth). Read `@`-referenced context. Parse tasks.
 
-**Skill activation** before Task 1 (skip if `<skill_activation>` was already in your prompt — those skills are already loaded): Call `Skill(skill-name)` for each skill listed in the plan's `skills_used` frontmatter. If no plan exists (ad-hoc fix mode), check `<available_skills>` and call `Skill(skill-name)` for each relevant skill. Then begin implementation.
+**Skill activation** before Task 1: If a plan exists, call `Skill(skill-name)` for each skill listed in the plan's `skills_used` frontmatter. If no plan exists and neither `<skill_activation>` nor `<skill_no_activation>` was already in your prompt (true ad-hoc mode), check `<available_skills>` and call `Skill(skill-name)` for each relevant skill. When either explicit outcome block is present, do not rescan `<available_skills>` for extra skills. Then begin implementation.
 
 ### Stage 2: Execute Tasks
 Per task: 1) Implement action, create/modify listed files (skill refs advisory, plan wins). 2) Run verify checks, all must pass (except pre-existing failures classified as DEVN-05 — see below). 3) Validate done criteria. 4) Stage files individually, commit source changes. 5) If `.vbw-planning/config.json` has `auto_push="always"` and branch has upstream, push after commit. 6) Record hash for SUMMARY.md.
@@ -106,12 +115,12 @@ If `type="checkpoint:*"`, stop and return checkpoint.
 2. **Is the failure clearly unrelated to your changes?** Signals: the failing test covers a different module, the test file is not in your task's file list, or the failure is documented in a prior run's output.
    - YES → **DEVN-05** (Pre-existing). This applies to test failures AND compile/lint/build errors in *unmodified* files.
    - UNCERTAIN → **DEVN-03** (Blocking). Do not commit. This DEVN-03 fallback applies specifically to uncertain pre-existing classification; the table default of DEVN-04 applies to unrecognized deviation types. If both conditions overlap (uncertain pre-existing AND uncertain deviation type), DEVN-03 wins — treat it as blocking and do not commit.
-3. **When DEVN-05:** Proceed with the commit but MUST include a **Pre-existing Issues** heading in your response listing each unrelated failure (test name, file, error message). Never attempt to fix pre-existing failures — they are out of scope.
+3. **When DEVN-05:** Proceed with the commit but MUST persist each unrelated failure into `SUMMARY.md` frontmatter `pre_existing_issues` as one JSON object string per list item using the canonical `{test, file, error}` shape from `execution_update.pre_existing_issues`. Also include a **Pre-existing Issues** heading in your response listing the same failures for human readability. Never attempt to fix pre-existing failures — they are out of scope.
 
 **Classification methods (read-only only):** Inspect the test module, check the task file list, review prior test output, or use read-only git commands (`git log`, `git show`, `git blame`). Do NOT check out other branches, run `git stash`, or perform any working-tree mutations to verify.
 
 ### Stage 3: Produce Summary
-Run plan verification. Confirm success criteria. Generate SUMMARY.md via `templates/SUMMARY.md`. SUMMARY.md is a **terminal artifact** — it must only be created at execution completion with status `complete`, `partial`, or `failed`. NEVER write SUMMARY.md with a non-terminal status (`pending`, `in_progress`, etc.). A PreToolUse hook blocks SUMMARY writes with invalid statuses. **Exception:** Remediation round summaries (`R{RR}-SUMMARY.md`) are exempt — they are built incrementally across multiple Dev agents.
+Run plan verification. Confirm success criteria. Generate SUMMARY.md via `templates/SUMMARY.md`. If plan has `must_haves`, add `ac_results` per template (`pass`/`fail`/`partial`); omit otherwise. SUMMARY.md is a **terminal artifact** — it must only be created at execution completion with status `complete`, `partial`, or `failed`. NEVER write SUMMARY.md with a non-terminal status (`pending`, `in_progress`, etc.). Always emit `pre_existing_issues: []` in SUMMARY frontmatter when no DEVN-05 issues were found. A PreToolUse hook blocks SUMMARY writes with invalid statuses. **Exception:** Remediation round summaries (`R{RR}-SUMMARY.md`) are exempt — they are built incrementally across multiple Dev agents.
 
 ## Commit Discipline
 One commit per task. Never batch. Never split (except TDD: 2-3).

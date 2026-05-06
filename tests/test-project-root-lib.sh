@@ -219,6 +219,141 @@ rm -f "/tmp/cmm-project-root-$HASH_T6"
 
 # ===================================================================
 echo ""
+echo "=== Test 7: Git worktree CWD resolves to main project root (same hash) ==="
+# ===================================================================
+
+TMPDIR_T7="$TMPDIR_ROOT/t7"
+mkdir -p "$TMPDIR_T7"
+REPO_T7_MAIN="$TMPDIR_T7/main"
+REPO_T7_WT="$TMPDIR_T7/wt"
+git -C "$TMPDIR_T7" init -q main
+git -C "$REPO_T7_MAIN" -c user.email=a@b -c user.name=a commit -q --allow-empty -m init
+git -C "$REPO_T7_MAIN" worktree add -q -b wt-branch "$REPO_T7_WT" >/dev/null 2>&1
+
+REPO_T7_MAIN_REAL="$(cd "$REPO_T7_MAIN" && pwd -P)"
+REPO_T7_MAIN_PWD="$(cd "$REPO_T7_MAIN" && pwd)"
+REPO_T7_WT_PWD="$(cd "$REPO_T7_WT" && pwd)"
+HASH_T7_MAIN_KEY=$(echo -n "$REPO_T7_MAIN_PWD" | md5 -q 2>/dev/null || echo -n "$REPO_T7_MAIN_PWD" | md5sum 2>/dev/null | cut -d' ' -f1)
+HASH_T7_WT_KEY=$(echo -n "$REPO_T7_WT_PWD" | md5 -q 2>/dev/null || echo -n "$REPO_T7_WT_PWD" | md5sum 2>/dev/null | cut -d' ' -f1)
+rm -f "/tmp/cmm-project-root-$HASH_T7_MAIN_KEY" "/tmp/cmm-project-root-$HASH_T7_WT_KEY"
+
+RESULT_T7_WT=$(cd "$REPO_T7_WT" && bash -c "
+  source '$LIB_SCRIPT'
+  echo \"ROOT=\$PROJECT_ROOT\"
+  echo \"HASH=\$PROJECT_HASH\"
+" 2>/dev/null)
+RESULT_T7_MAIN=$(cd "$REPO_T7_MAIN" && bash -c "
+  source '$LIB_SCRIPT'
+  echo \"ROOT=\$PROJECT_ROOT\"
+  echo \"HASH=\$PROJECT_HASH\"
+" 2>/dev/null)
+
+ROOT_T7_WT=$(echo "$RESULT_T7_WT" | grep '^ROOT=' | cut -d= -f2-)
+HASH_T7_WT=$(echo "$RESULT_T7_WT" | grep '^HASH=' | cut -d= -f2-)
+ROOT_T7_MAIN=$(echo "$RESULT_T7_MAIN" | grep '^ROOT=' | cut -d= -f2-)
+HASH_T7_MAIN=$(echo "$RESULT_T7_MAIN" | grep '^HASH=' | cut -d= -f2-)
+
+# Canonicalize both roots via pwd -P for comparison (symlink tolerance)
+ROOT_T7_WT_REAL="$(cd "$ROOT_T7_WT" 2>/dev/null && pwd -P)"
+ROOT_T7_MAIN_REAL="$(cd "$ROOT_T7_MAIN" 2>/dev/null && pwd -P)"
+
+if [ -n "$ROOT_T7_WT_REAL" ] && [ "$ROOT_T7_WT_REAL" = "$ROOT_T7_MAIN_REAL" ]; then
+  pass "Worktree CWD resolves to same canonical root as main ($ROOT_T7_MAIN_REAL)"
+else
+  fail "Worktree canonical root mismatch: wt='$ROOT_T7_WT_REAL' main='$ROOT_T7_MAIN_REAL'"
+fi
+if [ -n "$HASH_T7_WT" ] && [ "$HASH_T7_WT" = "$HASH_T7_MAIN" ]; then
+  pass "Worktree PROJECT_HASH matches main PROJECT_HASH ($HASH_T7_MAIN)"
+else
+  fail "Worktree hash mismatch: wt='$HASH_T7_WT' main='$HASH_T7_MAIN'"
+fi
+
+rm -f "/tmp/cmm-project-root-$HASH_T7_MAIN_KEY" "/tmp/cmm-project-root-$HASH_T7_WT_KEY"
+
+# ===================================================================
+echo ""
+echo "=== Test 8: Legacy orphaned .git/modules/<name>/ tree recovery ==="
+# ===================================================================
+
+# Method A (research §7, adapted): local upstream repo + submodule add via file://,
+# worktree inside submodule, then deinit + rm. This leaves .git/modules/apps/ with
+# a dangling worktree pointer, reproducing the codespace bug. Uses
+# protocol.file.allow=always to permit local file:// submodules on modern git.
+#
+# If the git environment refuses protocol.file.allow=always (sandbox / ancient git),
+# the setup will fail early and this test SKIPs with a visible marker rather than
+# failing — the codespace bug still exists on hosts that do support the recipe.
+
+TMPDIR_T8="$TMPDIR_ROOT/t8"
+mkdir -p "$TMPDIR_T8"
+UPSTREAM_T8="$TMPDIR_T8/upstream"
+CODESPACE_T8="$TMPDIR_T8/codespace"
+WT_T8="$CODESPACE_T8/.claude/worktrees/phase-23"
+
+_t8_setup_ok=1
+{
+  mkdir -p "$UPSTREAM_T8" && cd "$UPSTREAM_T8" && \
+    git init -q && \
+    git -c user.email=a@b -c user.name=a commit -q --allow-empty -m init && \
+    echo hi > f && git add f && \
+    git -c user.email=a@b -c user.name=a commit -q -m add-f && \
+  mkdir -p "$CODESPACE_T8" && cd "$CODESPACE_T8" && \
+    git init -q && \
+    git -c user.email=a@b -c user.name=a commit -q --allow-empty -m init && \
+    git -c protocol.file.allow=always -c user.email=a@b -c user.name=a \
+        submodule add -q "file://$UPSTREAM_T8" apps && \
+    git -c user.email=a@b -c user.name=a commit -q -m add-apps && \
+    ( cd apps && git worktree add -q -b phase-23 "$WT_T8" >/dev/null 2>&1 ) && \
+    git -c user.email=a@b -c user.name=a submodule deinit -f -q apps >/dev/null 2>&1 && \
+    git -c user.email=a@b -c user.name=a rm -f -q apps >/dev/null 2>&1 && \
+    rm -rf "$CODESPACE_T8/apps" && \
+    git -c user.email=a@b -c user.name=a commit -q -m rm-apps
+} >/dev/null 2>&1 || _t8_setup_ok=0
+
+if [ "$_t8_setup_ok" = 0 ] || [ ! -d "$WT_T8" ]; then
+  echo "  SKIP: legacy-modules fixture setup failed (protocol.file.allow or git version restriction)"
+else
+  WT_T8_PWD="$(cd "$WT_T8" && pwd)"
+  HASH_T8_KEY=$(echo -n "$WT_T8_PWD" | md5 -q 2>/dev/null || echo -n "$WT_T8_PWD" | md5sum 2>/dev/null | cut -d' ' -f1)
+  rm -f "/tmp/cmm-project-root-$HASH_T8_KEY"
+
+  RESULT_T8=$(cd "$WT_T8" && bash -c "
+    source '$LIB_SCRIPT'
+    echo \"ROOT=\$PROJECT_ROOT\"
+    echo \"RC=\$?\"
+  " 2>&1)
+  T8_RC=$?
+
+  ROOT_T8=$(echo "$RESULT_T8" | grep '^ROOT=' | cut -d= -f2-)
+  CODESPACE_T8_REAL="$(cd "$CODESPACE_T8" && pwd -P)"
+  ROOT_T8_REAL="$(cd "$ROOT_T8" 2>/dev/null && pwd -P)"
+
+  if [ "$T8_RC" -eq 0 ]; then
+    pass "Legacy-modules: sourcing the lib exits cleanly (rc=0)"
+  else
+    fail "Legacy-modules: sourcing the lib exited non-zero (rc=$T8_RC)"
+  fi
+
+  case "$ROOT_T8" in
+    */.git/modules/*)
+      fail "Legacy-modules: PROJECT_ROOT still inside .git/modules/: $ROOT_T8"
+      ;;
+    *)
+      pass "Legacy-modules: PROJECT_ROOT is not inside /.git/modules/ ($ROOT_T8)"
+      ;;
+  esac
+
+  if [ -n "$ROOT_T8_REAL" ] && [ "$ROOT_T8_REAL" = "$CODESPACE_T8_REAL" ]; then
+    pass "Legacy-modules: PROJECT_ROOT canonicalizes to owning repo ($CODESPACE_T8_REAL)"
+  else
+    fail "Legacy-modules: PROJECT_ROOT canonical='$ROOT_T8_REAL' expected='$CODESPACE_T8_REAL'"
+  fi
+
+  rm -f "/tmp/cmm-project-root-$HASH_T8_KEY"
+fi
+
+# ===================================================================
+echo ""
 echo "=== Summary ==="
 echo "  Passed: $PASS"
 echo "  Failed: $FAIL"

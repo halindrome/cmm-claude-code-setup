@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "phase": "50",
+  "issues": [
+    {
+      "test": "bash scripts/generate-checksums.sh (idempotency)",
+      "file": "scripts/generate-checksums.sh",
+      "error": "Generator does not glob agents/; re-running drops the 6 agents/vbw-*.md checksum lines added in Phase 49 (commit 9504564). Confirmed: running generator produced 'CHECKSUMS.sha256 &#124; 6 ------' diff. Agent file hashes are correct; gap is in generator coverage, not the checksums.",
+      "first_seen_in": "50-VERIFICATION.md",
+      "last_seen_in": "50-VERIFICATION.md",
+      "first_seen_round": 0,
+      "last_seen_round": 0,
+      "times_seen": 1
+    }
+  ]
+}

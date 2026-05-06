@@ -1,4 +1,5 @@
 {
+  "_comment": "Upstream context-mode hooks (PostToolUse/PreToolUse/PreCompact/SessionStart/UserPromptSubmit with command 'context-mode hook claude-code <event>') are merged separately by merge_context_mode_hooks() in setup.sh, guarded by INSTALL_CONTEXT_MODE=true. Do NOT add them here or the basename-based dedup in merge_settings_json will collide with the substring-based dedup in merge_context_mode_hooks.",
   "hooks": {
     "SessionStart": [
       {
@@ -139,43 +140,12 @@
         ]
       },
       {
-        "matcher": "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/ctx-annotate-nudge.sh",
-            "_comment": "PostToolUse additionalContext nudge after ctx_* tools (120s cooldown); replaces ctx-search-nudge (no-ops if Context Mode not installed)"
-          }
-        ]
-      },
-      {
         "matcher": "mcp__codebase-memory-mcp__search_graph",
         "hooks": [
           {
             "type": "command",
             "command": "bash .claude/hooks/cmm-orient-nudge.sh",
             "_comment": "One-shot-per-session PostToolUse nudge after first search_graph call — suggests get_architecture/trace_call_path/query_graph (no-ops if CMM not installed)"
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/context-mode-event-logger.sh",
-            "_comment": "optional: Context Mode MCP event logger (no-ops if Context Mode not installed)"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/context-mode-pre-compact.sh",
-            "_comment": "optional: Context Mode MCP pre-compaction snapshot (no-ops if not installed)"
           }
         ]
       }

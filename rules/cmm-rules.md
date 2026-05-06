@@ -16,3 +16,7 @@ Use codebase-memory-mcp tools as the primary method for code exploration.
 Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do not jump straight to reading files.
 
 `Read` is correct for: non-code files (JSON, YAML, config, Markdown), full-file context (imports, globals), files under 50 lines, and files not yet indexed.
+
+### CMM vs. context-mode
+
+CMM indexes code symbols across sessions (persistent graph of functions/classes/modules). Context-mode captures tool output within one session (FTS5 search over Bash/Read/Grep results). Use CMM for "where is this function defined"; use `ctx_search` for "what did my last test run print".

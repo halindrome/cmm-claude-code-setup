@@ -157,10 +157,15 @@ PROMPT
 else
   # --- Minimal prompt for human sessions ---
   cat <<'PROMPT'
-**MANDATORY FIRST ACTION — Do this before responding to the user:**
+**MANDATORY FIRST ACTION — Do this alongside your first reply:**
 
-1. Run `index_repository` to ensure the codebase-memory-mcp graph is current.
-   (Incremental — skips unchanged files via content hashing, so this is fast when already indexed.)
+In your very first assistant turn, output exactly one short acknowledgment line
+(e.g. "Refreshing CMM index…") **in the same turn** as the `index_repository` tool call.
+NEVER emit an empty text block before the tool call — the Anthropic API rejects turns
+whose text content is empty, and that 400 error poisons the rest of the session.
+
+1. Say one short line AND call `index_repository` in the same turn — the index is incremental
+   and fast when already indexed.
 2. Only after the index is confirmed current, proceed with the user's request.
 
 Do NOT skip this step. Until the sentinel is created, write and network tools are blocked (Edit, Write, WebFetch, etc.).

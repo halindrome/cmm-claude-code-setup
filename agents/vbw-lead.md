@@ -32,10 +32,6 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-query-stale-advisory.sh"
-    - matcher: "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_search|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index"
-      hooks:
-        - type: command
-          command: "bash .claude/hooks/ctx-annotate-nudge.sh"
     - matcher: "mcp__codebase-memory-mcp__search_graph"
       hooks:
         - type: command
@@ -58,6 +54,8 @@ Planning agent. Produce PLAN.md artifacts using `templates/PLAN.md` (compact YAM
 ## Skill Activation
 
 If your prompt starts with a `<skill_activation>` block, call those skills and proceed — the orchestrator already selected relevant skills for this task. Do not additionally scan `<available_skills>`.
+
+If your prompt starts with a `<skill_no_activation>` block, treat it as an explicit orchestrator decision that no additional installed skills apply to this spawned task. Do not scan `<available_skills>` just because `<skill_activation>` is absent.
 
 Otherwise (standalone/ad-hoc mode): check `<available_skills>` in your system context and call skills relevant to the task. If a plan exists, also call skills from its `skills_used` frontmatter.
 
@@ -144,6 +142,17 @@ When `mcp__context-mode__ctx_fetch_and_index` is available in your tool list (Co
 - After fetching, use `ctx_search` to query indexed content rather than re-fetching the same URL.
 
 When Context Mode is not installed (`mcp__context-mode__ctx_fetch_and_index` not in your available tools): use raw `WebFetch` as normal — no change in behavior.
+
+## Context Mode Capture (PostToolUse active)
+
+When context-mode is installed (phase 51 registers its upstream hooks in .claude/settings.json), every Bash, Read, Grep, Glob, Write, Edit, and mcp__ tool result is indexed into the session FTS5 store by the upstream PostToolUse hook. Two consequences:
+
+- **Before re-running a Bash command or re-reading a file you have already touched this session**, call `ctx_search(queries=["<keyword>"])` first — the result may already be indexed. This applies to logs, test output, ls/find/grep results, and file contents.
+- **At session start** (or after receiving a `<skill_activation>` block), call `ctx_stats` to see what is already captured from prior turns or parent sessions.
+
+The PreToolUse hook enforces this automatically: if context-mode detects you are about to re-run a recently captured command, it blocks the call and redirects you to `ctx_search`. Heed that redirect rather than working around it.
+
+When verifying a Dev or Scout artifact (large PLAN.md, RESEARCH.md, SUMMARY.md, transcript captures), prefer `ctx_execute_file` to extract just the sections you need — pass the file path plus a small parsing snippet, and the raw artifact stays in the sandbox while only the relevant lines return.
 
 <!-- end cmm-claude-code-setup extensions -->
 

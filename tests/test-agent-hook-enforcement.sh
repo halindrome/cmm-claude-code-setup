@@ -312,21 +312,17 @@ rm -f "$FAKE_PROJ_NO_CTX/.claude/context-mode.db"
 # Restore pass-through state so any later tests see a clean FAKE_PROJ_NO_CTX.
 rm -f "/tmp/ctx-webfetch-avail-${FAKE_PROJ_NO_CTX_HASH}" 2>/dev/null || true
 
-# ─── Test: ctx-annotate-nudge.sh + cmm-orient-nudge.sh wiring (Phase 47) ──
-# Confirm every VBW agent references the two new PostToolUse hooks and none
-# references the retired ctx-search-nudge.sh. This complements the behavior
-# coverage in tests/test-ctx-annotate-nudge.sh and test-cmm-orient-nudge.sh.
+# ─── Test: cmm-orient-nudge.sh wiring + retired ctx hooks absent (Phase 47) ─
+# Confirm every VBW agent references cmm-orient-nudge.sh and none references the
+# retired ctx-search-nudge.sh or ctx-annotate-nudge.sh. ctx-annotate-nudge was
+# removed because its reminder duplicated rules/ctx-rules.md guidance loaded
+# every turn, and the duplication caused the model to misread the nudge as a
+# turn-terminator (silent stops mid-investigation).
 echo ""
 echo "=== Phase 47 hooks: agent frontmatter wiring ==="
 for entry in "${AGENT_HOOKS[@]}"; do
   IFS='|' read -r agent has_nudge has_ctx <<< "$entry"
   [ ! -f "$AGENTS_DIR/$agent.md" ] && continue
-
-  if grep -q 'ctx-annotate-nudge.sh' "$AGENTS_DIR/$agent.md"; then
-    pass "$agent: registers ctx-annotate-nudge.sh"
-  else
-    fail "$agent: missing ctx-annotate-nudge.sh"
-  fi
 
   if grep -q 'cmm-orient-nudge.sh' "$AGENTS_DIR/$agent.md"; then
     pass "$agent: registers cmm-orient-nudge.sh"
@@ -339,38 +335,56 @@ for entry in "${AGENT_HOOKS[@]}"; do
   else
     pass "$agent: no ctx-search-nudge references"
   fi
+
+  if grep -q 'ctx-annotate-nudge' "$AGENTS_DIR/$agent.md"; then
+    fail "$agent: still references retired ctx-annotate-nudge"
+  else
+    pass "$agent: no ctx-annotate-nudge references"
+  fi
 done
 
-# ─── Test: ctx-annotate-nudge.sh emits additionalContext envelope ─────────
-# Sanity-check the hook referenced by every agent's frontmatter actually emits
-# a hookSpecificOutput.additionalContext JSON envelope on a qualifying ctx_*
-# call. The hook is installed globally in hooks/global/ so we invoke it there.
+# --- Phase 52 additions ---
+# Assert agent body content shipped in Phase 52 Plan 01 is present.
+# Pure greps over agents/*.md — no hook invocation required.
 echo ""
-echo "=== Phase 47: ctx-annotate-nudge emits additionalContext ==="
-CTX_ANNOTATE="$PROJECT_ROOT/hooks/global/ctx-annotate-nudge.sh"
-if [ ! -x "$CTX_ANNOTATE" ]; then
-  fail "ctx-annotate-nudge.sh missing or not executable at $CTX_ANNOTATE"
+echo "=== Phase 52: agent body content assertions ==="
+
+# (a) vbw-qa.md: write-verification.sh NON-NEGOTIABLE gate present (>=1)
+_qa_count=$(grep -c 'write-verification.sh' "$AGENTS_DIR/vbw-qa.md" || true)
+if [ "${_qa_count:-0}" -ge 1 ]; then
+  pass "vbw-qa: write-verification.sh keyword present (count=$_qa_count, need >=1)"
 else
-  # Clear any stale cooldown sentinel for this fake project so the first call emits.
-  rm -f "/tmp/ctx-nudge-${FAKE_PROJ_HASH}" 2>/dev/null || true
-  out=$(echo "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo hi\",\"intent\":\"test\"},\"cwd\":\"$FAKE_PROJ\"}" \
-    | env CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash -c "cd '$FAKE_PROJ' && bash '$CTX_ANNOTATE'" 2>/dev/null || true)
-  if echo "$out" | grep -q 'additionalContext'; then
-    pass "ctx-annotate-nudge: emits hookSpecificOutput.additionalContext on ctx_execute"
-  else
-    fail "ctx-annotate-nudge: no additionalContext envelope (got: $(printf '%s' "$out" | head -c 120))"
-  fi
+  fail "vbw-qa: write-verification.sh keyword missing (count=$_qa_count, need >=1)"
+fi
 
-  # Second call within cooldown window should be silent.
-  out2=$(echo "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo hi\"},\"cwd\":\"$FAKE_PROJ\"}" \
-    | env CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash -c "cd '$FAKE_PROJ' && bash '$CTX_ANNOTATE'" 2>/dev/null || true)
-  if [ -z "$out2" ]; then
-    pass "ctx-annotate-nudge: cooldown suppresses second call within 120s"
-  else
-    fail "ctx-annotate-nudge: cooldown not honored (second-call output: $(printf '%s' "$out2" | head -c 120))"
-  fi
+# (b) vbw-dev.md: pre_existing_issues mentioned in DEVN-05 rule + Stage 3 (>=2)
+_dev_pei_count=$(grep -c 'pre_existing_issues' "$AGENTS_DIR/vbw-dev.md" || true)
+if [ "${_dev_pei_count:-0}" -ge 2 ]; then
+  pass "vbw-dev: pre_existing_issues keyword present (count=$_dev_pei_count, need >=2)"
+else
+  fail "vbw-dev: pre_existing_issues keyword underrepresented (count=$_dev_pei_count, need >=2)"
+fi
 
-  rm -f "/tmp/ctx-nudge-${FAKE_PROJ_HASH}" 2>/dev/null || true
+# (c) <skill_no_activation> handling in each of the 6 target agents (>=1 per file)
+for _agent in vbw-dev vbw-scout vbw-lead vbw-qa vbw-debugger vbw-docs; do
+  if [ ! -f "$AGENTS_DIR/$_agent.md" ]; then
+    fail "$_agent: agent file missing (cannot check skill_no_activation)"
+    continue
+  fi
+  _sna_count=$(grep -c 'skill_no_activation' "$AGENTS_DIR/$_agent.md" || true)
+  if [ "${_sna_count:-0}" -ge 1 ]; then
+    pass "$_agent: skill_no_activation keyword present (count=$_sna_count, need >=1)"
+  else
+    fail "$_agent: skill_no_activation keyword missing (count=$_sna_count, need >=1)"
+  fi
+done
+
+# (d) vbw-dev.md: '## Context Mode Web Fetch' preservation (count == 1)
+_dev_cmwf_count=$(grep -c '^## Context Mode Web Fetch' "$AGENTS_DIR/vbw-dev.md" || true)
+if [ "${_dev_cmwf_count:-0}" -eq 1 ]; then
+  pass "vbw-dev: '## Context Mode Web Fetch' heading preserved (count=$_dev_cmwf_count)"
+else
+  fail "vbw-dev: '## Context Mode Web Fetch' heading count=$_dev_cmwf_count (expected exactly 1)"
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────
