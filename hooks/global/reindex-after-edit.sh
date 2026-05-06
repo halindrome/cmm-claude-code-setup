@@ -30,7 +30,7 @@ case "$FILE" in
   */.vbw-planning/*|*/.claude/*|*/.git/*) exit 0 ;;
 esac
 
-# Only trigger for CMM-indexed file types (67 built-in + user-defined)
+# Only trigger for CMM-indexed file types (built-in extensions/filenames covering CMM's 155-language grammar set + user-defined)
 source "${BASH_SOURCE[0]%/*}/../lib/is-cmm-ext.sh" 2>/dev/null \
   || source "${BASH_SOURCE[0]%/*}/lib/is-cmm-ext.sh" 2>/dev/null \
   || { exit 0; }
