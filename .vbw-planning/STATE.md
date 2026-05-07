@@ -2,6 +2,17 @@
 
 **Project:** cmm-claude-code-setup
 
+## Current Phase
+
+Phase: 9 of 38 (active phase by ordinal position; see note below)
+
+**Phase 54** -- Map VBW v1.36.2 Per-Project Agent Installation Updates
+- Started: 2026-05-07
+- Status: in_progress
+- Wave: 1
+- Plan: 01 (4 of 5 tasks complete)
+- Note: The `Phase: N of M` line above tracks the first-incomplete phase by ordinal position in the canonical `phases/` directory listing (verifier convention used by `verify-state-consistency.sh`). At ordinal position 9 sits `phases/25-cmm-index-offer-in-setup` (the earliest unfinished historical phase). Phase 54 (ordinal 38) is the active *work* phase. Phase numbers do not match ordinal positions because of intentional ROADMAP numbering gaps for archived phases (see Key Decisions for the archived-phase architectural note).
+
 ## Key Decisions
 
 | Decision | Date | Rationale |
@@ -11,6 +22,7 @@
 | No statusline script | 2026-03-12 | README example only; statusline stats vary by user setup |
 | CMM call counter not token savings | 2026-03-12 | CMM doesn't expose tokens_saved per call |
 | Attribution to Shachar Bard | 2026-03-12 | Author of jmunch-claude-code-setup; cited prominently in README |
+| ROADMAP phase number gaps are architectural | 2026-05-07 | ROADMAP.md numbering gaps for phases 37–45, 47, 50 are intentional — those phases were archived into shipped milestones (`milestones/`) and their entries remain in `ROADMAP.md` for historical reference. `roadmap_vs_summaries` checks may continue to flag these as missing-phase-dirs; this is accepted state, not actionable drift. |
 
 ## Todos
 - setup.sh: warn about large codebase indexing; recommend mode:fast for first index; add optional pre-index step during setup (added 2026-03-13)
