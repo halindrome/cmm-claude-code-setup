@@ -10,7 +10,7 @@ tasks_total: 5
 commit_hashes:
   - 17a3302e56f9614f3937b391a84c972efcabb925
   - aba1476c5825aa5ae8dfadc89c710536f4861e47
-  - PENDING_TASK3
+  - 8974d0e6f51cb4cfe644e9378606dc63fbfe38c8
 files_modified:
   - agents/vbw-scout.md
   - agents/vbw-dev.md
@@ -63,7 +63,7 @@ Commit: `aba1476c5825aa5ae8dfadc89c710536f4861e47`
 
 ## Task 3: Audit ctx-execute-enforcer.sh install path
 
-Commit: `PENDING_TASK3`
+Commit: `8974d0e6f51cb4cfe644e9378606dc63fbfe38c8`
 
 **Resolution path: (b)** — install logic is already correct; no agent or hook moves needed. The file lives at `hooks/project/ctx-execute-enforcer.sh` (8516 bytes, mode 0755). The existing wildcard loop at `setup.sh:1068` (`for file in "$SCRIPT_DIR/hooks/project/"*.sh; do copy_file ...; set_executable ...; done`) already copies it into `.claude/hooks/ctx-execute-enforcer.sh` and marks it executable on every `setup.sh --project` run. The agent frontmatter references `bash .claude/hooks/ctx-execute-enforcer.sh` in `vbw-debugger.md`, `vbw-lead.md`, `vbw-dev.md`, `vbw-qa.md`, and `vbw-docs.md` (all line 21), and that path matches the install destination. The `.claude/hooks/ctx-execute-enforcer.sh` file is present and executable in this repo, confirming the loop works.
 
