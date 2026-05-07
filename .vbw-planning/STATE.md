@@ -3,15 +3,10 @@
 **Project:** cmm-claude-code-setup
 
 ## Current Phase
-
-Phase: 9 of 38 (active phase by ordinal position; see note below)
-
-**Phase 54** -- Map VBW v1.36.2 Per-Project Agent Installation Updates
-- Started: 2026-05-07
-- Status: in_progress
-- Wave: 1
-- Plan: 01 (4 of 5 tasks complete)
-- Note: The `Phase: N of M` line above tracks the first-incomplete phase by ordinal position in the canonical `phases/` directory listing (verifier convention used by `verify-state-consistency.sh`). At ordinal position 9 sits `phases/25-cmm-index-offer-in-setup` (the earliest unfinished historical phase). Phase 54 (ordinal 38) is the active *work* phase. Phase numbers do not match ordinal positions because of intentional ROADMAP numbering gaps for archived phases (see Key Decisions for the archived-phase architectural note).
+Phase: 9 of 38 (Cmm Index Offer In Setup)
+Plans: 0/0
+Progress: 0%
+Status: ready
 
 ## Key Decisions
 
