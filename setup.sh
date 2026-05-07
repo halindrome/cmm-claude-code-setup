@@ -1057,6 +1057,11 @@ install_project() {
   #   subagent-cmm-startup.sh — SubagentStart advisory hook (injects CMM state into all subagents via additionalContext)
   #   grep-cmm-gate.sh — PreToolUse:Grep hard-block for source-code search in indexed repos (phase 46)
   #   ctx-execute-cmm-nudge.sh — PreToolUse:mcp__context-mode__ctx_execute hard-block for grep-laundered code search (phase 46)
+  #   ctx-execute-enforcer.sh — PreToolUse:Bash hard-block routing large-output Bash through ctx_execute.
+  #     Source: hooks/project/ctx-execute-enforcer.sh. Wired into VBW agent frontmatter
+  #     (vbw-debugger / vbw-lead / vbw-dev / vbw-qa / vbw-docs) as
+  #     "bash .claude/hooks/ctx-execute-enforcer.sh"; the wildcard loop below copies it
+  #     and set_executable runs against it — no dedicated copy_file branch needed.
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
   # NOTE: VBW agent override files (agents/*.md) ARE copied by setup.sh --project to
