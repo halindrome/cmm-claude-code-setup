@@ -387,6 +387,14 @@ else
   fail "vbw-dev: '## Context Mode Web Fetch' heading count=$_dev_cmwf_count (expected exactly 1)"
 fi
 
+# (e) vbw-debugger.md: v1.37.0 PR #627 already_fixed semantic block present (>=1)
+_dbg_af_count=$(grep -c 'already_fixed.*fresh current evidence' "$AGENTS_DIR/vbw-debugger.md" || true)
+if [ "${_dbg_af_count:-0}" -ge 1 ]; then
+  pass "vbw-debugger: v1.37.0 already_fixed semantic block present (count=$_dbg_af_count, need >=1)"
+else
+  fail "vbw-debugger: v1.37.0 already_fixed semantic block missing (count=$_dbg_af_count, need >=1)"
+fi
+
 # ─── Summary ─────────────────────────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════"
