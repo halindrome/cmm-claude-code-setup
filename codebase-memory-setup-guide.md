@@ -17,6 +17,13 @@ This lets Claude navigate code by relationships (who calls what, what implements
 - **Change detection** — map git diffs to affected graph symbols and blast radius
 - **Architecture Decision Records** — persistent, section-based architectural summaries
 - **Cypher queries** — arbitrary graph queries for complex relationship patterns
+- **Cross-service linking** — HTTP, gRPC, GraphQL, and tRPC service detection with protobuf Route extraction; confidence-scored route ↔ call-site matching
+- **Channel detection** (`EMITS` / `LISTENS_ON`) — Socket.IO, EventEmitter, and generic pub-sub patterns across 8 languages with constant resolution
+- **Cross-repo intelligence** — `CROSS_*` edges link nodes across multiple repos indexed under the same store; multi-galaxy 3D UI for cross-repo architecture
+- **Infrastructure-as-code** — Dockerfiles, Kubernetes manifests, and Kustomize overlays indexed as graph nodes
+- **LSP-style hybrid type resolution** for Go, C, and C++ (more languages coming)
+- **Team-shared persistent artifact** — the graph database is a single SQLite file that can be committed or shared so teammates skip the local index step
+- **155 languages** — vendored tree-sitter grammars compiled into the binary; covers mainstream (Python, Go, TypeScript, Rust, Java, C++, ...) plus newer/niche grammars (Solidity, GDScript, Gleam, PowerShell, Move, Cairo, Pkl, Bicep, ...)
 
 ---
 

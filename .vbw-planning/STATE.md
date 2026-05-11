@@ -2,6 +2,12 @@
 
 **Project:** cmm-claude-code-setup
 
+## Current Phase
+Phase: 9 of 39 (Cmm Index Offer In Setup)
+Plans: 0/0
+Progress: 0%
+Status: ready
+
 ## Key Decisions
 
 | Decision | Date | Rationale |
@@ -11,6 +17,7 @@
 | No statusline script | 2026-03-12 | README example only; statusline stats vary by user setup |
 | CMM call counter not token savings | 2026-03-12 | CMM doesn't expose tokens_saved per call |
 | Attribution to Shachar Bard | 2026-03-12 | Author of jmunch-claude-code-setup; cited prominently in README |
+| ROADMAP phase number gaps are architectural | 2026-05-07 | ROADMAP.md numbering gaps for phases 37–45, 47, 50 are intentional — those phases were archived into shipped milestones (`milestones/`) and their entries remain in `ROADMAP.md` for historical reference. `roadmap_vs_summaries` checks may continue to flag these as missing-phase-dirs; this is accepted state, not actionable drift. |
 
 ## Todos
 - setup.sh: warn about large codebase indexing; recommend mode:fast for first index; add optional pre-index step during setup (added 2026-03-13)
