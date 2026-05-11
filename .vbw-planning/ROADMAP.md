@@ -46,7 +46,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [ ] Phase 52: Audit VBW v1.36.1+ Upstream Changes
 - [ ] Phase 53: Review Context-Mode Updates for Tool Guidance
 - [ ] Phase 54: Map VBW v1.36.2 Per-Project Agent Installation Updates
-- [ ] Phase 55: Sync VBW v1.37.0 Agent and Orchestration Changes
+- [x] Phase 55: Sync VBW v1.37.0 Agent and Orchestration Changes
 
 ### Phase 49: Align with VBW Agent Updates (v1.35.0)
 > **Superseded by Phase 52** (2026-05-04): Phase 52 absorbs the v1.35.0 alignment scope into a broader audit covering all VBW changes through v1.36.1+ on `origin/main`. Phase 49's specific gaps (vbw-qa write-verification gate, vbw-dev pre_existing_issues rule, `<skill_no_activation>` handling, agent frontmatter `tools:` allowlists) remain in scope and will be addressed inside Phase 52's planning.
