@@ -352,12 +352,22 @@ detect_cmm_binary() {
     return 0
   fi
 
-  # 2-4. Fallback paths
+  # 2-N. Fallback paths
   local fallback
-  for fallback in \
-    "$HOME/.local/bin/codebase-memory-mcp" \
-    "$HOME/go/bin/codebase-memory-mcp" \
+  local fallbacks=(
+    "$HOME/.local/bin/codebase-memory-mcp"
+    "$HOME/go/bin/codebase-memory-mcp"
     "/usr/local/bin/codebase-memory-mcp"
+    "/opt/homebrew/bin/codebase-memory-mcp"
+  )
+  if command -v npm >/dev/null 2>&1; then
+    local npm_prefix
+    npm_prefix="$(npm prefix -g 2>/dev/null)"
+    if [ -n "$npm_prefix" ]; then
+      fallbacks+=("$npm_prefix/bin/codebase-memory-mcp")
+    fi
+  fi
+  for fallback in "${fallbacks[@]}"
   do
     if [ -x "$fallback" ]; then
       CMM_BINARY_PATH="$fallback"
