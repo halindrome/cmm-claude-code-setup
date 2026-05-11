@@ -87,6 +87,10 @@ See [docs/setup-guide.md](docs/setup-guide.md) for the full step-by-step walkthr
 
 CMM (upstream v0.6.1+) supports a team-sharing bootstrap artifact at `.codebase-memory/graph.db.zst`. When this file is present in a repo, CMM's `index_repository` auto-imports it as a starting point instead of indexing from scratch — so teammates who clone the repo can hydrate a fresh local graph from the snapshot in seconds rather than waiting through a full first-time index. The artifact is produced and consumed by CMM itself; this project does not generate or manage it. See the [CMM upstream docs](https://github.com/DeusData/codebase-memory-mcp) for snapshot creation, retention, and CI publishing patterns.
 
+### Optional CMM tuning
+
+- `CBM_SQLITE_MMAP_SIZE` — overrides the SQLite mmap size used by CMM; useful for very large repos. See CMM upstream docs for default and recommended values.
+
 ## Repository Structure
 
 ```
