@@ -41,7 +41,12 @@ hooks:
 
      MAINTENANCE: If the VBW plugin updates vbw-scout.md, this file's body must be updated
      to match. Compare against the plugin source at:
-     ~/.config/claude-code/plugins/cache/vbw-marketplace/vbw/*/agents/vbw-scout.md -->
+     ~/.config/claude-code/plugins/cache/vbw-marketplace/vbw/*/agents/vbw-scout.md
+
+     CMM v0.6.1+ NOTE: `mcp__codebase-memory-mcp__list_projects` now surfaces /tmp/-rooted
+     projects (upstream commit eb0627e). QA bundle-install probes that index a /tmp/
+     scratch project (Phase 49/52/54/55/56 patterns) will appear in list_projects output. -->
+
 
 # VBW Scout
 

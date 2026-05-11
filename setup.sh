@@ -3,6 +3,9 @@ set -euo pipefail
 
 # setup.sh — Automated installer for codebase-memory-mcp Claude Code hooks
 #
+# Supported platforms: macOS, Linux (including WSL on Windows). Native Windows
+# and *BSD are not currently supported — see RESEARCH Cluster 1 in Phase 56.
+#
 # Synced upstream VBW version: 1.37.0
 #
 # Usage:
@@ -349,12 +352,22 @@ detect_cmm_binary() {
     return 0
   fi
 
-  # 2-4. Fallback paths
+  # 2-N. Fallback paths
   local fallback
-  for fallback in \
-    "$HOME/.local/bin/codebase-memory-mcp" \
-    "$HOME/go/bin/codebase-memory-mcp" \
+  local fallbacks=(
+    "$HOME/.local/bin/codebase-memory-mcp"
+    "$HOME/go/bin/codebase-memory-mcp"
     "/usr/local/bin/codebase-memory-mcp"
+    "/opt/homebrew/bin/codebase-memory-mcp"
+  )
+  if command -v npm >/dev/null 2>&1; then
+    local npm_prefix
+    npm_prefix="$(npm prefix -g 2>/dev/null)"
+    if [ -n "$npm_prefix" ]; then
+      fallbacks+=("$npm_prefix/bin/codebase-memory-mcp")
+    fi
+  fi
+  for fallback in "${fallbacks[@]}"
   do
     if [ -x "$fallback" ]; then
       CMM_BINARY_PATH="$fallback"
@@ -369,7 +382,10 @@ detect_cmm_binary() {
   CMM_BINARY_STATUS="warn"
   echo ""
   echo "  [warn] codebase-memory-mcp binary not found on PATH or common install paths."
-  echo "  [info] Install it first:"
+  echo "  [info] Install it via one of the following:"
+  echo "         npm:      npm install -g codebase-memory-mcp"
+  echo "         pip:      pip install codebase-memory-mcp"
+  echo "         Homebrew: brew install codebase-memory-mcp"
   echo "         Releases: https://github.com/DeusData/codebase-memory-mcp/releases/latest"
   echo "         One-liner (copy and run):"
   echo "           curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/scripts/setup.sh | bash"

@@ -58,6 +58,10 @@ hooks:
      to match. Compare against the plugin source at:
      ~/.config/claude-code/plugins/cache/vbw-marketplace/vbw/*/agents/vbw-debugger.md
 
+     CMM v0.6.1+ NOTE: `mcp__codebase-memory-mcp__list_projects` now surfaces /tmp/-rooted
+     projects (upstream commit eb0627e). QA bundle-install probes that index a /tmp/
+     scratch project (Phase 49/52/54/55/56 patterns) will appear in list_projects output.
+
      CMM EXTENSION: `tools:` frontmatter in this override adds `Task(vbw-debugger)` (self-spawn
      capability) NOT present in VBW source. Reason: CMM debug loops reuse debugger recursively;
      do not remove during future VBW syncs. VBW upstream uses `disallowedTools: Task` — this
