@@ -3,6 +3,8 @@ set -euo pipefail
 
 # setup.sh — Automated installer for codebase-memory-mcp Claude Code hooks
 #
+# Synced upstream VBW version: 1.37.0
+#
 # Usage:
 #   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
 #
