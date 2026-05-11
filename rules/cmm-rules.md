@@ -18,6 +18,7 @@ Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do n
 ### Behavior notes (upstream v0.6.1+)
 
 - `search_graph` returns at most **200 rows** by default (upstream cap as of v0.6.1+); pass `offset` to page or use `query_graph` with Cypher for full scans.
+- `search_code` auto-converts multi-word input to a regex (`foo bar` → `foo.*bar`); pass an explicit single-token regex if you need different semantics.
 
 `Read` is correct for: non-code files (JSON, YAML, config, Markdown), full-file context (imports, globals), files under 50 lines, and files not yet indexed.
 
