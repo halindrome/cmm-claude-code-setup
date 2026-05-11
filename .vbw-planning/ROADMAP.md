@@ -47,7 +47,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [ ] Phase 53: Review Context-Mode Updates for Tool Guidance
 - [ ] Phase 54: Map VBW v1.36.2 Per-Project Agent Installation Updates
 - [x] Phase 55: Sync VBW v1.37.0 Agent and Orchestration Changes
-- [ ] Phase 56: Sync to CMM Upstream main (v0.6.1+101)
+- [x] Phase 56: Sync to CMM Upstream main (v0.6.1+101)
 
 ### Phase 49: Align with VBW Agent Updates (v1.35.0)
 > **Superseded by Phase 52** (2026-05-04): Phase 52 absorbs the v1.35.0 alignment scope into a broader audit covering all VBW changes through v1.36.1+ on `origin/main`. Phase 49's specific gaps (vbw-qa write-verification gate, vbw-dev pre_existing_issues rule, `<skill_no_activation>` handling, agent frontmatter `tools:` allowlists) remain in scope and will be addressed inside Phase 52's planning.
@@ -322,7 +322,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 | 52 - Audit VBW v1.36.1+ Upstream Changes | 2/2 | complete | 2026-05-04 |
 | 53 - Review Context-Mode Updates for Tool Guidance | 1/1 | complete | 2026-05-04 |
 | 55 - Sync VBW v1.37.0 Agent and Orchestration Changes | 1/1 | complete | 2026-05-11 |
-| 56 - Sync to CMM Upstream main (v0.6.1+101) | 0/? | pending | — |
+| 56 - Sync to CMM Upstream main (v0.6.1+101) | 4/4 | complete | 2026-05-11 |
 
 ### Phase 23: Enforce CMM Hooks Inside Subagents
 **Goal:** Hooks registered in `settings.json` (session gate, stale advisory, CMM call tracker) do not fire inside VBW subagents (Dev, Scout, Lead, QA). These agents make CMM queries and file edits without the enforcement layer active — they can query a stale index silently, bypass the session gate, and skip call tracking. This is a correctness gap: the tooling is designed to guarantee all CMM usage is accurate and tracked, but that guarantee breaks down exactly when subagents are doing the most work. Fix this by using the mechanisms from Claude Code's subagent hooks API: inject the session gate check via `SubagentStart` context injection, and add the stale advisory and CMM call tracking hooks to VBW agent frontmatter files so they fire inside each agent's execution context.
