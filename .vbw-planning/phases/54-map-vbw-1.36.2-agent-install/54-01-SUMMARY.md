@@ -5,7 +5,7 @@ title: Map VBW v1.36.2 per-project agent installation updates
 status: complete
 started: 2026-05-07
 completed: 2026-05-07
-tasks_completed: 4
+tasks_completed: 5
 tasks_total: 5
 commit_hashes:
   - 17a3302e56f9614f3937b391a84c972efcabb925
@@ -154,3 +154,68 @@ Commits:
 - setup.sh not modified.
 - `reconcile-state-md.sh` not invoked (per plan instruction).
 - No archived phase entries deleted from ROADMAP.
+
+## Task 5: Verify per-project install with updated agents
+
+**Verification-only task — no commit produced.** End-to-end install of the v1.36.2-aligned agents and the repaired `ctx-execute-enforcer.sh` install path was confirmed against a scratch project.
+
+### Setup
+
+- Scratch project: `/tmp/vbw-phase54-install-test` (created via `rm -rf … && mkdir -p … && git init -q`).
+- Install command: `cd /tmp/vbw-phase54-install-test && bash /Users/ahby/Sources/cmm-claude-code-setup/setup.sh --project --force --skip-mcp-check --skip-statusline`
+  - `--project` operates on CWD (per project memory `project_setup_project_flag.md`).
+  - `--force` suppresses drift-detection prompts in a clean tree.
+  - `--skip-mcp-check` and `--skip-statusline` bypass interactive prompts.
+- Setup exit code: **0**. All copy lines reported `[ok]` for hooks, agents, and rules. The final `[ALLOWLIST]` write-prompt was the only remaining stdin read; the run completed before that prompt mattered.
+
+### Verification Checklist
+
+| # | Check | Result | Notes |
+|---|---|---|---|
+| 1 | `setup.sh --project` exits 0 | **PASS** | All hook/agent copy lines `[ok]`. |
+| 2 | `diff -q agents/vbw-scout.md $DST/.claude/agents/vbw-scout.md` no output | **PASS** | Byte-identical. |
+| 3 | `diff -q agents/vbw-dev.md $DST/.claude/agents/vbw-dev.md` no output | **PASS** | Byte-identical. |
+| 4 | All 7 agent override files installed | **PASS** | architect, debugger, dev, docs, lead, qa, scout — all present in `$DST/.claude/agents/`. |
+| 5 | All hook command paths from agent frontmatter resolve | **PASS** | 10/10 referenced hooks present in `$DST/.claude/hooks/`. |
+| 6 | Each resolved hook is executable | **PASS** | All hook files mode 0755. |
+| 7 | Scout `disallowedTools` matches upstream v1.36.2 | **PASS** | `Edit, NotebookEdit, Task, TaskCreate, Agent, TeamCreate, TeamDelete` — no Bash. |
+| 8 | Dev `disallowedTools` matches upstream v1.36.2 | **PASS** | `Task, TaskCreate, Agent, TeamCreate, TeamDelete, AskUserQuestion`. |
+
+### Hook File Inventory (Check 5+6 detail)
+
+All ten hooks referenced from agent frontmatter resolved at `/tmp/vbw-phase54-install-test/.claude/hooks/` with mode `0755`:
+
+- `cmm-nudge.sh` (8032 b)
+- `cmm-grep-nudge.sh` (5919 b)
+- `webfetch-nudge.sh` (4353 b)
+- `ctx-execute-enforcer.sh` (8516 b) — confirms Task 3 Path (b) resolution: the wildcard loop at `setup.sh:1073` correctly installs this from `hooks/project/` even though no dedicated `copy_file` branch exists.
+- `subagent-cmm-startup.sh` (2966 b)
+- `subagent-ctx-startup.sh` (4158 b)
+- `track-cmm-calls.sh` (3268 b)
+- `cmm-query-stale-advisory.sh` (2509 b)
+- `cmm-orient-nudge.sh` (3845 b)
+- `reindex-after-commit.sh` (7050 b)
+
+### Frontmatter Spot-Checks
+
+- Scout description: `Research agent for web/doc/codebase scanning and read-only live validation. Writes RESEARCH.md files directly.` (matches upstream v1.36.2 verbatim).
+- Dev description: `Execution agent with full tool access (denylist-controlled) for implementing plan tasks with atomic commits per task.` (matches upstream verbatim).
+
+### Live-Test Deferred (per plan)
+
+Task 5 explicitly does NOT spawn a Claude Code session against the scratch project. Live behavioural testing of the v1.36.2 Scout/Dev frontmatter (e.g., confirming Scout actually accepts read-only Bash, confirming Dev's expanded denylist is honoured by the orchestrator) is the user's manual follow-up after upgrading the VBW plugin cache to v1.36.2. The scratch project at `/tmp/vbw-phase54-install-test/` is left in place for the user's manual inspection.
+
+### Files Modified (Task 5)
+
+None. Verification-only — no source change, no commit.
+
+### Constraint Compliance (Task 5)
+
+- No source files modified.
+- No commits produced (verification-only per plan).
+- Scratch project intentionally left at `/tmp/vbw-phase54-install-test/` for user inspection.
+- Did not start a Claude Code session against the scratch project.
+
+### Deviations (Task 5)
+
+None. All 8 verification checks passed cleanly.
