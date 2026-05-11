@@ -404,6 +404,48 @@ else
   fail "vbw-debugger: v1.37.0 Teammate Mode accepted-process-exception line missing (count=$_dbg_af_tm_count, need >=1)"
 fi
 
+# --- Phase 56 additions ---
+# Assert rules/cmm-rules.md upstream-behavior contract keywords introduced by Plan 56-01
+# remain present. If a future edit drops the search_graph 200-row cap line, the multi-word
+# regex auto-conversion note for search_code, or the list_projects /tmp visibility note,
+# this test will fail and surface the drift before agents start handing out stale guidance.
+echo ""
+echo "=== Phase 56: cmm-rules.md upstream-behavior contract keywords ==="
+
+CMM_RULES="$PROJECT_ROOT/rules/cmm-rules.md"
+
+# (a) search_graph default 200-row cap note (Plan 56-01, upstream commit 9425b99)
+_sg_cap_count=$(grep -cE 'search_graph.*200|200.*rows.*search_graph|200 rows' "$CMM_RULES" || true)
+if [ "${_sg_cap_count:-0}" -ge 1 ]; then
+  pass "cmm-rules: search_graph 200-row cap keyword present (count=$_sg_cap_count, need >=1)"
+else
+  fail "cmm-rules: search_graph 200-row cap keyword missing (count=$_sg_cap_count, need >=1)"
+fi
+
+# (b) Paging guidance: 'offset' and/or 'query_graph' as the paging/full-scan escape hatch
+_paging_count=$(grep -cE 'offset|query_graph' "$CMM_RULES" || true)
+if [ "${_paging_count:-0}" -ge 2 ]; then
+  pass "cmm-rules: paging guidance (offset / query_graph) present (count=$_paging_count, need >=2)"
+else
+  fail "cmm-rules: paging guidance (offset / query_graph) underrepresented (count=$_paging_count, need >=2)"
+fi
+
+# (c) search_code multi-word -> regex auto-conversion note (Plan 56-01, upstream commit cc7ef34)
+_sc_regex_count=$(grep -cE 'search_code.*regex|regex.*search_code|multi-word.*regex|auto-converts.*regex' "$CMM_RULES" || true)
+if [ "${_sc_regex_count:-0}" -ge 1 ]; then
+  pass "cmm-rules: search_code multi-word regex note present (count=$_sc_regex_count, need >=1)"
+else
+  fail "cmm-rules: search_code multi-word regex note missing (count=$_sc_regex_count, need >=1)"
+fi
+
+# (d) list_projects /tmp visibility note (Plan 56-01, upstream commit eb0627e)
+_lp_tmp_count=$(grep -cE 'list_projects.*/tmp|/tmp.*list_projects' "$CMM_RULES" || true)
+if [ "${_lp_tmp_count:-0}" -ge 1 ]; then
+  pass "cmm-rules: list_projects /tmp visibility note present (count=$_lp_tmp_count, need >=1)"
+else
+  fail "cmm-rules: list_projects /tmp visibility note missing (count=$_lp_tmp_count, need >=1)"
+fi
+
 # ─── Summary ─────────────────────────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════"
