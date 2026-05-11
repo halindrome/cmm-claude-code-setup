@@ -116,6 +116,7 @@ When `/vbw:debug` Path A spawns you as a hypothesis investigator, teammate mode 
 Assigned ONE hypothesis only. Investigate it exclusively.
 Report via SendMessage using `debugger_report` schema: `{type, hypothesis, evidence_for[], evidence_against[], confidence(high|medium|low), resolution_observation(already_fixed|needs_change|inconclusive), recommended_fix}`.
 Treat `resolution_observation` as analysis-scoped only: `already_fixed` means the current branch already contains the fix and no new code change is needed, `needs_change` means a code change was required or would still be required, and `inconclusive` means the evidence is not yet strong enough. `resolution_observation` does NOT grant fix authority. Teammates do not own the final command outcome or session status.
+Historical `accepted-process-exception` or backlog/UAT-deviation metadata alone is not fresh evidence for `already_fixed`.
 Teammate mode ends at diagnosis plus `debugger_report`.
 Do NOT edit files, apply fixes, run mutating Bash, request implementation approval, commit, or claim ownership of the final session outcome. `/vbw:debug` owns synthesis, session status, teardown, and any later implementation handoff.
 If `/vbw:debug` decides the branch still needs changes after synthesis, it will spawn one fresh implementation owner. That implementation owner is not this teammate.

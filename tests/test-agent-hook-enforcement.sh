@@ -387,12 +387,21 @@ else
   fail "vbw-dev: '## Context Mode Web Fetch' heading count=$_dev_cmwf_count (expected exactly 1)"
 fi
 
-# (e) vbw-debugger.md: v1.37.0 PR #627 already_fixed semantic block present (>=1)
-_dbg_af_count=$(grep -c 'already_fixed.*fresh current evidence' "$AGENTS_DIR/vbw-debugger.md" || true)
-if [ "${_dbg_af_count:-0}" -ge 1 ]; then
-  pass "vbw-debugger: v1.37.0 already_fixed semantic block present (count=$_dbg_af_count, need >=1)"
+# (e) vbw-debugger.md: v1.37.0 PR #627 already_fixed semantic block present in BOTH
+# Investigation Protocol and Teammate Mode (PR #627 upstream is two separate insertions
+# in two different sections — anchor both independently so a partial mirror is detected).
+_dbg_af_inv_count=$(grep -c 'already_fixed.*fresh current evidence' "$AGENTS_DIR/vbw-debugger.md" || true)
+if [ "${_dbg_af_inv_count:-0}" -ge 1 ]; then
+  pass "vbw-debugger: v1.37.0 Investigation Protocol already_fixed prose present (count=$_dbg_af_inv_count, need >=1)"
 else
-  fail "vbw-debugger: v1.37.0 already_fixed semantic block missing (count=$_dbg_af_count, need >=1)"
+  fail "vbw-debugger: v1.37.0 Investigation Protocol already_fixed prose missing (count=$_dbg_af_inv_count, need >=1)"
+fi
+
+_dbg_af_tm_count=$(grep -c 'Historical .accepted-process-exception. or backlog/UAT-deviation metadata alone is not fresh evidence for .already_fixed.' "$AGENTS_DIR/vbw-debugger.md" || true)
+if [ "${_dbg_af_tm_count:-0}" -ge 1 ]; then
+  pass "vbw-debugger: v1.37.0 Teammate Mode accepted-process-exception line present (count=$_dbg_af_tm_count, need >=1)"
+else
+  fail "vbw-debugger: v1.37.0 Teammate Mode accepted-process-exception line missing (count=$_dbg_af_tm_count, need >=1)"
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────
