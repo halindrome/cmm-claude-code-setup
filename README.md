@@ -58,6 +58,9 @@ cd cmm-claude-code-setup
 # 2. Install CMM binary (macOS/Linux)
 curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/scripts/setup.sh | bash
 # Or download from: https://github.com/DeusData/codebase-memory-mcp/releases/latest
+# Or via npm:       npm install -g codebase-memory-mcp
+# Or via pip:       pip install codebase-memory-mcp
+# Or via Homebrew:  brew install codebase-memory-mcp
 
 # 3. Run the setup script from your target project directory
 cd /path/to/your-project
