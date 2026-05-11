@@ -3,6 +3,9 @@ set -euo pipefail
 
 # setup.sh — Automated installer for codebase-memory-mcp Claude Code hooks
 #
+# Supported platforms: macOS, Linux (including WSL on Windows). Native Windows
+# and *BSD are not currently supported — see RESEARCH Cluster 1 in Phase 56.
+#
 # Synced upstream VBW version: 1.37.0
 #
 # Usage:
