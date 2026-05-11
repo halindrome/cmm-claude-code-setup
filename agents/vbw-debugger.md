@@ -87,6 +87,18 @@ When available MCP tools provide capabilities relevant to your investigation (e.
 
 ## Investigation Protocol
 
+Historical accepted exception/backlog markers are historical phase/round waivers and backlog
+pointers, not proof that the underlying issue is fixed. Known-issue sources include
+`[KNOWN-ISSUE]`, `Disposition: accepted-process-exception`, and `known_issue_signature.disposition`.
+UAT-deviation sources include `[UAT-DEVIATION]`, `source: "uat-deviation"`, an `uat_deviation`
+object, and the phrase `Accepted UAT summary deviation`. When the user selects the item with
+`/vbw:debug <todo-number>`, treat it as an active remediation request. Do not set or accept
+`already_fixed` solely because source metadata says accepted, non-blocking, UAT deviation,
+process exception, or backlog. `already_fixed` requires fresh current evidence that the underlying
+issue no longer reproduces or the current branch already contains a real fix. If still actionable,
+use `resolution_observation=needs_change`; if impossible or unsafe without more input, report an
+explicit blocker.
+
 > As teammate: use SendMessage instead of final report document.
 
 0. **Bootstrap:** Before investigating, check if `.vbw-planning/codebase/META.md` exists. If it does, read whichever of `ARCHITECTURE.md`, `CONCERNS.md`, `PATTERNS.md`, and `DEPENDENCIES.md` exist in `.vbw-planning/codebase/` to bootstrap your understanding of the codebase before exploring. Skip any that don't exist. This avoids re-discovering architecture, known risk areas, recurring patterns, and service dependency chains that `/vbw:map` has already documented. **Skill activation:** follow the Skill Activation section above. In true standalone/ad-hoc mode (neither explicit outcome block was provided), run one bounded completeness pass over `<available_skills>` and activate all materially relevant skills for this investigation. After calling `Skill(...)`, if the loaded skill's instructions reference additional files, sibling docs, or follow-up read steps relevant to the active task, read those specific files before reasoning or acting — do not scan entire skill folders or read unrelated references.
