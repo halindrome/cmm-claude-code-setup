@@ -15,6 +15,10 @@ Use codebase-memory-mcp tools as the primary method for code exploration.
 
 Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do not jump straight to reading files.
 
+### Behavior notes (upstream v0.6.1+)
+
+- `search_graph` returns at most **200 rows** by default (upstream cap as of v0.6.1+); pass `offset` to page or use `query_graph` with Cypher for full scans.
+
 `Read` is correct for: non-code files (JSON, YAML, config, Markdown), full-file context (imports, globals), files under 50 lines, and files not yet indexed.
 
 ### CMM vs. context-mode
