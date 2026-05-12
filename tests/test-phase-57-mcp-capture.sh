@@ -1,0 +1,263 @@
+#!/bin/bash
+# test-phase-57-mcp-capture.sh — Plugin-form MCP capture regression coverage.
+#
+# Regression test for upstream issue mksglu/context-mode#329 ("raw mcp__*
+# tool outputs not persisted") and PR #532 ("route external MCP tools through
+# PreToolUse", closes #529). Upstream 1.0.122 closed the architectural gap by
+# adding (a) a wildcard `mcp__` matcher to POST_TOOL_USE_MATCHERS and (b) the
+# three plugin-form `mcp__plugin_context-mode_context-mode__ctx_execute[_file|
+# _batch_execute]` matchers to PRE_TOOL_USE_MATCHERS. Phase 57 plan 01 brought
+# our project's setup.sh, merge_context_mode_hooks, and the three project
+# hooks (track-ctx-calls.sh, ctx-execute-enforcer.sh, ctx-execute-cmm-nudge.sh)
+# in line with this canonical inventory and added dual-coverage probes for
+# both install forms (plugin form FIRST per G3; MCP-server form as legacy).
+#
+# What this test asserts (Phase 57 plan 02, task 3):
+#
+#   Case 1 — Plugin-form fixture install + setup.sh detection:
+#            A scratch HOME with a plugin-form context-mode manifest
+#            (~/.claude/plugins/cache/test-marketplace/context-mode/
+#            .claude-plugin/plugin.json with "name": "context-mode") causes
+#            setup.sh --project to detect the plugin form and route into the
+#            dual-form matcher heal path. The upstream PreToolUse matcher
+#            written by merge_context_mode_hooks contains the three
+#            plugin-form ctx tool names FIRST followed by the three legacy
+#            MCP-server-form ctx tool names.
+#
+#   Case 2 — Project-hook plugin-form awareness:
+#            The three installed project hooks each reference the plugin-form
+#            prefix `mcp__plugin_context-mode_context-mode__` in their probe /
+#            matcher comment logic — proving the dual-coverage path is wired.
+#            Counts: track-ctx-calls.sh >= 1, ctx-execute-enforcer.sh >= 1,
+#            ctx-execute-cmm-nudge.sh >= 1.
+#
+#   Case 3 — Hook invocation under plugin-form tool_name:
+#            Fire each of the three project hooks via direct stdin invocation
+#            with `tool_name="mcp__plugin_context-mode_context-mode__ctx_execute"`
+#            and assert each exits cleanly (exit 0 — silent allow — OR exit 2
+#            — explicit block). Hooks must NOT crash, parse-error, or emit
+#            python tracebacks on the plugin-form payload. This is the
+#            practical proxy for end-to-end FTS5 capture; the actual context-
+#            mode binary is not available in CI test scratch so we cannot
+#            assert `ctx_search` returns the captured payload directly.
+#
+# Test environment limitation (per 57-CONTEXT.md Risk Notes):
+# `/plugin install context-mode@context-mode` is a Claude Code slash command
+# and cannot be invoked from a bash test. Plugin-form detection is therefore
+# simulated via the fixture-path approach above (scratch HOME with a fake
+# plugin-cache manifest). Upstream context-mode's FTS5 store is not running
+# inside the test, so we cannot prove end-to-end persistence — Case 3 is the
+# strongest assertion feasible without a live MCP server.
+#
+# Usage: bash tests/test-phase-57-mcp-capture.sh
+# Exit: 0 = all pass, 1 = any failure
+#
+# Notes:
+# - Each case uses its own `mktemp -d` scratch dir; the real repo and the
+#   real ~/.claude are not touched.
+# - Cleanup on EXIT trap removes all scratch state — running the test twice
+#   in a row produces identical PASS output with no leftover artifacts.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+SETUP="$REPO_ROOT/setup.sh"
+
+PASS=0
+FAIL=0
+FAILED_CASES=()
+
+_pass() {
+    echo "PASS: $1"
+    PASS=$((PASS + 1))
+}
+
+_fail() {
+    echo "FAIL: $1"
+    FAIL=$((FAIL + 1))
+    FAILED_CASES+=("$1")
+}
+
+# Single scratch dir used for all cases. Cleaned up on EXIT.
+SCRATCH=$(mktemp -d -t cmm-phase57-mcp-capture-XXXXXX)
+trap 'rm -rf "$SCRATCH"' EXIT
+
+# --- Setup: simulate plugin-form context-mode install --------------------------
+# setup.sh's detect_context_mode probes ${CLAUDE_PLUGIN_ROOT} first and falls
+# back to ~/.claude/plugins/cache/<marketplace>/context-mode/.claude-plugin/
+# plugin.json. We populate the fallback path under a scratch HOME so the test
+# never touches the real plugin cache.
+FAKE_HOME="$SCRATCH/fakehome"
+PLUGIN_MANIFEST_DIR="$FAKE_HOME/.claude/plugins/cache/test-marketplace/context-mode/.claude-plugin"
+mkdir -p "$PLUGIN_MANIFEST_DIR"
+cat > "$PLUGIN_MANIFEST_DIR/plugin.json" <<'JSON'
+{
+  "name": "context-mode",
+  "version": "1.0.122",
+  "description": "Plugin-form fixture for tests/test-phase-57-mcp-capture.sh"
+}
+JSON
+
+PROJECT="$SCRATCH/project"
+mkdir -p "$PROJECT"
+(
+    cd "$PROJECT"
+    git init -q
+    git commit --allow-empty -q -m init
+)
+
+# Run setup.sh --project against the scratch project with HOME pointing at the
+# fake plugin cache. --skip-mcp-check avoids triggering an interactive .mcp.json
+# install path; detect_context_mode still runs (its early-exit on
+# --skip-context-mode is the only skip path).
+(
+    cd "$PROJECT"
+    echo n | HOME="$FAKE_HOME" bash "$SETUP" --project --yes --skip-mcp-check
+) >"$SCRATCH/setup.out" 2>&1 || {
+    echo "SETUP_FAILED — see $SCRATCH/setup.out" >&2
+    tail -30 "$SCRATCH/setup.out" >&2
+}
+
+SETTINGS="$PROJECT/.claude/settings.json"
+HOOKS_DIR="$PROJECT/.claude/hooks"
+
+# --- Case 1: Plugin-form fixture install + setup.sh detection ------------------
+CASE="case 1 - plugin-form detection + canonical PreToolUse matcher"
+
+if [ ! -f "$SETTINGS" ]; then
+    _fail "$CASE - settings.json not created at $SETTINGS"
+else
+    # The upstream merge_context_mode_hooks PreToolUse matcher must contain
+    # both plugin-form and MCP-server-form ctx tool names, with plugin form
+    # listed first.
+    pre_matcher=$(jq -r '.hooks.PreToolUse[]? | select(.hooks[0].command | contains("context-mode-hook-dispatch.sh pretooluse")) | .matcher' "$SETTINGS")
+    expected_pre="Bash|WebFetch|Read|Grep|Agent|mcp__plugin_context-mode_context-mode__ctx_execute|mcp__plugin_context-mode_context-mode__ctx_execute_file|mcp__plugin_context-mode_context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute"
+    if [ "$pre_matcher" = "$expected_pre" ]; then
+        _pass "$CASE - upstream PreToolUse matcher is canonical 1.0.122 (plugin form first, MCP-server form second)"
+    else
+        _fail "$CASE - upstream PreToolUse matcher mismatch (got '$pre_matcher')"
+    fi
+
+    # PostToolUse matcher must include the wildcard `mcp__` token that closes
+    # the #329 capture gap.
+    post_matcher=$(jq -r '.hooks.PostToolUse[]? | select(.hooks[0].command | contains("context-mode-hook-dispatch.sh posttooluse")) | .matcher' "$SETTINGS")
+    if [[ "$post_matcher" == *"|mcp__"* ]] || [[ "$post_matcher" == *"|mcp__"* ]]; then
+        _pass "$CASE - upstream PostToolUse matcher includes wildcard mcp__ token (#329 fix baseline)"
+    else
+        _fail "$CASE - upstream PostToolUse matcher missing wildcard mcp__ token (got '$post_matcher')"
+    fi
+fi
+
+# --- Case 2: Project-hook plugin-form awareness --------------------------------
+CASE="case 2 - project-hook plugin-form awareness"
+
+PLUGIN_PREFIX_RE='mcp__plugin_context-mode_context-mode__'
+
+for hook in track-ctx-calls.sh ctx-execute-enforcer.sh ctx-execute-cmm-nudge.sh; do
+    hook_path="$HOOKS_DIR/$hook"
+    if [ ! -f "$hook_path" ]; then
+        _fail "$CASE - $hook not installed at $hook_path"
+        continue
+    fi
+    count=$(grep -c "$PLUGIN_PREFIX_RE" "$hook_path" 2>/dev/null || echo 0)
+    if [ "$count" -ge 1 ]; then
+        _pass "$CASE - $hook references plugin-form prefix ($count occurrence(s))"
+    else
+        _fail "$CASE - $hook missing plugin-form prefix references (expected >= 1, got $count)"
+    fi
+done
+
+# --- Case 3: Hook invocation under plugin-form tool_name -----------------------
+CASE="case 3 - plugin-form tool_name hook invocation"
+
+SENTINEL="phase-57-mcp-capture-sentinel-$RANDOM-$RANDOM"
+
+# Synthesized PostToolUse-shape JSON payload with a plugin-form tool_name. The
+# tool_response.stdout carries a unique sentinel string so a downstream live
+# context-mode FTS5 store could in principle search for it via ctx_search.
+read -r -d '' POST_PAYLOAD <<JSON || true
+{
+  "hook_event_name": "PostToolUse",
+  "tool_name": "mcp__plugin_context-mode_context-mode__ctx_execute",
+  "tool_input": {"language": "shell", "code": "echo $SENTINEL"},
+  "tool_response": {"stdout": "$SENTINEL", "exit_code": 0},
+  "cwd": "$PROJECT"
+}
+JSON
+
+# track-ctx-calls.sh is the simplest — pure counter, never blocks, always
+# exits 0. Fire it with the plugin-form payload and assert exit 0.
+if [ -x "$HOOKS_DIR/track-ctx-calls.sh" ]; then
+    if echo "$POST_PAYLOAD" | bash "$HOOKS_DIR/track-ctx-calls.sh" >"$SCRATCH/track.out" 2>"$SCRATCH/track.err"; then
+        _pass "$CASE - track-ctx-calls.sh exits 0 under plugin-form PostToolUse payload"
+    else
+        rc=$?
+        _fail "$CASE - track-ctx-calls.sh exited $rc under plugin-form payload (stderr: $(head -5 "$SCRATCH/track.err"))"
+    fi
+else
+    _fail "$CASE - track-ctx-calls.sh not executable at $HOOKS_DIR/track-ctx-calls.sh"
+fi
+
+# Synthesized PreToolUse-shape payload for the enforcer / nudge hooks.
+read -r -d '' PRE_PAYLOAD <<JSON || true
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "mcp__plugin_context-mode_context-mode__ctx_execute",
+  "tool_input": {"language": "shell", "code": "echo $SENTINEL"},
+  "cwd": "$PROJECT"
+}
+JSON
+
+# ctx-execute-enforcer.sh blocks Bash, not ctx_execute itself. With a plugin-
+# form ctx_execute tool_name the hook should fall through (exit 0 — the
+# matcher in settings.json is "Bash", so this is a defense-in-depth check
+# that the script handles a non-Bash tool_name gracefully).
+if [ -x "$HOOKS_DIR/ctx-execute-enforcer.sh" ]; then
+    echo "$PRE_PAYLOAD" | bash "$HOOKS_DIR/ctx-execute-enforcer.sh" >"$SCRATCH/enf.out" 2>"$SCRATCH/enf.err"
+    rc=$?
+    # Either exit 0 (fall-through, no block) or exit 2 (explicit block) are
+    # acceptable — both prove the hook parsed the plugin-form payload without
+    # crashing. Any other exit indicates a parse error or python traceback.
+    if [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]; then
+        _pass "$CASE - ctx-execute-enforcer.sh exit $rc under plugin-form payload (no crash)"
+    else
+        _fail "$CASE - ctx-execute-enforcer.sh exited $rc under plugin-form payload (stderr: $(head -5 "$SCRATCH/enf.err"))"
+    fi
+else
+    _fail "$CASE - ctx-execute-enforcer.sh not executable at $HOOKS_DIR/ctx-execute-enforcer.sh"
+fi
+
+# ctx-execute-cmm-nudge.sh: this is the hook most affected by plugin-form —
+# its python parser explicitly probes both install-form tool names. Fire
+# with a SAFE non-grep payload (echo) and assert clean exit 0 (fail-open per
+# 46-CONTEXT.md — only unambiguous grep-family commands trigger the block).
+if [ -x "$HOOKS_DIR/ctx-execute-cmm-nudge.sh" ]; then
+    echo "$PRE_PAYLOAD" | bash "$HOOKS_DIR/ctx-execute-cmm-nudge.sh" >"$SCRATCH/nudge.out" 2>"$SCRATCH/nudge.err"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        _pass "$CASE - ctx-execute-cmm-nudge.sh exits 0 under safe plugin-form payload (fail-open path)"
+    elif [ "$rc" -eq 2 ]; then
+        # Block on a non-grep payload would be a regression — log details.
+        _fail "$CASE - ctx-execute-cmm-nudge.sh blocked (exit 2) on safe plugin-form payload (stderr: $(head -10 "$SCRATCH/nudge.err"))"
+    else
+        _fail "$CASE - ctx-execute-cmm-nudge.sh exited $rc under plugin-form payload (stderr: $(head -5 "$SCRATCH/nudge.err"))"
+    fi
+else
+    _fail "$CASE - ctx-execute-cmm-nudge.sh not executable at $HOOKS_DIR/ctx-execute-cmm-nudge.sh"
+fi
+
+# --- Summary -------------------------------------------------------------------
+echo ""
+echo "============================================================"
+echo "Summary: $PASS pass / $FAIL fail"
+if [ "$FAIL" -gt 0 ]; then
+    for f in "${FAILED_CASES[@]}"; do
+        echo "  FAIL: $f"
+    done
+    echo "============================================================"
+    exit 1
+fi
+echo "PASS: phase 57 plugin-form mcp__ capture regression coverage"
+echo "============================================================"
+exit 0
