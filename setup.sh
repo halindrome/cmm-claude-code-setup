@@ -966,7 +966,7 @@ merge_settings_json() {
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-cmm-calls.sh\""}]
       },
       {
-        "matcher": "mcp__context-mode__*",
+        "matcher": "mcp__plugin_context-mode_context-mode__*|mcp__context-mode__*",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-ctx-calls.sh\""}]
       }
     ]
@@ -1085,10 +1085,19 @@ merge_context_mode_hooks() {
   # and falls back to `npx -y context-mode@latest` only when no global
   # install exists. See hooks/project/context-mode-hook-dispatch.sh.
   #
-  # The PreToolUse matcher for context-mode's own MCP tools uses the MCP-server
-  # form `mcp__context-mode__*` NOT the plugin form `mcp__plugin_context-mode_*`
-  # because setup.sh installs context-mode as an MCP server (via npx), not as a
-  # Claude Code plugin.
+  # Phase 57 G2/G3: write the canonical upstream-1.0.122 matcher inventory
+  # unconditionally. Both install forms are supported in parallel — the plugin
+  # form (`mcp__plugin_context-mode_context-mode__*`) is listed FIRST in each
+  # matcher per G3 to document canonical-vs-legacy intent and to win the match
+  # during transitional dual-registration states. The MCP-server form
+  # (`mcp__context-mode__*`) follows as legacy. No version gate (G2): older
+  # installs receive matchers they don't yet consume; upgrading to 1.0.122+
+  # activates them with zero further config.
+  #
+  # PostToolUse: aligns to upstream POST_TOOL_USE_MATCHERS (closes #329 capture
+  # gap via the wildcard `mcp__` matcher introduced in 1.0.122 #532).
+  # PreToolUse: gains the three plugin-form ctx_execute matchers alongside the
+  # existing MCP-server-form matchers.
   if ! python3 - "$target_file" "$dispatch_abspath" <<'PY'
 import json, os, sys
 
@@ -1098,12 +1107,23 @@ dispatch = sys.argv[2]
 # Commands invoke the hook dispatcher which resolves context-mode (global
 # install → fast path; npx fallback → first-run primes cache, no race after).
 expected = {
+    # Upstream 1.0.122 POST_TOOL_USE_MATCHERS (build/adapters/claude-code/hooks.js):
+    #   ["Bash","Read","Write","Edit","NotebookEdit","Glob","Grep","TodoWrite",
+    #    "TaskCreate","TaskUpdate","EnterPlanMode","ExitPlanMode","Skill",
+    #    "Agent","AskUserQuestion","EnterWorktree","mcp__"]
+    # We add `WebFetch` and `WebSearch` ahead of upstream because our project
+    # captures those events for the search/fetch session-resolution pipeline.
+    # These are additive: upstream's PostToolUse hook simply no-ops on them.
     "PostToolUse": {
         "matcher": "Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|WebFetch|WebSearch|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__",
         "command": f"bash {dispatch} posttooluse",
     },
+    # Upstream 1.0.122 PRE_TOOL_USE_MATCHERS lists the plugin-form ctx tools
+    # only; we list them FIRST per Phase 57 G3 ordering rule, then carry the
+    # MCP-server-form matchers second as legacy coverage so older installs and
+    # transitional dual-registration states both fire the hook.
     "PreToolUse": {
-        "matcher": "Bash|WebFetch|Read|Grep|Agent|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
+        "matcher": "Bash|WebFetch|Read|Grep|Agent|mcp__plugin_context-mode_context-mode__ctx_execute|mcp__plugin_context-mode_context-mode__ctx_execute_file|mcp__plugin_context-mode_context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
         "command": f"bash {dispatch} pretooluse",
     },
     "PreCompact": {
