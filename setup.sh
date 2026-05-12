@@ -670,21 +670,152 @@ detect_context_mode() {
 # ---------------------------------------------------------------------------
 # maybe_offer_context_mode_migration (Phase 57 G1)
 # ---------------------------------------------------------------------------
-# Stub: implemented by task 2. Defined here so detect_context_mode references
-# resolve even if invoked between commits. Default behavior is a no-op silent
-# pass-through so task-1 verify (--no-migrate against MCP_ONLY) succeeds.
+# Called from detect_context_mode() when CONTEXT_MODE_INSTALL_FORM == MCP_ONLY.
+# Offers an interactive Y/n/keep prompt to migrate the legacy MCP-server form to
+# the canonical /plugin install context-mode@context-mode form. Silent `n`
+# fallback under --no-migrate or non-TTY stdin.
+#
+# Sentinel files (mirror existing project-state sentinel patterns):
+#   .vbw-planning/.context-mode-migration-pending  — created on Y, cleared once
+#                                                    plugin form is detected.
+#   .vbw-planning/.context-mode-form-preference     — written on `keep` (single
+#                                                    line: `mcp-server`).
 maybe_offer_context_mode_migration() {
-  # Body is filled in by Phase 57 task 2.
-  return 0
+  # If user already expressed `keep` preference, do not nag again.
+  local _pref_file=".vbw-planning/.context-mode-form-preference"
+  if [ -f "$_pref_file" ] && grep -qx "mcp-server" "$_pref_file" 2>/dev/null; then
+    return 0
+  fi
+
+  # If sentinel already exists, user previously answered Y but hasn't yet run
+  # /plugin install. Print a one-line reminder rather than re-prompting.
+  local _sentinel=".vbw-planning/.context-mode-migration-pending"
+  if [ -f "$_sentinel" ]; then
+    echo "  [info] migration pending — run /plugin install context-mode@context-mode in your next Claude Code session"
+    return 0
+  fi
+
+  # Non-interactive paths: --no-migrate flag OR stdin is not a TTY OR --yes is set.
+  # YES_FLAG defaults to accepting prompts; explicit silent skip avoids surprising
+  # CI runs by NOT migrating when the user did not explicitly opt in via TTY.
+  if [ "$NO_MIGRATE" = true ] || [ ! -t 0 ] || [ "${YES_FLAG:-false}" = true ]; then
+    echo "  [info] context-mode is on the legacy MCP-server form; recommended path: /plugin install context-mode@context-mode (skipped non-interactively)"
+    return 0
+  fi
+
+  # --dry-run mode: surface the offer but do not mutate state.
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would prompt to migrate context-mode to /plugin install form"
+    return 0
+  fi
+
+  echo ""
+  echo "  Upstream now recommends \`/plugin install context-mode@context-mode\` (enables"
+  echo "  slash commands, automatic hook routing, full feature set)."
+  printf "  Migrate now? [Y/n/keep] "
+  local _answer
+  read -r _answer
+  _answer="${_answer:-Y}"
+  case "$_answer" in
+    Y|y|yes|YES)
+      _do_context_mode_migration_yes "$_sentinel"
+      ;;
+    n|N|no|NO)
+      echo "  [info] Keeping MCP-server form. Recommended path stays: /plugin install context-mode@context-mode"
+      ;;
+    keep|KEEP|k|K)
+      mkdir -p "$(dirname "$_pref_file")" 2>/dev/null
+      printf 'mcp-server\n' > "$_pref_file"
+      echo "  [ok] Wrote $_pref_file — migration reminder suppressed on future runs"
+      ;;
+    *)
+      echo "  [warn] Unrecognized answer '$_answer'; treating as 'n'"
+      ;;
+  esac
+}
+
+# _do_context_mode_migration_yes <sentinel_path>
+# Helper for the Y branch: remove .mcp.json `context-mode` entry, write
+# sentinel, and print explicit follow-up instructions.
+_do_context_mode_migration_yes() {
+  local _sentinel="$1"
+
+  # Remove the context-mode entry from .mcp.json while preserving other entries.
+  if [ -f ".mcp.json" ]; then
+    python3 - <<'PYEOF'
+import json, sys
+try:
+    with open(".mcp.json") as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)  # fail-open: leave file untouched
+if not isinstance(data, dict):
+    sys.exit(0)
+servers = data.get("mcpServers")
+if isinstance(servers, dict) and "context-mode" in servers:
+    del servers["context-mode"]
+    with open(".mcp.json", "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    print("  [ok] Removed context-mode from .mcp.json (other entries preserved)")
+PYEOF
+  fi
+
+  # Write the sentinel marker with an ISO timestamp + follow-up instructions.
+  mkdir -p "$(dirname "$_sentinel")" 2>/dev/null
+  local _ts
+  _ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u)"
+  cat > "$_sentinel" <<EOF
+$_ts
+context-mode migration pending: run \`/plugin install context-mode@context-mode\`
+in your next Claude Code session. setup.sh will clear this sentinel automatically
+once the plugin form is detected on a follow-up run.
+EOF
+  echo "  [ok] Wrote $_sentinel"
+  echo ""
+  echo "  Next step: in your next Claude Code session, run:"
+  echo "    /plugin install context-mode@context-mode"
+  echo "  Then re-run \`bash setup.sh --project\` and this sentinel will be cleared."
+  echo ""
 }
 
 # ---------------------------------------------------------------------------
 # maybe_offer_redundant_mcp_cleanup (Phase 57 G1, BOTH-form branch)
 # ---------------------------------------------------------------------------
-# Stub: implemented by task 2. Filled in alongside the migration prompt.
+# Called when CONTEXT_MODE_INSTALL_FORM == BOTH. Plugin wins. The MCP-server
+# entry in .mcp.json is now redundant; offer a one-line y/N prompt to remove it
+# unless we are non-interactive or --no-migrate is set, in which case warn only.
 maybe_offer_redundant_mcp_cleanup() {
-  # Body is filled in by Phase 57 task 2.
-  return 0
+  if [ "$NO_MIGRATE" = true ] || [ ! -t 0 ] || [ "${YES_FLAG:-false}" = true ] || [ "$DRY_RUN" = true ]; then
+    echo "  [warn] MCP-server entry in .mcp.json is redundant alongside plugin form (skipping cleanup non-interactively)"
+    return 0
+  fi
+  printf "  MCP-server entry in .mcp.json is redundant; remove it? [y/N] "
+  local _answer
+  read -r _answer
+  case "$_answer" in
+    y|Y|yes|YES)
+      python3 - <<'PYEOF'
+import json
+try:
+    with open(".mcp.json") as f:
+        data = json.load(f)
+except Exception:
+    raise SystemExit(0)
+if isinstance(data, dict):
+    servers = data.get("mcpServers")
+    if isinstance(servers, dict) and "context-mode" in servers:
+        del servers["context-mode"]
+        with open(".mcp.json", "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        print("  [ok] Removed redundant context-mode entry from .mcp.json")
+PYEOF
+      ;;
+    *)
+      echo "  [info] Keeping MCP-server entry — duplicate registration is harmless but non-canonical"
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
