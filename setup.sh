@@ -9,7 +9,7 @@ set -euo pipefail
 # Synced upstream VBW version: 1.37.0
 #
 # Usage:
-#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
+#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--no-migrate] [--skip-statusline] [--verify]
 #
 # Flags:
 #   --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
@@ -513,7 +513,32 @@ INSTALL_CONTEXT_MODE=true
 # so context-mode registration is skipped entirely (fresh installs only — existing entries
 # in .mcp.json are preserved by the idempotency guard in install_project).
 SKIP_CONTEXT_MODE=false
+# Set by --no-migrate (Phase 57 G1). When true, the MCP_ONLY migration prompt in
+# detect_context_mode is forced to the `n` branch silently — useful for CI /
+# non-interactive automation. Also implicitly forced when stdin is not a TTY.
+NO_MIGRATE=false
+# Four-state install-form classification set by detect_context_mode() per G1:
+#   NONE       — neither plugin nor MCP-server form detected (fresh-install path).
+#   MCP_ONLY   — legacy MCP-server form only; triggers interactive migration prompt.
+#   PLUGIN     — plugin form present; canonical going forward, no prompt fires.
+#   BOTH       — plugin AND MCP-server forms both present; plugin wins, REDUNDANT_MCP=1.
+# Downstream callers (merge_context_mode_hooks, print_preflight_summary) read this.
+CONTEXT_MODE_INSTALL_FORM="NONE"
+# Set to 1 when BOTH forms are detected, so the caller can warn-and-offer to remove
+# the now-redundant MCP-server .mcp.json entry. Reset to empty on each detect call.
+REDUNDANT_MCP=""
 
+# detect_context_mode — Phase 57 G1 four-state install-form matrix:
+#   NONE       — neither install form present. Fresh-install path: register
+#                MCP-server form in .mcp.json (existing default behavior preserved).
+#   MCP_ONLY   — only legacy MCP-server form (.mcp.json `context-mode` entry).
+#                Interactive prompt offers migration to /plugin install context-mode.
+#                --no-migrate or non-TTY stdin forces the `n` branch silently.
+#   PLUGIN     — plugin-form install detected via ${CLAUDE_PLUGIN_ROOT} or via
+#                ~/.claude/plugins/cache/<marketplace>/context-mode/.claude-plugin/plugin.json.
+#                Plugin form is canonical going forward; no prompt fires.
+#   BOTH       — plugin AND MCP-server forms both present. Plugin wins; sets
+#                REDUNDANT_MCP=1 so the caller can warn-and-offer-cleanup.
 detect_context_mode() {
   # --skip-context-mode wins unconditionally — opt out of context-mode registration.
   if [ "$SKIP_CONTEXT_MODE" = true ]; then
@@ -548,15 +573,117 @@ detect_context_mode() {
   # existing context-mode entries and user customizations.
   INSTALL_CONTEXT_MODE=true
 
-  # If .mcp.json already has context-mode, surface that in the pre-flight summary.
-  if [ -f ".mcp.json" ] && grep -q "context-mode" ".mcp.json" 2>/dev/null; then
-    CONTEXT_MODE_STATUS="ok"
-    echo "  [ok] context-mode detected (already registered in .mcp.json)"
+  # --- Phase 57 G1: probe both install forms independently ---
+  # Reset transitional state on each call (idempotency: re-runs reclassify cleanly).
+  REDUNDANT_MCP=""
+
+  local _plugin_form_present=false
+  local _mcp_server_form_present=false
+
+  # Plugin-form probe: $CLAUDE_PLUGIN_ROOT resolves when run from inside an active
+  # Claude Code plugin session. Outside that context, scan the global plugin cache
+  # for any marketplace dir that contains a `context-mode` plugin (validated via
+  # the presence of .claude-plugin/plugin.json with `"name": "context-mode"`).
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && \
+     [ -f "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" ] && \
+     grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' \
+       "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
+    _plugin_form_present=true
   else
-    CONTEXT_MODE_STATUS="ok"
-    echo "  [info] context-mode will be registered in .mcp.json (use --skip-context-mode to opt out)"
-    echo "  [info] Docs: https://github.com/mksglu/context-mode"
+    # Fall back to scanning ~/.claude/plugins/cache/<marketplace>/context-mode/.
+    local _plugin_cache_root="${HOME}/.claude/plugins/cache"
+    if [ -d "$_plugin_cache_root" ]; then
+      local _plugin_manifest
+      for _plugin_manifest in "$_plugin_cache_root"/*/context-mode/.claude-plugin/plugin.json; do
+        [ -f "$_plugin_manifest" ] || continue
+        if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_plugin_manifest" 2>/dev/null; then
+          _plugin_form_present=true
+          break
+        fi
+      done
+    fi
   fi
+
+  # MCP-server-form probe: existing .mcp.json "context-mode" entry presence.
+  if [ -f ".mcp.json" ] && grep -q "context-mode" ".mcp.json" 2>/dev/null; then
+    _mcp_server_form_present=true
+  fi
+
+  # Classify into one of the four states.
+  if [ "$_plugin_form_present" = true ] && [ "$_mcp_server_form_present" = true ]; then
+    CONTEXT_MODE_INSTALL_FORM="BOTH"
+    REDUNDANT_MCP=1
+  elif [ "$_plugin_form_present" = true ]; then
+    CONTEXT_MODE_INSTALL_FORM="PLUGIN"
+  elif [ "$_mcp_server_form_present" = true ]; then
+    CONTEXT_MODE_INSTALL_FORM="MCP_ONLY"
+  else
+    CONTEXT_MODE_INSTALL_FORM="NONE"
+  fi
+
+  # If a prior session wrote the migration sentinel and plugin form is now
+  # present, clear the sentinel — the migration follow-up is complete (G1).
+  local _migration_sentinel=".vbw-planning/.context-mode-migration-pending"
+  if [ "$_plugin_form_present" = true ] && [ -f "$_migration_sentinel" ]; then
+    if [ "$DRY_RUN" != true ]; then
+      rm -f "$_migration_sentinel" 2>/dev/null || true
+      echo "  [ok] migration follow-up complete — plugin form detected; sentinel cleared"
+    else
+      echo "  [DRY RUN] Would clear migration sentinel $_migration_sentinel"
+    fi
+  fi
+
+  # Dispatch on form. The MCP_ONLY branch will trigger the interactive migration
+  # prompt implemented in maybe_offer_context_mode_migration() (Phase 57 task 2).
+  # Other branches preserve historical behavior for users not on the legacy form.
+  case "$CONTEXT_MODE_INSTALL_FORM" in
+    PLUGIN)
+      CONTEXT_MODE_STATUS="ok"
+      echo "  [ok] context-mode detected (plugin form: /plugin install context-mode@context-mode)"
+      ;;
+    BOTH)
+      CONTEXT_MODE_STATUS="ok"
+      echo "  [ok] context-mode detected (plugin form preferred; MCP-server entry in .mcp.json is redundant)"
+      ;;
+    MCP_ONLY)
+      CONTEXT_MODE_STATUS="ok"
+      echo "  [ok] context-mode detected (legacy MCP-server form via .mcp.json)"
+      ;;
+    NONE)
+      CONTEXT_MODE_STATUS="ok"
+      echo "  [info] context-mode will be registered in .mcp.json (use --skip-context-mode to opt out)"
+      echo "  [info] Docs: https://github.com/mksglu/context-mode"
+      echo "  [info] Tip: the canonical install form is now /plugin install context-mode@context-mode"
+      ;;
+  esac
+
+  # Offer interactive migration when only the legacy form is present.
+  if [ "$CONTEXT_MODE_INSTALL_FORM" = "MCP_ONLY" ]; then
+    maybe_offer_context_mode_migration
+  fi
+  if [ "$CONTEXT_MODE_INSTALL_FORM" = "BOTH" ]; then
+    maybe_offer_redundant_mcp_cleanup
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# maybe_offer_context_mode_migration (Phase 57 G1)
+# ---------------------------------------------------------------------------
+# Stub: implemented by task 2. Defined here so detect_context_mode references
+# resolve even if invoked between commits. Default behavior is a no-op silent
+# pass-through so task-1 verify (--no-migrate against MCP_ONLY) succeeds.
+maybe_offer_context_mode_migration() {
+  # Body is filled in by Phase 57 task 2.
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# maybe_offer_redundant_mcp_cleanup (Phase 57 G1, BOTH-form branch)
+# ---------------------------------------------------------------------------
+# Stub: implemented by task 2. Filled in alongside the migration prompt.
+maybe_offer_redundant_mcp_cleanup() {
+  # Body is filled in by Phase 57 task 2.
   return 0
 }
 
@@ -1995,6 +2122,7 @@ parse_args() {
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
       --skip-context-mode) SKIP_CONTEXT_MODE=true ;;
+      --no-migrate)      NO_MIGRATE=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
       --reconfigure-statusline) RECONFIGURE_STATUSLINE=true ;;
       --yes|-y)          YES_FLAG=true ;;
@@ -2008,7 +2136,7 @@ Installs hooks, rules, and settings for two complementary MCP servers:
   - Context Mode MCP (optional): execution sandboxing + SQLite session persistence, ~98% context reduction
 
 Usage:
-  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-context-mode] [--skip-statusline] [--verify]
+  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-context-mode] [--no-migrate] [--skip-statusline] [--verify]
 
 Flags:
   --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
@@ -2021,6 +2149,10 @@ Flags:
                     Note: this does NOT skip context-mode registration — use --skip-context-mode for that.
   --skip-context-mode  Skip registering context-mode in .mcp.json (default: register context-mode).
                     Existing context-mode entries in .mcp.json are preserved regardless.
+  --no-migrate      Suppress the interactive prompt that offers to migrate the legacy
+                    MCP-server form of context-mode to /plugin install context-mode.
+                    Equivalent to answering "n" to the prompt. Useful for CI/automation.
+                    Non-interactive stdin ([ ! -t 0 ]) implies --no-migrate.
   --skip-statusline Skip the CMM statusline installation offer
   --reconfigure-statusline  Re-prompt for statusline component selection (overwrite existing config)
   --yes, -y         Non-interactive mode: accept all defaults without prompting
