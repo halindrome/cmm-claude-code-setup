@@ -239,13 +239,29 @@ All three Context Mode hooks are included in this repo and **gracefully no-op** 
 
 ### Install
 
+**Recommended — plugin form (upstream v1.0.122+).** This enables upstream's slash commands (`/context-mode:ctx-doctor`, `/ctx-upgrade`, `/ctx-purge`, `/ctx-insight`), automatic hook routing, and the full 11-tool MCP surface. The plugin form exposes Context Mode's MCP tools under the `mcp__plugin_context-mode_context-mode__*` prefix; our hooks register parallel matchers for both this prefix and the legacy `mcp__context-mode__*` prefix, with the plugin form listed first.
+
+```text
+# Inside a Claude Code session:
+/plugin marketplace add mksglu/context-mode
+/plugin install context-mode@context-mode
+```
+
+Then run `setup.sh --project` from a shell; it auto-detects the plugin install via `${CLAUDE_PLUGIN_ROOT}` or `~/.claude/plugins/cache/<marketplace>/context-mode/.claude-plugin/plugin.json` and writes the canonical upstream-1.0.122 matcher inventory into `.claude/settings.json`.
+
+If `setup.sh --project` detects an MCP-server-only install (the legacy alternative below), it interactively prompts to migrate to the plugin form. Reply `Y` to migrate, `n` for one-time skip, or `keep` to suppress the prompt on future runs. Pass `--no-migrate` for non-interactive / CI use. The opt-out flag `--skip-context-mode` still works and writes no Context Mode entries to `.claude/settings.json`.
+
+#### Alternative — MCP-server install (legacy)
+
+For installs pinned to a pre-1.0.122 upstream or workflows that cannot use `/plugin`, register Context Mode as a plain MCP server. This path does **not** enable the upstream slash commands (`/context-mode:ctx-doctor`, `/ctx-upgrade`, `/ctx-purge`, `/ctx-insight`); the 11 MCP tools work but you lose the slash-command surface and automatic hook routing.
+
 ```bash
 # 1. Install Context Mode (pin @latest so `npx` re-resolves instead of reusing a stale global)
 npm install -g context-mode@latest
 
 # 2. Register with Claude Code — always pin `@latest` so npx fetches the newest
 #    version each launch rather than reusing whatever version is cached globally.
-#    Project-scoped (recommended — only activates in this project):
+#    Project-scoped (only activates in this project):
 claude mcp add --scope project context-mode -- npx -y context-mode@latest
 #    Or globally (activates in all projects):
 claude mcp add context-mode -- npx -y context-mode@latest
@@ -294,13 +310,13 @@ The MCP executables live wherever they're installed globally — only the regist
 
 When `setup.sh --project` detects context-mode is installed (or installs it via `.mcp.json`), it also registers context-mode's five upstream hooks in `.claude/settings.json` so the MCP's core capture/redirect machinery fires automatically:
 
-- **PostToolUse** — fires on `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Skill`, `Agent`, `Task*`, `EnterPlanMode`/`ExitPlanMode`, `EnterWorktree`, and the broad `mcp__*` prefix. Upstream `posttooluse.mjs` delegates to `extractEvents()` which persists **semantic session events** (file reads, prompts, rules, subagent completions, task updates, intents, decisions) into a SQLite FTS5 session DB. **Note:** in current upstream `context-mode` (≤1.0.89), the extractor does NOT persist raw `mcp__*` tool outputs — jira, grafana, sentry, or other external-data MCP responses fire the hook but produce zero extractable events, so they are **not** searchable via `ctx_search`. Tracked as a known gap; see the follow-up note below.
+- **PostToolUse** — fires on `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Skill`, `Agent`, `Task*`, `EnterPlanMode`/`ExitPlanMode`, `EnterWorktree`, and the broad `mcp__*` prefix. Upstream `posttooluse.mjs` delegates to `extractEvents()` which persists **semantic session events** (file reads, prompts, rules, subagent completions, task updates, intents, decisions) into a SQLite FTS5 session DB. As of upstream **v1.0.122** ([PR #532](https://github.com/mksglu/context-mode/pull/532), closes [#529](https://github.com/mksglu/context-mode/issues/529)), raw `mcp__*` tool outputs (jira/grafana/sentry/halo responses) are also persisted via the wildcard `mcp__` PostToolUse matcher — resolving the gap previously tracked as [mksglu/context-mode#329](https://github.com/mksglu/context-mode/issues/329). Ongoing regression guard: `tests/test-phase-57-mcp-capture.sh`.
 - **PreToolUse** — cache-redirect for Bash, WebFetch, Read, Grep, Agent, and context-mode's own `ctx_execute*` tools when the output of a prior equivalent call is already indexed in the session DB
 - **PreCompact** — writes a session snapshot before Claude Code compacts context
 - **SessionStart** — injects prior-session snapshots
 - **UserPromptSubmit** — intent processing for submitted prompts
 
-> **Known capture gap (upstream context-mode).** External-data MCP tool outputs (`mcp__jira__*`, `mcp__grafana__*`, `mcp__sentry__*`, etc.) are not indexed by the upstream `extractEvents` function — the hook matcher includes `mcp__` but the extractor's category set is semantic (file/prompt/rule/subagent/task/intent/decision), not raw tool-output. For workflows that rely on re-querying external data, explicitly `ctx_index(content, intent="…")` the tool response in the same turn, or wait for the upstream PR that adds an `mcp_tool_result` category. Field-validated against `context-mode@1.0.89` on 2026-04-22 during a scout run that issued 9 jira/sentry/grafana calls — capture worked for the scout's file-read / rule / subagent events (38.6% context compression) but zero jira/grafana responses were retrievable via `ctx_search`.
+> **External-data MCP capture (resolved upstream as of v1.0.122).** External-data MCP tool outputs (`mcp__jira__*`, `mcp__grafana__*`, `mcp__sentry__*`, etc.) are now persisted by upstream's `extractEvents` after [PR #532](https://github.com/mksglu/context-mode/pull/532) added a wildcard `mcp__` matcher to `POST_TOOL_USE_MATCHERS` (closes [#529](https://github.com/mksglu/context-mode/issues/529); resolves the architectural gap historically tracked as [mksglu/context-mode#329](https://github.com/mksglu/context-mode/issues/329)). Installs pinned to a pre-1.0.122 upstream still hit the original gap — upgrade with `/plugin install context-mode@context-mode` (recommended) or `npm install -g context-mode@latest` (legacy MCP-server form) to pick up the fix. Field-validated by `tests/test-phase-57-mcp-capture.sh` against the canonical 1.0.122 matcher inventory.
 
 Registration uses a small dispatcher helper at `hooks/project/context-mode-hook-dispatch.sh` (installed into `.claude/hooks/` by `setup.sh --project`). The registered command is `bash <abs>/.claude/hooks/context-mode-hook-dispatch.sh <event>`; the dispatcher exec's the global `context-mode` binary when present and falls back to `npx -y context-mode@latest` only when no global install exists. This ensures hooks fire correctly whether or not `context-mode` is globally installed **and** eliminates the ENOTEMPTY race that bare `npx -y @latest` suffers under rapid concurrent hook fires (see "Why a dispatcher" below). The merge is idempotent — re-running `setup.sh --project` does not duplicate entries. Pass `--skip-context-mode` to opt out; no upstream entries are written.
 

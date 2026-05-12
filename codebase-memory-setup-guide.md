@@ -428,3 +428,36 @@ Claude edits a file
 **detect_changes shows no affected symbols**
 - Ensure git is in PATH and the project has been indexed
 - Check that changed files contain supported source code (not just config/docs)
+
+---
+
+## Pairing with Context Mode (optional)
+
+[Context Mode MCP](https://github.com/mksglu/context-mode) complements codebase-memory-mcp by sandboxing tool-output and persisting session state via SQLite FTS5. CMM answers "what does this code do?"; Context Mode answers "what did I just observe in this session?". They are independent — CMM works fully without Context Mode.
+
+### Recommended: plugin form (upstream v1.0.122+)
+
+Inside a Claude Code session:
+
+```text
+/plugin marketplace add mksglu/context-mode
+/plugin install context-mode@context-mode
+```
+
+Then run `setup.sh --project` from a shell — it auto-detects the plugin install via `${CLAUDE_PLUGIN_ROOT}` or `~/.claude/plugins/cache/<marketplace>/context-mode/.claude-plugin/plugin.json` and writes the canonical upstream-1.0.122 matcher inventory into `.claude/settings.json`. The plugin form enables upstream's slash commands (`/context-mode:ctx-doctor`, `/ctx-upgrade`, `/ctx-purge`, `/ctx-insight`) and exposes the MCP tools under the `mcp__plugin_context-mode_context-mode__*` prefix.
+
+If `setup.sh --project` finds an MCP-server-only install, it interactively offers to migrate to plugin form (reply `Y` to migrate, `n` to skip once, `keep` to suppress on future runs). Pass `--no-migrate` to force the silent-skip branch for CI / non-interactive environments. The opt-out flag `--skip-context-mode` continues to work and writes no Context Mode entries.
+
+### Alternative: MCP-server install (legacy)
+
+For installs pinned to a pre-1.0.122 upstream or workflows that cannot use `/plugin`, register Context Mode as a plain MCP server. This path does **not** enable the upstream slash commands; the 11 MCP tools are available but you lose the slash-command surface and automatic hook routing.
+
+```bash
+# Install globally so npx hits a stable binary
+npm install -g context-mode@latest
+
+# Register with Claude Code (project-scoped recommended)
+claude mcp add --scope project context-mode -- npx -y context-mode@latest
+```
+
+See the project [README](README.md) "Context Mode MCP — Optional Add-on" section for the full setup walkthrough, matcher-coverage details, and known operational caveats.
