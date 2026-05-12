@@ -9,7 +9,7 @@ When context-mode is installed via `setup.sh --project` (phase 51+), an upstream
 | Tool | Purpose |
 |------|---------|
 | `ctx_execute` | Run a shell/JS/TS/Python/etc. command in a sandboxed subprocess; only stdout enters context. Pass `intent=` to switch to search-mode return when output > 5KB. |
-| `ctx_execute_file` | Like `ctx_execute` but takes a file path; the raw file stays in the sandbox while only your computed result returns. Use whenever the input is a file you would otherwise Read just to feed into analysis. |
+| `ctx_execute_file` | Like `ctx_execute` but takes a file path; the raw file stays in the sandbox while only your computed result returns. **Preferred over `ctx_execute` for shell scripts longer than ~50 lines** or scripts with significant inline content that would inflate the `ctx_execute` `code` payload. Also use whenever the input is a file you would otherwise Read just to feed into analysis. |
 | `ctx_index` | Index arbitrary text (notes, pasted snippets) under a descriptive source label so it becomes searchable via `ctx_search`. |
 | `ctx_search` | Full-text search across everything indexed this session; always try this before re-running a command. |
 | `ctx_fetch_and_index` | Fetch a URL and index the response body; preferred over `ctx_execute("curl ...")` because it caches and indexes for free. |
@@ -17,7 +17,7 @@ When context-mode is installed via `setup.sh --project` (phase 51+), an upstream
 | `ctx_stats` | Report what is currently indexed (sources, token counts, age) plus lifetime token-savings dashboard. |
 | `ctx_doctor` | Run server-side diagnostics; use when hooks or FTS5 seem broken. Returns a markdown checklist with PASS/FAIL per check. |
 | `ctx_upgrade` | Upgrade context-mode in-place. Operator use only — agents should not call this spontaneously without user direction. |
-| `ctx_purge` | Destructive full reset of the session index. Irreversible — warn before invoking and require explicit user confirmation. |
+| `ctx_purge` | **Destructive: clears all indexed session content.** Agents must NOT suggest this casually; reserved for explicit user-initiated cleanup. Same caution category as `rm -rf` — irreversible, never invoke without an explicit user request. |
 | `ctx_insight` | Open the analytics dashboard in a browser; not useful in non-interactive sessions. *(Requires context-mode v1.0.107+; absent in installed v1.0.75.)* |
 
 ### Retrieval protocol
