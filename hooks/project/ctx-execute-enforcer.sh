@@ -1,7 +1,11 @@
 #!/bin/bash
-# ctx-execute-enforcer.sh — PreToolUse:Bash hook (allowlist enforcer — only exempt commands pass through; everything else redirects to ctx_execute)
-# BLOCKING: exits 2 for test runners, package installs, linters, and log viewers; redirects to mcp__context-mode__ctx_execute
-# No-op when Context Mode is not installed or not yet initialized.
+# ctx-execute-enforcer.sh — PreToolUse:Bash hook (allowlist enforcer; plugin-form and MCP-server-form coverage)
+# BLOCKING: exits 2 for test runners, package installs, linters, and log viewers; redirects to ctx_execute.
+# No-op when Context Mode is not installed (neither plugin-form NOR MCP-server-form detected)
+# or not yet initialized for this session.
+# Phase 57 G3: availability probe checks both install forms — ${CLAUDE_PLUGIN_ROOT} and
+# ~/.claude/plugins/cache/<marketplace>/context-mode/.claude-plugin/plugin.json (plugin form)
+# as a fast-path before falling through to the legacy .mcp.json probe.
 #
 # Install: cp hooks/project/ctx-execute-enforcer.sh .claude/hooks/ && chmod +x .claude/hooks/ctx-execute-enforcer.sh
 # Register in .claude/settings.json:
@@ -60,15 +64,39 @@ COMMAND=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin
 # If parsing failed or command is empty, do not block — fail open to avoid spurious hook errors
 [ -z "$COMMAND" ] && exit 0
 
-# --- Context Mode Detection (cached) ---
-# Cache result in /tmp/ctx-enforcer-<hash> to avoid repeated python3 JSON parsing on every Bash call
+# --- Context Mode Detection (cached, dual-form per Phase 57 G3) ---
+# Cache result in /tmp/ctx-enforcer-<hash> to avoid repeated python3 JSON parsing on every Bash call.
+# Probe order: plugin-form fast-path (CLAUDE_PLUGIN_ROOT env / ~/.claude/plugins/cache scan)
+# FIRST per G3 ordering; legacy MCP-server-form probe second.
 CTX_CACHE="/tmp/ctx-enforcer-${PROJECT_HASH}"
 if [ -f "$CTX_CACHE" ]; then
     CONTEXT_MODE_INSTALLED=$(cat "$CTX_CACHE" 2>/dev/null)
     CONTEXT_MODE_INSTALLED="${CONTEXT_MODE_INSTALLED:-0}"
 else
     CONTEXT_MODE_INSTALLED=0
-    if python3 -c "
+
+    # 1. Plugin-form fast-path (canonical, listed first per G3).
+    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && \
+       [ -f "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" ] && \
+       grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' \
+         "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
+        CONTEXT_MODE_INSTALLED=1
+    else
+        # Scan ~/.claude/plugins/cache/<marketplace>/context-mode/ for an installed plugin.
+        if [ -d "${HOME}/.claude/plugins/cache" ]; then
+            for _ctx_pl in "${HOME}/.claude/plugins/cache"/*/context-mode/.claude-plugin/plugin.json; do
+                [ -f "$_ctx_pl" ] || continue
+                if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_ctx_pl" 2>/dev/null; then
+                    CONTEXT_MODE_INSTALLED=1
+                    break
+                fi
+            done
+        fi
+    fi
+
+    # 2. MCP-server-form probe (legacy, listed second per G3).
+    if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
+        if python3 -c "
 import json, os, sys
 # 1. Project .mcp.json
 try:
@@ -86,8 +114,10 @@ for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/
     except Exception: pass
 sys.exit(1)
 " 2>/dev/null; then
-        CONTEXT_MODE_INSTALLED=1
+            CONTEXT_MODE_INSTALLED=1
+        fi
     fi
+
     # Also activate if a session DB already exists (context-mode was used here before)
     [ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
     # Write cache
@@ -180,7 +210,9 @@ BLOCKED: Route this command through ctx_execute for output sandboxing.
 
 Replace:
   Bash("$COMMAND")
-With:
+With (plugin form):
+  mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="$COMMAND")
+Or (MCP-server form, legacy):
   mcp__context-mode__ctx_execute(language="shell", code="$COMMAND")
 
 Context Mode captures only the relevant output portion, preventing context bloat.
