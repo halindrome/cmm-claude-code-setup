@@ -29,3 +29,7 @@ Use `ctx_execute_file` when the input is a file path and you want the raw file t
 ### Prefer
 
 Prefer `ctx_fetch_and_index` over `ctx_execute("curl ...")` for URL fetches — you get caching and indexing for free. When spawning in an established session, call `ctx_stats` first to see what is already indexed before deciding what to fetch or run.
+
+### Anti-patterns
+
+- **Never use `head`/`tail` inside `ctx_execute` to cap output.** Inside the sandbox, all stdout is captured for FTS5 indexing — there is no context-size penalty for full output. Truncating inside the sandbox discards data *before* it can be indexed or searched. Write programmatic analysis instead: filter, count, extract, then print only the findings.

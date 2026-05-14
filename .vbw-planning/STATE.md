@@ -37,6 +37,7 @@ Status: ready
 
 
 ## Recent Activity
+- 2026-05-14: Phase 58 (Prohibit head/tail truncation inside ctx_execute sandbox) added — Planned.
 - 2026-03-31: Picked up todo via /vbw:debug: Context Mode: investigate forcing Bash calls through ctx_execute via a PreToolUse hook
 - 2026-04-18: Phase 47 (Enforcement Audit + Context-Mode PostToolUse Annotation) closed. Shipped Finding A (ctx-execute-enforcer exemption tightening: removed bare `git log|diff|show` catch-all + `echo|printf`; added per-group track-hook-blocks counters), Finding B (cmm-nudge targeted-Read exemption now requires `/tmp/cmm-recent-<PROJECT_HASH>` touched within 60s), Finding C (rules/cmm-rules.md rewrite + cmm-session-start prompt + new one-shot `cmm-orient-nudge.sh`), Finding D (new `ctx-annotate-nudge.sh` PostToolUse additionalContext hook replacing `ctx-search-nudge.sh`). Merge date placeholder: <fill-on-merge>. **Follow-up debug pass scheduled two weeks after merge** to quantify impact on the three debug-session signals that motivated the phase: 61 raw Bash calls in session 358f31be, 43 Reads vs 2 search_graph in session 9f16fc98, and 0 calls to get_architecture / query_graph / trace_call_path across 1,274 tool-uses. Expected deltas: raw-Bash count down (Finding A), Read:search_graph ratio improved (Finding B), at least a non-zero count of the three under-promoted CMM tools (Findings C + D).
 

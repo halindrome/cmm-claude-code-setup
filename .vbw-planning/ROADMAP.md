@@ -49,6 +49,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [x] Phase 55: Sync VBW v1.37.0 Agent and Orchestration Changes
 - [x] Phase 56: Sync to CMM Upstream main (v0.6.1+101)
 - [ ] Phase 57: Sync context-mode integration to upstream v1.0.122
+- [ ] Phase 58: Prohibit head/tail truncation inside ctx_execute sandbox
 
 ### Phase 49: Align with VBW Agent Updates (v1.35.0)
 > **Superseded by Phase 52** (2026-05-04): Phase 52 absorbs the v1.35.0 alignment scope into a broader audit covering all VBW changes through v1.36.1+ on `origin/main`. Phase 49's specific gaps (vbw-qa write-verification gate, vbw-dev pre_existing_issues rule, `<skill_no_activation>` handling, agent frontmatter `tools:` allowlists) remain in scope and will be addressed inside Phase 52's planning.
@@ -686,3 +687,12 @@ Scope is the per-project CMM-aware surface only: `is-cmm-ext.sh`, `statusline-cm
 **Out of scope:** bundling our own copy of upstream context-mode (remains an external dependency), upgrading the user's installed context-mode build (user-driven via `/plugin install` or `npm i -g context-mode`), migrating this project's own internal dev install to `/plugin` form (orthogonal to what end-users get from setup.sh), VBW/CMM upstream sync (Phases 55/56), and any new `cmm-claude-code-setup`-side hooks beyond what is required to track plugin-form tool calls.
 
 **Research pre-loaded:** `57-RESEARCH.md` — captured directly by the orchestrator during the `/vbw:vibe` discovery turn (not via a separate Scout spawn). Findings include the five gaps above with exact file/line citations (`setup.sh:711`, `build/adapters/claude-code/hooks.d.ts` `PRE_TOOL_USE_MATCHERS`/`POST_TOOL_USE_MATCHERS`, `.claude-plugin/plugin.json` v1.0.122), and a recent upstream commit shortlist: `6818c44` (1.0.122 release), `855e330` (#532 PreToolUse external MCP routing — key change), `f918d29` (#537 Windows DEP0190), `c9c6a14` (#535 universal-rule extractors), `362709c` (snapshot raw-prompt safety-net), `b43268e`/`6be10a4` (universal blocker/role markers), `cd012d5`/`ff29948`/`d56a9fc`/`a5556a0` (#534 pi/lifecycle fixes).
+
+### Phase 58: Prohibit head/tail truncation inside ctx_execute sandbox
+**Goal:** Add Anti-patterns section to `ctx-rules.md` prohibiting `head`/`tail` inside `ctx_execute`; inside the sandbox all stdout is captured for FTS5 indexing so truncation discards data before it can be searched.
+**Deps:** Phase 57 (Sync context-mode integration to upstream v1.0.122 — established the 11-tool ctx-rules.md this phase extends)
+**Reqs:** none
+**Success:**
+- `ctx-rules.md` (both `rules/ctx-rules.md` source and `.claude/rules/ctx-rules.md` installed) has `### Anti-patterns` section after `### Prefer`
+- The section accurately describes why `head`/`tail` inside `ctx_execute` is harmful (discards data before FTS5 indexing)
+- The section prescribes programmatic analysis as the correct replacement pattern
