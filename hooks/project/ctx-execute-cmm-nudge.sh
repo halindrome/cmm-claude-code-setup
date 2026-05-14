@@ -45,11 +45,19 @@ ti = d.get('tool_input',{}) or {}
 code = ti.get('code','') or ''
 cwd = d.get('cwd','') or ''
 
-# Phase 57 G3: accept both install-form tool names. Plugin form (canonical)
-# listed first, MCP-server form (legacy) listed second. Trigger logic and
-# downstream classification are identical for both.
-if tool_name != 'mcp__plugin_context-mode_context-mode__ctx_execute' and \\
-   tool_name != 'mcp__context-mode__ctx_execute':
+# Phase 57 G3 / F3: accept both install-form prefixes × all three sandbox
+# entry-points (ctx_execute, ctx_execute_file, ctx_batch_execute) = 6 names.
+# Plugin form (canonical) listed first, MCP-server form (legacy) second.
+# Any other tool_name routes to 'other' and exits 0 (no nudge needed).
+_ACCEPTED = {
+    'mcp__plugin_context-mode_context-mode__ctx_execute',
+    'mcp__plugin_context-mode_context-mode__ctx_execute_file',
+    'mcp__plugin_context-mode_context-mode__ctx_batch_execute',
+    'mcp__context-mode__ctx_execute',
+    'mcp__context-mode__ctx_execute_file',
+    'mcp__context-mode__ctx_batch_execute',
+}
+if tool_name not in _ACCEPTED:
     emit(tool_name, 'other', '', '', cwd)
     sys.exit(0)
 

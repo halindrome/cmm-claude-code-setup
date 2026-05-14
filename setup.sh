@@ -590,8 +590,8 @@ detect_context_mode() {
        "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
     _plugin_form_present=true
   else
-    # Fall back to scanning ~/.claude/plugins/cache/<marketplace>/context-mode/.
-    local _plugin_cache_root="${HOME}/.claude/plugins/cache"
+    # Fall back to scanning ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/<marketplace>/context-mode/.
+    local _plugin_cache_root="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache"
     if [ -d "$_plugin_cache_root" ]; then
       local _plugin_manifest
       for _plugin_manifest in "$_plugin_cache_root"/*/context-mode/.claude-plugin/plugin.json; do
@@ -1236,6 +1236,11 @@ PY
   else
     echo "  [warn] JSON validation failed for $target_file after context-mode hook merge" >&2
   fi
+
+  # F1: Bust stale enforcer-form cache so the next Bash hook call re-probes.
+  # The cache has no TTL — a mid-session plugin install would otherwise stay
+  # masked as "not installed" until /tmp is cleared.
+  rm -f /tmp/ctx-enforcer-* 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------

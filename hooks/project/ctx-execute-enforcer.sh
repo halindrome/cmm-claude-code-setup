@@ -4,7 +4,7 @@
 # No-op when Context Mode is not installed (neither plugin-form NOR MCP-server-form detected)
 # or not yet initialized for this session.
 # Phase 57 G3: availability probe checks both install forms — ${CLAUDE_PLUGIN_ROOT} and
-# ~/.claude/plugins/cache/<marketplace>/context-mode/.claude-plugin/plugin.json (plugin form)
+# ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/<marketplace>/context-mode/.claude-plugin/plugin.json (plugin form)
 # as a fast-path before falling through to the legacy .mcp.json probe.
 #
 # Install: cp hooks/project/ctx-execute-enforcer.sh .claude/hooks/ && chmod +x .claude/hooks/ctx-execute-enforcer.sh
@@ -82,9 +82,9 @@ else
          "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
         CONTEXT_MODE_INSTALLED=1
     else
-        # Scan ~/.claude/plugins/cache/<marketplace>/context-mode/ for an installed plugin.
-        if [ -d "${HOME}/.claude/plugins/cache" ]; then
-            for _ctx_pl in "${HOME}/.claude/plugins/cache"/*/context-mode/.claude-plugin/plugin.json; do
+        # Scan ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/<marketplace>/context-mode/ for an installed plugin.
+        if [ -d "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" ]; then
+            for _ctx_pl in "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache"/*/context-mode/.claude-plugin/plugin.json; do
                 [ -f "$_ctx_pl" ] || continue
                 if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_ctx_pl" 2>/dev/null; then
                     CONTEXT_MODE_INSTALLED=1
