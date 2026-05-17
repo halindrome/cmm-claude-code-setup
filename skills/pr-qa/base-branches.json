@@ -1,0 +1,15 @@
+{
+  "_comment": "Branch config for /pr-qa. Edit this file to update base branches or add targets without modifying SKILL.md.",
+  "targets": {
+    "default": {
+      "path": ".",
+      "base_branch": "develop",
+      "remote": "origin",
+      "scope": "cmm"
+    }
+  },
+  "protected_branches": [
+    "main",
+    "develop"
+  ]
+}
