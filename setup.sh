@@ -2387,6 +2387,7 @@ parse_args() {
       --force)           FORCE=true ;;
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
+      --force-local-cmm) FORCE_LOCAL_CMM=true ;;
       --skip-context-mode) SKIP_CONTEXT_MODE=true ;;
       --no-migrate)      NO_MIGRATE=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
@@ -2402,7 +2403,7 @@ Installs hooks, rules, and settings for two complementary MCP servers:
   - Context Mode MCP (optional): execution sandboxing + SQLite session persistence, ~98% context reduction
 
 Usage:
-  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-context-mode] [--no-migrate] [--skip-statusline] [--verify]
+  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--force-local-cmm] [--skip-context-mode] [--no-migrate] [--skip-statusline] [--verify]
 
 Flags:
   --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
@@ -2413,6 +2414,8 @@ Flags:
   --dry-run         Show what would be done without making changes
   --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation).
                     Note: this does NOT skip context-mode registration — use --skip-context-mode for that.
+  --force-local-cmm     Register CMM in project .mcp.json even if globally installed.
+                    Useful for per-project version pinning or CI environment isolation.
   --skip-context-mode  Skip registering context-mode in .mcp.json (default: register context-mode).
                     Existing context-mode entries in .mcp.json are preserved regardless.
   --no-migrate      Suppress the interactive prompt that offers to migrate the legacy
