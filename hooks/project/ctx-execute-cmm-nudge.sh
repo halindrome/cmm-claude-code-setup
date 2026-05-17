@@ -1,11 +1,14 @@
 #!/bin/bash
-# ctx-execute-cmm-nudge.sh — PreToolUse hook: hard-block source-code search laundered through mcp__context-mode__ctx_execute in indexed CMM repos.
+# ctx-execute-cmm-nudge.sh — PreToolUse hook: hard-block source-code search laundered through ctx_execute in indexed CMM repos (plugin-form and MCP-server-form coverage).
 # BLOCKING: exits 2 when tool_input.code is an unambiguous grep/rg/ack/ag/ugrep/find-name against an indexed project path; otherwise exits 0 (fail-open on any ambiguity).
 #
 # Install: cp hooks/project/ctx-execute-cmm-nudge.sh .claude/hooks/ && chmod +x .claude/hooks/ctx-execute-cmm-nudge.sh
-# Register in .claude/settings.json:
-#   "hooks": { "PreToolUse": [{ "matcher": "mcp__context-mode__ctx_execute", "hooks": [{"type": "command", "command": "bash .claude/hooks/ctx-execute-cmm-nudge.sh"}] }] }
-# Matcher: PreToolUse:mcp__context-mode__ctx_execute
+# Register in .claude/settings.json (Phase 57 G3 — plugin-form FIRST, MCP-server-form second):
+#   "hooks": { "PreToolUse": [{
+#     "matcher": "mcp__plugin_context-mode_context-mode__ctx_execute|mcp__context-mode__ctx_execute",
+#     "hooks": [{"type": "command", "command": "bash .claude/hooks/ctx-execute-cmm-nudge.sh"}] }] }
+# Matcher: PreToolUse: plugin-form (mcp__plugin_context-mode_context-mode__ctx_execute) OR
+#                      MCP-server-form (mcp__context-mode__ctx_execute) — see internal tool_name probe.
 #
 # Sibling of hooks/project/grep-cmm-gate.sh (Grep-tool hard block). Same REPLACE WITH: machine-readable recovery format.
 # Parser is intentionally conservative per 46-CONTEXT.md — single-statement, pipe-less, heredoc-less command lines only; anything else fails open.
@@ -42,7 +45,19 @@ ti = d.get('tool_input',{}) or {}
 code = ti.get('code','') or ''
 cwd = d.get('cwd','') or ''
 
-if tool_name != 'mcp__context-mode__ctx_execute':
+# Phase 57 G3: accept both install-form prefixes for ctx_execute. The install
+# matcher (see header doc-line) routes only ctx_execute today, and the shell
+# `case "$TOOL_NAME"` block at the bottom of this file dispatches only those
+# two names — keep this python set in lockstep with that shell case to avoid
+# the F-06 divergence where python classified ctx_execute_file/_batch_execute
+# but shell silently no-op'd. If the install matcher is ever widened to also
+# route _file/_batch_execute, update BOTH layers together.
+# Any other tool_name routes to 'other' and exits 0 (no nudge needed).
+_ACCEPTED = {
+    'mcp__plugin_context-mode_context-mode__ctx_execute',
+    'mcp__context-mode__ctx_execute',
+}
+if tool_name not in _ACCEPTED:
     emit(tool_name, 'other', '', '', cwd)
     sys.exit(0)
 
@@ -275,8 +290,13 @@ PATTERN_FIELD=$(echo "$PARSED" | sed -n '3p')
 TARGET_PATH=$(echo "$PARSED"   | sed -n '4p')
 CWD_FIELD=$(echo "$PARSED"     | sed -n '5p')
 
-# Only match mcp__context-mode__ctx_execute — every other tool is a no-op
-[ "$TOOL_NAME" != "mcp__context-mode__ctx_execute" ] && exit 0
+# Phase 57 G3: only match Context Mode ctx_execute (plugin form OR legacy MCP-server
+# form). Plugin form listed first per ordering rule; trigger behavior identical.
+case "$TOOL_NAME" in
+    mcp__plugin_context-mode_context-mode__ctx_execute) ;;
+    mcp__context-mode__ctx_execute) ;;
+    *) exit 0 ;;
+esac
 
 # Fail-open for anything other than a classified code-search kind
 case "$KIND" in

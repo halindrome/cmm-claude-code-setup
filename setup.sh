@@ -9,7 +9,7 @@ set -euo pipefail
 # Synced upstream VBW version: 1.37.0
 #
 # Usage:
-#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-statusline] [--verify]
+#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--no-migrate] [--skip-statusline] [--verify]
 #
 # Flags:
 #   --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
@@ -513,7 +513,32 @@ INSTALL_CONTEXT_MODE=true
 # so context-mode registration is skipped entirely (fresh installs only — existing entries
 # in .mcp.json are preserved by the idempotency guard in install_project).
 SKIP_CONTEXT_MODE=false
+# Set by --no-migrate (Phase 57 G1). When true, the MCP_ONLY migration prompt in
+# detect_context_mode is forced to the `n` branch silently — useful for CI /
+# non-interactive automation. Also implicitly forced when stdin is not a TTY.
+NO_MIGRATE=false
+# Four-state install-form classification set by detect_context_mode() per G1:
+#   NONE       — neither plugin nor MCP-server form detected (fresh-install path).
+#   MCP_ONLY   — legacy MCP-server form only; triggers interactive migration prompt.
+#   PLUGIN     — plugin form present; canonical going forward, no prompt fires.
+#   BOTH       — plugin AND MCP-server forms both present; plugin wins, REDUNDANT_MCP=1.
+# Downstream callers (merge_context_mode_hooks, print_preflight_summary) read this.
+CONTEXT_MODE_INSTALL_FORM="NONE"
+# Set to 1 when BOTH forms are detected, so the caller can warn-and-offer to remove
+# the now-redundant MCP-server .mcp.json entry. Reset to empty on each detect call.
+REDUNDANT_MCP=""
 
+# detect_context_mode — Phase 57 G1 four-state install-form matrix:
+#   NONE       — neither install form present. Fresh-install path: register
+#                MCP-server form in .mcp.json (existing default behavior preserved).
+#   MCP_ONLY   — only legacy MCP-server form (.mcp.json `context-mode` entry).
+#                Interactive prompt offers migration to /plugin install context-mode.
+#                --no-migrate or non-TTY stdin forces the `n` branch silently.
+#   PLUGIN     — plugin-form install detected via ${CLAUDE_PLUGIN_ROOT} or via
+#                ~/.claude/plugins/cache/<marketplace>/context-mode/.claude-plugin/plugin.json.
+#                Plugin form is canonical going forward; no prompt fires.
+#   BOTH       — plugin AND MCP-server forms both present. Plugin wins; sets
+#                REDUNDANT_MCP=1 so the caller can warn-and-offer-cleanup.
 detect_context_mode() {
   # --skip-context-mode wins unconditionally — opt out of context-mode registration.
   if [ "$SKIP_CONTEXT_MODE" = true ]; then
@@ -548,16 +573,285 @@ detect_context_mode() {
   # existing context-mode entries and user customizations.
   INSTALL_CONTEXT_MODE=true
 
-  # If .mcp.json already has context-mode, surface that in the pre-flight summary.
-  if [ -f ".mcp.json" ] && grep -q "context-mode" ".mcp.json" 2>/dev/null; then
-    CONTEXT_MODE_STATUS="ok"
-    echo "  [ok] context-mode detected (already registered in .mcp.json)"
+  # --- Phase 57 G1: probe both install forms independently ---
+  # Reset transitional state on each call (idempotency: re-runs reclassify cleanly).
+  REDUNDANT_MCP=""
+
+  local _plugin_form_present=false
+  local _mcp_server_form_present=false
+
+  # Plugin-form probe: $CLAUDE_PLUGIN_ROOT resolves when run from inside an active
+  # Claude Code plugin session. Outside that context, scan the global plugin cache
+  # for any marketplace dir that contains a `context-mode` plugin (validated via
+  # the presence of .claude-plugin/plugin.json with `"name": "context-mode"`).
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && \
+     [ -f "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" ] && \
+     grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' \
+       "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
+    _plugin_form_present=true
   else
-    CONTEXT_MODE_STATUS="ok"
-    echo "  [info] context-mode will be registered in .mcp.json (use --skip-context-mode to opt out)"
-    echo "  [info] Docs: https://github.com/mksglu/context-mode"
+    # Fall back to scanning ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/<marketplace>/context-mode/.
+    local _plugin_cache_root="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache"
+    if [ -d "$_plugin_cache_root" ]; then
+      local _plugin_manifest
+      for _plugin_manifest in "$_plugin_cache_root"/*/context-mode/.claude-plugin/plugin.json; do
+        [ -f "$_plugin_manifest" ] || continue
+        if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_plugin_manifest" 2>/dev/null; then
+          _plugin_form_present=true
+          break
+        fi
+      done
+    fi
+  fi
+
+  # MCP-server-form probe: existing .mcp.json "context-mode" entry presence.
+  if [ -f ".mcp.json" ] && grep -q "context-mode" ".mcp.json" 2>/dev/null; then
+    _mcp_server_form_present=true
+  fi
+
+  # Classify into one of the four states.
+  if [ "$_plugin_form_present" = true ] && [ "$_mcp_server_form_present" = true ]; then
+    CONTEXT_MODE_INSTALL_FORM="BOTH"
+    REDUNDANT_MCP=1
+  elif [ "$_plugin_form_present" = true ]; then
+    CONTEXT_MODE_INSTALL_FORM="PLUGIN"
+  elif [ "$_mcp_server_form_present" = true ]; then
+    CONTEXT_MODE_INSTALL_FORM="MCP_ONLY"
+  else
+    CONTEXT_MODE_INSTALL_FORM="NONE"
+  fi
+
+  # If a prior session wrote the migration sentinel and plugin form is now
+  # present, clear the sentinel — the migration follow-up is complete (G1).
+  local _migration_sentinel=".vbw-planning/.context-mode-migration-pending"
+  if [ "$_plugin_form_present" = true ] && [ -f "$_migration_sentinel" ]; then
+    if [ "$DRY_RUN" != true ]; then
+      rm -f "$_migration_sentinel" 2>/dev/null || true
+      echo "  [ok] migration follow-up complete — plugin form detected; sentinel cleared"
+    else
+      echo "  [DRY RUN] Would clear migration sentinel $_migration_sentinel"
+    fi
+  fi
+
+  # Dispatch on form. The MCP_ONLY branch will trigger the interactive migration
+  # prompt implemented in maybe_offer_context_mode_migration() (Phase 57 task 2).
+  # Other branches preserve historical behavior for users not on the legacy form.
+  case "$CONTEXT_MODE_INSTALL_FORM" in
+    PLUGIN)
+      CONTEXT_MODE_STATUS="ok"
+      echo "  [ok] context-mode detected (plugin form: /plugin install context-mode@context-mode)"
+      ;;
+    BOTH)
+      CONTEXT_MODE_STATUS="ok"
+      echo "  [ok] context-mode detected (plugin form preferred; MCP-server entry in .mcp.json is redundant)"
+      ;;
+    MCP_ONLY)
+      CONTEXT_MODE_STATUS="ok"
+      echo "  [ok] context-mode detected (legacy MCP-server form via .mcp.json)"
+      ;;
+    NONE)
+      CONTEXT_MODE_STATUS="ok"
+      echo "  [info] context-mode will be registered in .mcp.json (use --skip-context-mode to opt out)"
+      echo "  [info] Docs: https://github.com/mksglu/context-mode"
+      echo "  [info] Tip: the canonical install form is now /plugin install context-mode@context-mode"
+      ;;
+  esac
+
+  # Offer interactive migration when only the legacy form is present.
+  if [ "$CONTEXT_MODE_INSTALL_FORM" = "MCP_ONLY" ]; then
+    maybe_offer_context_mode_migration
+  fi
+  if [ "$CONTEXT_MODE_INSTALL_FORM" = "BOTH" ]; then
+    maybe_offer_redundant_mcp_cleanup
   fi
   return 0
+}
+
+# ---------------------------------------------------------------------------
+# maybe_offer_context_mode_migration (Phase 57 G1)
+# ---------------------------------------------------------------------------
+# Called from detect_context_mode() when CONTEXT_MODE_INSTALL_FORM == MCP_ONLY.
+# Offers an interactive Y/n/keep prompt to migrate the legacy MCP-server form to
+# the canonical /plugin install context-mode@context-mode form. Silent `n`
+# fallback under --no-migrate or non-TTY stdin.
+#
+# Sentinel files (mirror existing project-state sentinel patterns):
+#   .vbw-planning/.context-mode-migration-pending  — created on Y, cleared once
+#                                                    plugin form is detected.
+#   .vbw-planning/.context-mode-form-preference     — written on `keep` (single
+#                                                    line: `mcp-server`).
+maybe_offer_context_mode_migration() {
+  # If user already expressed `keep` preference, do not nag again.
+  local _pref_file=".vbw-planning/.context-mode-form-preference"
+  if [ -f "$_pref_file" ] && grep -qx "mcp-server" "$_pref_file" 2>/dev/null; then
+    return 0
+  fi
+
+  # If sentinel already exists, user previously answered Y but hasn't yet run
+  # /plugin install. Print a one-line reminder rather than re-prompting.
+  local _sentinel=".vbw-planning/.context-mode-migration-pending"
+  if [ -f "$_sentinel" ]; then
+    echo "  [info] migration pending — run /plugin install context-mode@context-mode in your next Claude Code session"
+    return 0
+  fi
+
+  # Non-interactive paths: --no-migrate flag OR stdin is not a TTY OR --yes is set.
+  # YES_FLAG defaults to accepting prompts; explicit silent skip avoids surprising
+  # CI runs by NOT migrating when the user did not explicitly opt in via TTY.
+  if [ "$NO_MIGRATE" = true ] || [ ! -t 0 ] || [ "${YES_FLAG:-false}" = true ]; then
+    echo "  [info] context-mode is on the legacy MCP-server form; recommended path: /plugin install context-mode@context-mode (skipped non-interactively)"
+    return 0
+  fi
+
+  # --dry-run mode: surface the offer but do not mutate state.
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would prompt to migrate context-mode to /plugin install form"
+    return 0
+  fi
+
+  echo ""
+  echo "  Upstream now recommends \`/plugin install context-mode@context-mode\` (enables"
+  echo "  slash commands, automatic hook routing, full feature set)."
+  printf "  Migrate now? [Y/n/keep] "
+  local _answer
+  # F-05: EOF (Ctrl-D) at the prompt would abort setup.sh under `set -e`.
+  # Treat EOF as 'n' (don't migrate) — safer than the default-Y fallback.
+  if ! read -r _answer; then
+    echo ""
+    echo "  [info] No answer received (EOF); treating as 'n'"
+    _answer=n
+  fi
+  _answer="${_answer:-Y}"
+  case "$_answer" in
+    Y|y|yes|YES)
+      _do_context_mode_migration_yes "$_sentinel"
+      ;;
+    n|N|no|NO)
+      echo "  [info] Keeping MCP-server form. Recommended path stays: /plugin install context-mode@context-mode"
+      ;;
+    keep|KEEP|k|K)
+      mkdir -p "$(dirname "$_pref_file")" 2>/dev/null
+      printf 'mcp-server\n' > "$_pref_file"
+      echo "  [ok] Wrote $_pref_file — migration reminder suppressed on future runs"
+      ;;
+    *)
+      echo "  [warn] Unrecognized answer '$_answer'; treating as 'n'"
+      ;;
+  esac
+}
+
+# _do_context_mode_migration_yes <sentinel_path>
+# Helper for the Y branch: remove .mcp.json `context-mode` entry, write
+# sentinel, and print explicit follow-up instructions.
+_do_context_mode_migration_yes() {
+  local _sentinel="$1"
+
+  # Remove the context-mode entry from .mcp.json while preserving other entries.
+  # F-02: atomic .tmp + os.replace (matches install_project's MCP merge pattern).
+  # F-03: wrap python in if/else so a write failure (EACCES/ENOSPC/read-only FS)
+  #       degrades to a [warn] instead of aborting setup.sh under `set -euo pipefail`.
+  if [ -f ".mcp.json" ]; then
+    if python3 - <<'PYEOF'
+import json, os, sys
+try:
+    with open(".mcp.json") as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)  # fail-open: leave file untouched
+if not isinstance(data, dict):
+    sys.exit(0)
+servers = data.get("mcpServers")
+if isinstance(servers, dict) and "context-mode" in servers:
+    del servers["context-mode"]
+    tmp = ".mcp.json.tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, ".mcp.json")
+    print("  [ok] Removed context-mode from .mcp.json (other entries preserved)")
+PYEOF
+    then
+      :
+    else
+      echo "  [warn] Failed to update .mcp.json (Y migration aborted; existing state preserved)"
+      return 0
+    fi
+    # F-01: prevent install_project's later MCP-merge block from silently
+    # re-adding the entry we just removed (same-run migration was a no-op).
+    # If context-mode is no longer registered, flip the install flag false.
+    # INSTALL_CONTEXT_MODE is a setup.sh global (no `local`) so the assignment
+    # propagates back to install_project's `if install_ctx:` gate.
+    if ! python3 -c "import json,sys;d=json.load(open('.mcp.json'));sys.exit(0 if 'context-mode' in d.get('mcpServers',{}) else 1)" 2>/dev/null; then
+      INSTALL_CONTEXT_MODE=false
+    fi
+  fi
+
+  # Write the sentinel marker with an ISO timestamp + follow-up instructions.
+  mkdir -p "$(dirname "$_sentinel")" 2>/dev/null
+  local _ts
+  _ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u)"
+  cat > "$_sentinel" <<EOF
+$_ts
+context-mode migration pending: run \`/plugin install context-mode@context-mode\`
+in your next Claude Code session. setup.sh will clear this sentinel automatically
+once the plugin form is detected on a follow-up run.
+EOF
+  echo "  [ok] Wrote $_sentinel"
+  echo ""
+  echo "  Next step: in your next Claude Code session, run:"
+  echo "    /plugin install context-mode@context-mode"
+  echo "  Then re-run \`bash setup.sh --project\` and this sentinel will be cleared."
+  echo ""
+}
+
+# ---------------------------------------------------------------------------
+# maybe_offer_redundant_mcp_cleanup (Phase 57 G1, BOTH-form branch)
+# ---------------------------------------------------------------------------
+# Called when CONTEXT_MODE_INSTALL_FORM == BOTH. Plugin wins. The MCP-server
+# entry in .mcp.json is now redundant; offer a one-line y/N prompt to remove it
+# unless we are non-interactive or --no-migrate is set, in which case warn only.
+maybe_offer_redundant_mcp_cleanup() {
+  if [ "$NO_MIGRATE" = true ] || [ ! -t 0 ] || [ "${YES_FLAG:-false}" = true ] || [ "$DRY_RUN" = true ]; then
+    echo "  [warn] MCP-server entry in .mcp.json is redundant alongside plugin form (skipping cleanup non-interactively)"
+    return 0
+  fi
+  printf "  MCP-server entry in .mcp.json is redundant; remove it? [y/N] "
+  local _answer
+  # F-05: EOF at the prompt should be treated as 'N' (don't remove), matching
+  # the prompt's default. Without this, `read` failure aborts setup.sh under `set -e`.
+  read -r _answer || _answer=n
+  case "$_answer" in
+    y|Y|yes|YES)
+      # F-02/F-03: atomic .tmp + os.replace, wrapped in if/else so write
+      # failures degrade to [warn] instead of aborting setup.sh.
+      if python3 - <<'PYEOF'
+import json, os
+try:
+    with open(".mcp.json") as f:
+        data = json.load(f)
+except Exception:
+    raise SystemExit(0)
+if isinstance(data, dict):
+    servers = data.get("mcpServers")
+    if isinstance(servers, dict) and "context-mode" in servers:
+        del servers["context-mode"]
+        tmp = ".mcp.json.tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, ".mcp.json")
+        print("  [ok] Removed redundant context-mode entry from .mcp.json")
+PYEOF
+      then
+        :
+      else
+        echo "  [warn] Failed to update .mcp.json (redundant-entry cleanup skipped)"
+      fi
+      ;;
+    *)
+      echo "  [info] Keeping MCP-server entry — duplicate registration is harmless but non-canonical"
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -708,7 +1002,7 @@ merge_settings_json() {
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-cmm-calls.sh\""}]
       },
       {
-        "matcher": "mcp__context-mode__*",
+        "matcher": "mcp__plugin_context-mode_context-mode__*|mcp__context-mode__*",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-ctx-calls.sh\""}]
       }
     ]
@@ -827,10 +1121,19 @@ merge_context_mode_hooks() {
   # and falls back to `npx -y context-mode@latest` only when no global
   # install exists. See hooks/project/context-mode-hook-dispatch.sh.
   #
-  # The PreToolUse matcher for context-mode's own MCP tools uses the MCP-server
-  # form `mcp__context-mode__*` NOT the plugin form `mcp__plugin_context-mode_*`
-  # because setup.sh installs context-mode as an MCP server (via npx), not as a
-  # Claude Code plugin.
+  # Phase 57 G2/G3: write the canonical upstream-1.0.122 matcher inventory
+  # unconditionally. Both install forms are supported in parallel — the plugin
+  # form (`mcp__plugin_context-mode_context-mode__*`) is listed FIRST in each
+  # matcher per G3 to document canonical-vs-legacy intent and to win the match
+  # during transitional dual-registration states. The MCP-server form
+  # (`mcp__context-mode__*`) follows as legacy. No version gate (G2): older
+  # installs receive matchers they don't yet consume; upgrading to 1.0.122+
+  # activates them with zero further config.
+  #
+  # PostToolUse: aligns to upstream POST_TOOL_USE_MATCHERS (closes #329 capture
+  # gap via the wildcard `mcp__` matcher introduced in 1.0.122 #532).
+  # PreToolUse: gains the three plugin-form ctx_execute matchers alongside the
+  # existing MCP-server-form matchers.
   if ! python3 - "$target_file" "$dispatch_abspath" <<'PY'
 import json, os, sys
 
@@ -840,12 +1143,23 @@ dispatch = sys.argv[2]
 # Commands invoke the hook dispatcher which resolves context-mode (global
 # install → fast path; npx fallback → first-run primes cache, no race after).
 expected = {
+    # Upstream 1.0.122 POST_TOOL_USE_MATCHERS (build/adapters/claude-code/hooks.js):
+    #   ["Bash","Read","Write","Edit","NotebookEdit","Glob","Grep","TodoWrite",
+    #    "TaskCreate","TaskUpdate","EnterPlanMode","ExitPlanMode","Skill",
+    #    "Agent","AskUserQuestion","EnterWorktree","mcp__"]
+    # We add `WebFetch` and `WebSearch` ahead of upstream because our project
+    # captures those events for the search/fetch session-resolution pipeline.
+    # These are additive: upstream's PostToolUse hook simply no-ops on them.
     "PostToolUse": {
         "matcher": "Bash|Read|Write|Edit|NotebookEdit|Glob|Grep|WebFetch|WebSearch|TodoWrite|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|Skill|Agent|AskUserQuestion|EnterWorktree|mcp__",
         "command": f"bash {dispatch} posttooluse",
     },
+    # Upstream 1.0.122 PRE_TOOL_USE_MATCHERS lists the plugin-form ctx tools
+    # only; we list them FIRST per Phase 57 G3 ordering rule, then carry the
+    # MCP-server-form matchers second as legacy coverage so older installs and
+    # transitional dual-registration states both fire the hook.
     "PreToolUse": {
-        "matcher": "Bash|WebFetch|Read|Grep|Agent|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
+        "matcher": "Bash|WebFetch|Read|Grep|Agent|mcp__plugin_context-mode_context-mode__ctx_execute|mcp__plugin_context-mode_context-mode__ctx_execute_file|mcp__plugin_context-mode_context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
         "command": f"bash {dispatch} pretooluse",
     },
     "PreCompact": {
@@ -958,6 +1272,11 @@ PY
   else
     echo "  [warn] JSON validation failed for $target_file after context-mode hook merge" >&2
   fi
+
+  # F1: Bust stale enforcer-form cache so the next Bash hook call re-probes.
+  # The cache has no TTL — a mid-session plugin install would otherwise stay
+  # masked as "not installed" until /tmp is cleared.
+  rm -f /tmp/ctx-enforcer-* 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -1995,6 +2314,7 @@ parse_args() {
       --dry-run)         DRY_RUN=true ;;
       --skip-mcp-check)  SKIP_MCP_CHECK=true ;;
       --skip-context-mode) SKIP_CONTEXT_MODE=true ;;
+      --no-migrate)      NO_MIGRATE=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
       --reconfigure-statusline) RECONFIGURE_STATUSLINE=true ;;
       --yes|-y)          YES_FLAG=true ;;
@@ -2008,7 +2328,7 @@ Installs hooks, rules, and settings for two complementary MCP servers:
   - Context Mode MCP (optional): execution sandboxing + SQLite session persistence, ~98% context reduction
 
 Usage:
-  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-context-mode] [--skip-statusline] [--verify]
+  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--skip-context-mode] [--no-migrate] [--skip-statusline] [--verify]
 
 Flags:
   --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
@@ -2021,6 +2341,10 @@ Flags:
                     Note: this does NOT skip context-mode registration — use --skip-context-mode for that.
   --skip-context-mode  Skip registering context-mode in .mcp.json (default: register context-mode).
                     Existing context-mode entries in .mcp.json are preserved regardless.
+  --no-migrate      Suppress the interactive prompt that offers to migrate the legacy
+                    MCP-server form of context-mode to /plugin install context-mode.
+                    Equivalent to answering "n" to the prompt. Useful for CI/automation.
+                    Non-interactive stdin ([ ! -t 0 ]) implies --no-migrate.
   --skip-statusline Skip the CMM statusline installation offer
   --reconfigure-statusline  Re-prompt for statusline component selection (overwrite existing config)
   --yes, -y         Non-interactive mode: accept all defaults without prompting

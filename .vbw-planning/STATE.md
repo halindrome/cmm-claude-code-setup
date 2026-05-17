@@ -3,10 +3,10 @@
 **Project:** cmm-claude-code-setup
 
 ## Current Phase
-Phase: 56 of 56 (Sync to CMM Upstream main (v0.6.1+101))
-Plans: 4/4
+Phase: 36 of 36 (Sync Context Mode v1.0.122 + Prohibit head/tail in ctx_execute)
+Plans: 3/3
 Progress: 100%
-Status: complete
+Status: all_done
 
 ## Key Decisions
 
@@ -34,12 +34,12 @@ Status: complete
 - Investigate PostToolUse hook on ctx_* tools that injects `additionalContext` instructing Claude to summarize the ctx result in one sentence before the next tool call (and answer directly if sufficient) — may reduce redundant ctx_search/ctx_execute chains. User-suggested pattern: `hookSpecificOutput.additionalContext = "STOP — before your next tool call, state in ONE short sentence what this ctx* result told you. If it already answers the user's question, answer directly instead of running another search. If you can't summarize it, re-read the result above — do not run another ctx* call."` (added 2026-04-18)
 - Drift detection: at session startup, compare installed .vbw files (especially agent definitions) against local mods; warn if .vbw upstream has been updated since install (added 2026-04-22) (ref:6f269994)
 - [HIGH] MCP tool outputs (jira/grafana/sentry) not captured by context-mode PostToolUse; root cause is upstream extractEvents hardcoded categories, not a Phase 51 gap (added 2026-04-22) (ref:9a6d5248)
-
-
+- [KNOWN-ISSUE] bash scripts/generate-checksums.sh (idempotency) (scripts/generate-checksums.sh): Generator does not glob agents/; re-running drops the 6 agents/vbw-*.md check... — accepted as process-exception for this phase (phase 50, seen 1x) (see remediation/qa/round-01/R01-SUMMARY.md) (added 2026-05-17) (ref:0297733b)
+- [KNOWN-ISSUE] fixture A/B merge_settings_json basename-dedup (setup.sh): _last_token_basename was introduced in commit b8f8be0 (Phase 51 fix round 1),... (phase 57, seen 1x) (see 57-VERIFICATION.md) (added 2026-05-17) (ref:62cd2bef)
 ## Recent Activity
+- 2026-05-14: Phase 58 (Prohibit head/tail truncation inside ctx_execute sandbox) added — Planned.
 - 2026-03-31: Picked up todo via /vbw:debug: Context Mode: investigate forcing Bash calls through ctx_execute via a PreToolUse hook
 - 2026-04-18: Phase 47 (Enforcement Audit + Context-Mode PostToolUse Annotation) closed. Shipped Finding A (ctx-execute-enforcer exemption tightening: removed bare `git log|diff|show` catch-all + `echo|printf`; added per-group track-hook-blocks counters), Finding B (cmm-nudge targeted-Read exemption now requires `/tmp/cmm-recent-<PROJECT_HASH>` touched within 60s), Finding C (rules/cmm-rules.md rewrite + cmm-session-start prompt + new one-shot `cmm-orient-nudge.sh`), Finding D (new `ctx-annotate-nudge.sh` PostToolUse additionalContext hook replacing `ctx-search-nudge.sh`). Merge date placeholder: <fill-on-merge>. **Follow-up debug pass scheduled two weeks after merge** to quantify impact on the three debug-session signals that motivated the phase: 61 raw Bash calls in session 358f31be, 43 Reads vs 2 search_graph in session 9f16fc98, and 0 calls to get_architecture / query_graph / trace_call_path across 1,274 tool-uses. Expected deltas: raw-Bash count down (Finding A), Read:search_graph ratio improved (Finding B), at least a non-zero count of the three under-promoted CMM tools (Findings C + D).
 
 ## Blockers
 None
-

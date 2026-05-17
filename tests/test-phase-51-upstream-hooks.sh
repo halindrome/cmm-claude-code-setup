@@ -2,6 +2,18 @@
 # test-phase-51-upstream-hooks.sh — Regression coverage for phase-51 upstream
 # context-mode hook registration in setup.sh.
 #
+# Phase 57 re-baseline (2026-05-12): expected matcher inventory was updated to
+# the upstream-1.0.122 canonical set per `build/adapters/claude-code/hooks.d.ts`
+# (PR #532 / closes #529). PostToolUse adds the wildcard `mcp__` matcher (closes
+# the #329 capture gap). PreToolUse adds the three plugin-form matchers
+# (`mcp__plugin_context-mode_context-mode__ctx_execute[_file|_batch_execute]`)
+# alongside the legacy MCP-server-form matchers. Per Phase 57 G3 the plugin
+# form is listed FIRST; the legacy MCP-server form follows as parallel coverage
+# for transitional dual-registration states. setup.sh's `merge_context_mode_hooks`
+# writes this canonical set unconditionally — older context-mode installs
+# receive matchers they don't yet consume (graceful degradation; no version
+# gate per G2). See `.vbw-planning/phases/57-sync-context-mode-v1.0.122/`.
+#
 # Covers:
 #   Case 1 — Registration: fresh `setup.sh --project` writes the five upstream
 #            hook entries (PostToolUse, PreToolUse, PreCompact, SessionStart,
@@ -102,18 +114,36 @@ else
         _fail "$CASE - PostToolUse matcher mismatch (got '$ptu_matcher')"
     fi
 
-    # PreToolUse matcher: must contain mcp__context-mode__ctx_execute AND must NOT
-    # contain the plugin form mcp__plugin_context-mode_context-mode__.
+    # PreToolUse matcher: Phase 57 G3 re-baseline. Must equal the canonical
+    # upstream-1.0.122 matcher inventory exactly, with the plugin-form
+    # ctx_execute matchers listed FIRST and the MCP-server-form matchers
+    # following as legacy parallel coverage.
     pre_matcher=$(jq -r '.hooks.PreToolUse[] | select(.hooks[0].command | contains("context-mode-hook-dispatch.sh pretooluse")) | .matcher' "$SETTINGS1")
-    if [[ "$pre_matcher" == *"mcp__context-mode__ctx_execute"* ]]; then
-        _pass "$CASE - PreToolUse matcher uses MCP-server form (mcp__context-mode__)"
+    expected_pre="Bash|WebFetch|Read|Grep|Agent|mcp__plugin_context-mode_context-mode__ctx_execute|mcp__plugin_context-mode_context-mode__ctx_execute_file|mcp__plugin_context-mode_context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute"
+    if [ "$pre_matcher" = "$expected_pre" ]; then
+        _pass "$CASE - PreToolUse matcher is exact canonical 1.0.122 string (plugin form first, MCP-server form second)"
     else
-        _fail "$CASE - PreToolUse matcher missing MCP-server form (got '$pre_matcher')"
+        _fail "$CASE - PreToolUse matcher mismatch (got '$pre_matcher')"
     fi
-    if [[ "$pre_matcher" == *"mcp__plugin_context-mode_context-mode__"* ]]; then
-        _fail "$CASE - PreToolUse matcher uses plugin form instead of MCP-server form"
+
+    # Additional structural guards on the canonical PreToolUse matcher.
+    if [[ "$pre_matcher" == *"mcp__plugin_context-mode_context-mode__ctx_execute"* ]]; then
+        _pass "$CASE - PreToolUse matcher includes plugin-form ctx_execute"
     else
-        _pass "$CASE - PreToolUse matcher correctly avoids plugin form"
+        _fail "$CASE - PreToolUse matcher missing plugin-form ctx_execute (got '$pre_matcher')"
+    fi
+    if [[ "$pre_matcher" == *"mcp__context-mode__ctx_execute"* ]]; then
+        _pass "$CASE - PreToolUse matcher retains legacy MCP-server-form ctx_execute"
+    else
+        _fail "$CASE - PreToolUse matcher missing MCP-server-form ctx_execute (got '$pre_matcher')"
+    fi
+    # Plugin form must precede MCP-server form (Phase 57 G3 ordering rule).
+    plugin_off=$(awk -v s="$pre_matcher" 'BEGIN{print index(s, "mcp__plugin_context-mode_context-mode__ctx_execute")}')
+    mcp_off=$(awk -v s="$pre_matcher" 'BEGIN{print index(s, "mcp__context-mode__ctx_execute")}')
+    if [ "$plugin_off" -gt 0 ] && [ "$mcp_off" -gt 0 ] && [ "$plugin_off" -lt "$mcp_off" ]; then
+        _pass "$CASE - PreToolUse plugin-form matcher precedes MCP-server-form matcher"
+    else
+        _fail "$CASE - PreToolUse plugin-form must precede MCP-server-form (plugin@$plugin_off, mcp@$mcp_off)"
     fi
 fi
 

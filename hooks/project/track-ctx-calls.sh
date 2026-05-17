@@ -1,12 +1,18 @@
 #!/bin/bash
-# track-ctx-calls.sh — PostToolUse:mcp__context-mode__* hook (Context Mode call counter)
+# track-ctx-calls.sh — PostToolUse hook (Context Mode call counter; plugin-form and MCP-server-form coverage)
 # Tracks call counts per Context Mode MCP tool. Silent, never blocks, always exits 0.
 #
 # Install: cp hooks/project/track-ctx-calls.sh .claude/hooks/ && chmod +x .claude/hooks/track-ctx-calls.sh
-# Register in .claude/settings.json:
-#   "hooks": { "PostToolUse": [{ "matcher": "mcp__context-mode__*", "hooks": [{"type": "command", "command": "bash .claude/hooks/track-ctx-calls.sh"}] }] }
+# Register in .claude/settings.json (Phase 57 G3 — plugin-form FIRST, MCP-server-form second):
+#   "hooks": { "PostToolUse": [{
+#     "matcher": "mcp__plugin_context-mode_context-mode__*|mcp__context-mode__*",
+#     "hooks": [{"type": "command", "command": "bash .claude/hooks/track-ctx-calls.sh"}] }] }
 #
-# Matcher: mcp__context-mode__* (all Context Mode MCP tools)
+# Matcher: mcp__plugin_context-mode_context-mode__* | mcp__context-mode__*
+#   - Plugin form fires when context-mode is installed via /plugin install context-mode@context-mode
+#   - MCP-server form fires when context-mode is installed via .mcp.json npx wrapper (legacy)
+# The script body records whichever tool_name Claude Code routes through, so no tool_name probe
+# is needed inside — coverage is driven entirely by the settings.json matcher list above.
 
 INPUT=$(cat)
 TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null)
