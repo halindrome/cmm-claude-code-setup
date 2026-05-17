@@ -142,7 +142,7 @@ else
     # PostToolUse matcher must include the wildcard `mcp__` token that closes
     # the #329 capture gap.
     post_matcher=$(jq -r '.hooks.PostToolUse[]? | select(.hooks[0].command | contains("context-mode-hook-dispatch.sh posttooluse")) | .matcher' "$SETTINGS")
-    if [[ "$post_matcher" == *"|mcp__"* ]] || [[ "$post_matcher" == *"|mcp__"* ]]; then
+    if [[ "$post_matcher" == *"|mcp__"* ]] || [[ "$post_matcher" == mcp__* ]]; then
         _pass "$CASE - upstream PostToolUse matcher includes wildcard mcp__ token (#329 fix baseline)"
     else
         _fail "$CASE - upstream PostToolUse matcher missing wildcard mcp__ token (got '$post_matcher')"
@@ -213,14 +213,20 @@ JSON
 # form ctx_execute tool_name the hook should fall through (exit 0 — the
 # matcher in settings.json is "Bash", so this is a defense-in-depth check
 # that the script handles a non-Bash tool_name gracefully).
+#
+# Invoke from inside $PROJECT so the enforcer's path-integrity guard
+# (_SCRIPT_ROOT vs git-toplevel) does NOT fire — otherwise the guard exits 2
+# before the plugin-form parser is ever reached and the test becomes vacuous.
 if [ -x "$HOOKS_DIR/ctx-execute-enforcer.sh" ]; then
-    echo "$PRE_PAYLOAD" | bash "$HOOKS_DIR/ctx-execute-enforcer.sh" >"$SCRATCH/enf.out" 2>"$SCRATCH/enf.err"
+    ( cd "$PROJECT" && echo "$PRE_PAYLOAD" | bash "$HOOKS_DIR/ctx-execute-enforcer.sh" ) \
+        >"$SCRATCH/enf.out" 2>"$SCRATCH/enf.err"
     rc=$?
-    # Either exit 0 (fall-through, no block) or exit 2 (explicit block) are
-    # acceptable — both prove the hook parsed the plugin-form payload without
-    # crashing. Any other exit indicates a parse error or python traceback.
-    if [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]; then
-        _pass "$CASE - ctx-execute-enforcer.sh exit $rc under plugin-form payload (no crash)"
+    # With the path-integrity guard inert, exit 0 is the canonical fall-through
+    # path (the matcher is Bash, a plugin-form ctx_execute tool_name must not
+    # be blocked). A python traceback or parse error would produce a non-zero
+    # exit with diagnostic stderr.
+    if [ "$rc" -eq 0 ] && ! grep -qE 'Traceback|SyntaxError|python[0-9]*: ' "$SCRATCH/enf.err"; then
+        _pass "$CASE - ctx-execute-enforcer.sh fell through (exit 0) under plugin-form payload"
     else
         _fail "$CASE - ctx-execute-enforcer.sh exited $rc under plugin-form payload (stderr: $(head -5 "$SCRATCH/enf.err"))"
     fi
