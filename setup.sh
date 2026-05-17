@@ -714,7 +714,13 @@ maybe_offer_context_mode_migration() {
   echo "  slash commands, automatic hook routing, full feature set)."
   printf "  Migrate now? [Y/n/keep] "
   local _answer
-  read -r _answer
+  # F-05: EOF (Ctrl-D) at the prompt would abort setup.sh under `set -e`.
+  # Treat EOF as 'n' (don't migrate) — safer than the default-Y fallback.
+  if ! read -r _answer; then
+    echo ""
+    echo "  [info] No answer received (EOF); treating as 'n'"
+    _answer=n
+  fi
   _answer="${_answer:-Y}"
   case "$_answer" in
     Y|y|yes|YES)
@@ -741,9 +747,12 @@ _do_context_mode_migration_yes() {
   local _sentinel="$1"
 
   # Remove the context-mode entry from .mcp.json while preserving other entries.
+  # F-02: atomic .tmp + os.replace (matches install_project's MCP merge pattern).
+  # F-03: wrap python in if/else so a write failure (EACCES/ENOSPC/read-only FS)
+  #       degrades to a [warn] instead of aborting setup.sh under `set -euo pipefail`.
   if [ -f ".mcp.json" ]; then
-    python3 - <<'PYEOF'
-import json, sys
+    if python3 - <<'PYEOF'
+import json, os, sys
 try:
     with open(".mcp.json") as f:
         data = json.load(f)
@@ -754,11 +763,27 @@ if not isinstance(data, dict):
 servers = data.get("mcpServers")
 if isinstance(servers, dict) and "context-mode" in servers:
     del servers["context-mode"]
-    with open(".mcp.json", "w") as f:
+    tmp = ".mcp.json.tmp"
+    with open(tmp, "w") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
+    os.replace(tmp, ".mcp.json")
     print("  [ok] Removed context-mode from .mcp.json (other entries preserved)")
 PYEOF
+    then
+      :
+    else
+      echo "  [warn] Failed to update .mcp.json (Y migration aborted; existing state preserved)"
+      return 0
+    fi
+    # F-01: prevent install_project's later MCP-merge block from silently
+    # re-adding the entry we just removed (same-run migration was a no-op).
+    # If context-mode is no longer registered, flip the install flag false.
+    # INSTALL_CONTEXT_MODE is a setup.sh global (no `local`) so the assignment
+    # propagates back to install_project's `if install_ctx:` gate.
+    if ! python3 -c "import json,sys;d=json.load(open('.mcp.json'));sys.exit(0 if 'context-mode' in d.get('mcpServers',{}) else 1)" 2>/dev/null; then
+      INSTALL_CONTEXT_MODE=false
+    fi
   fi
 
   # Write the sentinel marker with an ISO timestamp + follow-up instructions.
@@ -792,11 +817,15 @@ maybe_offer_redundant_mcp_cleanup() {
   fi
   printf "  MCP-server entry in .mcp.json is redundant; remove it? [y/N] "
   local _answer
-  read -r _answer
+  # F-05: EOF at the prompt should be treated as 'N' (don't remove), matching
+  # the prompt's default. Without this, `read` failure aborts setup.sh under `set -e`.
+  read -r _answer || _answer=n
   case "$_answer" in
     y|Y|yes|YES)
-      python3 - <<'PYEOF'
-import json
+      # F-02/F-03: atomic .tmp + os.replace, wrapped in if/else so write
+      # failures degrade to [warn] instead of aborting setup.sh.
+      if python3 - <<'PYEOF'
+import json, os
 try:
     with open(".mcp.json") as f:
         data = json.load(f)
@@ -806,11 +835,18 @@ if isinstance(data, dict):
     servers = data.get("mcpServers")
     if isinstance(servers, dict) and "context-mode" in servers:
         del servers["context-mode"]
-        with open(".mcp.json", "w") as f:
+        tmp = ".mcp.json.tmp"
+        with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
+        os.replace(tmp, ".mcp.json")
         print("  [ok] Removed redundant context-mode entry from .mcp.json")
 PYEOF
+      then
+        :
+      else
+        echo "  [warn] Failed to update .mcp.json (redundant-entry cleanup skipped)"
+      fi
       ;;
     *)
       echo "  [info] Keeping MCP-server entry — duplicate registration is harmless but non-canonical"

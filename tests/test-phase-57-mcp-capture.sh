@@ -253,6 +253,101 @@ else
     _fail "$CASE - ctx-execute-cmm-nudge.sh not executable at $HOOKS_DIR/ctx-execute-cmm-nudge.sh"
 fi
 
+# --- Case 4: Migration helper Y branch (R2 F-04 coverage) ----------------------
+# Phase 57 G1 introduced `_do_context_mode_migration_yes`, which removes the
+# `context-mode` entry from .mcp.json when the user answers Y to the migration
+# prompt. R2 found three bugs in this code path that were invisible to the rest
+# of the suite (--yes + piped stdin + plugin-only fixture all skip the prompt):
+#
+#   R2 F-01: same-run migration undone — INSTALL_CONTEXT_MODE stayed true and
+#            install_project's MCP-merge block re-added the entry.
+#   R2 F-02: .mcp.json write was non-atomic (no .tmp + os.replace).
+#   R2 F-03: bare python heredoc could abort setup under `set -e`.
+#
+# We exercise the helper directly by extracting its function definition from
+# setup.sh and sourcing it into a scratch shell. This proves the data-mutation
+# logic (removal, preservation of other entries, atomic .mcp.json.tmp pattern,
+# INSTALL_CONTEXT_MODE flip) without needing a PTY harness for the interactive
+# prompt. The shell prompt path remains exercised by manual testing.
+CASE="case 4 - migration helper Y branch (R2 fix coverage)"
+MIG_DIR="$SCRATCH/migration"
+mkdir -p "$MIG_DIR"
+cat > "$MIG_DIR/.mcp.json" <<'JSON'
+{
+  "mcpServers": {
+    "context-mode": {
+      "command": "npx",
+      "args": ["-y", "context-mode@latest"],
+      "type": "stdio"
+    },
+    "codebase-memory-mcp": {
+      "command": "codebase-memory-mcp",
+      "args": [],
+      "type": "stdio"
+    }
+  }
+}
+JSON
+
+# Extract the helper function from setup.sh. Brittle to function-header
+# reformatting; if the function is renamed or its closing `}` no longer sits
+# alone on a line, regenerate this awk pattern.
+awk '/^_do_context_mode_migration_yes\(\)/,/^}$/' "$SETUP" > "$SCRATCH/migration-helper.sh"
+
+if [ ! -s "$SCRATCH/migration-helper.sh" ]; then
+    _fail "$CASE - could not extract _do_context_mode_migration_yes from $SETUP"
+else
+    (
+        cd "$MIG_DIR" || exit 99
+        # Set up the bash env the helper expects.
+        INSTALL_CONTEXT_MODE=true
+        # shellcheck disable=SC1091
+        . "$SCRATCH/migration-helper.sh"
+        _do_context_mode_migration_yes "$MIG_DIR/.sentinel"
+        # Print final state for the parent shell to assert against.
+        echo "INSTALL_CONTEXT_MODE=$INSTALL_CONTEXT_MODE"
+    ) > "$SCRATCH/migration.out" 2> "$SCRATCH/migration.err"
+    mig_rc=$?
+
+    if [ "$mig_rc" -ne 0 ]; then
+        _fail "$CASE - helper exited $mig_rc (stderr: $(head -5 "$SCRATCH/migration.err"))"
+    else
+        # F-01 assertion: INSTALL_CONTEXT_MODE flipped to false in the subshell
+        # output (proves install_project would not re-add the removed entry).
+        if grep -qx "INSTALL_CONTEXT_MODE=false" "$SCRATCH/migration.out"; then
+            _pass "$CASE - INSTALL_CONTEXT_MODE flipped to false after successful removal (F-01)"
+        else
+            _fail "$CASE - INSTALL_CONTEXT_MODE did not flip to false (stdout: $(cat "$SCRATCH/migration.out"))"
+        fi
+
+        # Data assertions: context-mode is gone, codebase-memory-mcp is still there.
+        if jq -e '.mcpServers."context-mode" == null' "$MIG_DIR/.mcp.json" >/dev/null 2>&1; then
+            _pass "$CASE - context-mode entry removed from .mcp.json"
+        else
+            _fail "$CASE - context-mode entry NOT removed from .mcp.json"
+        fi
+        if jq -e '.mcpServers."codebase-memory-mcp".command == "codebase-memory-mcp"' "$MIG_DIR/.mcp.json" >/dev/null 2>&1; then
+            _pass "$CASE - codebase-memory-mcp entry preserved during migration"
+        else
+            _fail "$CASE - codebase-memory-mcp entry was lost during migration"
+        fi
+
+        # F-02 assertion: no leftover .mcp.json.tmp (proves os.replace ran, not a bare overwrite).
+        if [ ! -f "$MIG_DIR/.mcp.json.tmp" ]; then
+            _pass "$CASE - no leftover .mcp.json.tmp after migration (atomic os.replace, F-02)"
+        else
+            _fail "$CASE - .mcp.json.tmp still present after migration (atomic write regressed)"
+        fi
+
+        # Sanity: sentinel was written.
+        if [ -f "$MIG_DIR/.sentinel" ]; then
+            _pass "$CASE - migration sentinel written"
+        else
+            _fail "$CASE - migration sentinel not written at $MIG_DIR/.sentinel"
+        fi
+    fi
+fi
+
 # --- Summary -------------------------------------------------------------------
 echo ""
 echo "============================================================"

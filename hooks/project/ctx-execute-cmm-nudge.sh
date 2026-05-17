@@ -45,17 +45,17 @@ ti = d.get('tool_input',{}) or {}
 code = ti.get('code','') or ''
 cwd = d.get('cwd','') or ''
 
-# Phase 57 G3 / F3: accept both install-form prefixes × all three sandbox
-# entry-points (ctx_execute, ctx_execute_file, ctx_batch_execute) = 6 names.
-# Plugin form (canonical) listed first, MCP-server form (legacy) second.
+# Phase 57 G3: accept both install-form prefixes for ctx_execute. The install
+# matcher (see header doc-line) routes only ctx_execute today, and the shell
+# `case "$TOOL_NAME"` block at the bottom of this file dispatches only those
+# two names — keep this python set in lockstep with that shell case to avoid
+# the F-06 divergence where python classified ctx_execute_file/_batch_execute
+# but shell silently no-op'd. If the install matcher is ever widened to also
+# route _file/_batch_execute, update BOTH layers together.
 # Any other tool_name routes to 'other' and exits 0 (no nudge needed).
 _ACCEPTED = {
     'mcp__plugin_context-mode_context-mode__ctx_execute',
-    'mcp__plugin_context-mode_context-mode__ctx_execute_file',
-    'mcp__plugin_context-mode_context-mode__ctx_batch_execute',
     'mcp__context-mode__ctx_execute',
-    'mcp__context-mode__ctx_execute_file',
-    'mcp__context-mode__ctx_batch_execute',
 }
 if tool_name not in _ACCEPTED:
     emit(tool_name, 'other', '', '', cwd)
