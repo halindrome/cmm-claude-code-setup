@@ -13,12 +13,12 @@ When context-mode is installed via `setup.sh --project` (phase 51+), an upstream
 | `ctx_index` | Index arbitrary text (notes, pasted snippets) under a descriptive source label so it becomes searchable via `ctx_search`. |
 | `ctx_search` | Full-text search across everything indexed this session; always try this before re-running a command. |
 | `ctx_fetch_and_index` | Fetch a URL and index the response body; preferred over `ctx_execute("curl ...")` because it caches and indexes for free. |
-| `ctx_batch_execute` | Run several commands in one call and search the combined output. Each command requires a `label` field (used as the FTS5 chunk title — promote from "descriptive" to "required"). Pass `concurrency: 1-8` (default 1) for I/O-bound parallelism (gh API, curl, multi-repo git reads); keep `concurrency: 1` for CPU-bound or stateful commands (npm test, build, lint, port-bound servers). *(`concurrency` requires context-mode v1.0.104+; absent in installed v1.0.75 — agents on the installed binary must omit the parameter.)* |
+| `ctx_batch_execute` | Run several commands in one call and search the combined output. Each command requires a `label` field (used as the FTS5 chunk title — promote from "descriptive" to "required"). Pass `concurrency: 1-8` (default 1) for I/O-bound parallelism (gh API, curl, multi-repo git reads); keep `concurrency: 1` for CPU-bound or stateful commands (npm test, build, lint, port-bound servers). |
 | `ctx_stats` | Report what is currently indexed (sources, token counts, age) plus lifetime token-savings dashboard. |
 | `ctx_doctor` | Run server-side diagnostics; use when hooks or FTS5 seem broken. Returns a markdown checklist with PASS/FAIL per check. |
 | `ctx_upgrade` | Upgrade context-mode in-place. Operator use only — agents should not call this spontaneously without user direction. |
 | `ctx_purge` | **Destructive: clears all indexed session content.** Agents must NOT suggest this casually; reserved for explicit user-initiated cleanup. Same caution category as `rm -rf` — irreversible, never invoke without an explicit user request. |
-| `ctx_insight` | Open the analytics dashboard in a browser; not useful in non-interactive sessions. *(Requires context-mode v1.0.107+; absent in installed v1.0.75.)* |
+| `ctx_insight` | Open the analytics dashboard in a browser; not useful in non-interactive sessions. |
 
 ### Retrieval protocol
 
