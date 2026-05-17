@@ -9,7 +9,7 @@ set -euo pipefail
 # Synced upstream VBW version: 1.37.0
 #
 # Usage:
-#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--no-migrate] [--skip-statusline] [--verify]
+#   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--no-migrate] [--skip-statusline] [--force-local-cmm] [--verify]
 #
 # Flags:
 #   --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
@@ -21,6 +21,10 @@ set -euo pipefail
 #   --skip-mcp-check  Bypass all MCP availability checks (CMM binary, registration,
 #                     tool allowlist, context-mode). Useful for CI/automation.
 #   --skip-statusline Skip the CMM statusline installation offer
+#   --force-local-cmm Register CMM in the project .mcp.json even when CMM is already
+#                     registered in the global Claude Code settings.json (escape hatch
+#                     for per-project version pins; default is to defer to the global
+#                     registration and skip the local entry).
 #   --verify          After installing hooks, verify file integrity against CHECKSUMS.sha256
 #
 # No flags: interactive prompt asking which to install.
@@ -467,37 +471,68 @@ detect_cmm_registration() {
 # detect_cmm_install_scope (Phase 59)
 # ---------------------------------------------------------------------------
 # Probe global + local CMM registration and set INSTALL_CMM_LOCAL / CMM_INSTALL_SCOPE.
-#   NONE   (neither) → INSTALL_CMM_LOCAL=true,  CMM_INSTALL_SCOPE="local"
-#   GLOBAL only      → INSTALL_CMM_LOCAL=false, CMM_INSTALL_SCOPE="global"
-#   PROJECT only     → INSTALL_CMM_LOCAL=false, CMM_INSTALL_SCOPE="local"
-#   BOTH             → INSTALL_CMM_LOCAL=false, CMM_INSTALL_SCOPE="both"
+#   NONE    (neither) → INSTALL_CMM_LOCAL=true,  CMM_INSTALL_SCOPE="none"
+#   GLOBAL  only      → INSTALL_CMM_LOCAL=false, CMM_INSTALL_SCOPE="global"
+#   PROJECT only      → INSTALL_CMM_LOCAL=true,  CMM_INSTALL_SCOPE="project"
+#   BOTH              → INSTALL_CMM_LOCAL=false, CMM_INSTALL_SCOPE="both"
+#
+# "Present" means the file is valid JSON with a `mcpServers."codebase-memory-mcp"`
+# object key (NOT a substring match — substring grep produces false positives from
+# `enabledMcpjsonServers` allowlists, sibling-name collisions, comments — F-01).
 detect_cmm_install_scope() {
   # --force-local-cmm: skip all probes and force local install.
   if [ "$FORCE_LOCAL_CMM" = true ]; then
     INSTALL_CMM_LOCAL=true
+    CMM_INSTALL_SCOPE="none"
     echo "  [info] --force-local-cmm: skipping global scope detection; will register CMM in .mcp.json"
-    return 0
-  fi
-
-  # --skip-mcp-check: treat as NONE (no checks, install locally).
-  if [ "$SKIP_MCP_CHECK" = true ]; then
-    INSTALL_CMM_LOCAL=true
     return 0
   fi
 
   local _global_present=false
   local _local_present=false
 
-  # Probe global settings.json for a codebase-memory-mcp key.
+  # Probe global settings.json for an mcpServers.codebase-memory-mcp key (JSON-aware).
   local config_dir
   config_dir=$(detect_config_dir)
-  if grep -q "codebase-memory-mcp" "${config_dir}/settings.json" 2>/dev/null; then
-    _global_present=true
+  if [ -f "${config_dir}/settings.json" ]; then
+    if python3 -c "
+import json,sys
+try:
+    with open('${config_dir}/settings.json') as f:
+        d = json.load(f)
+    sys.exit(0 if isinstance(d, dict) and isinstance(d.get('mcpServers'), dict) and 'codebase-memory-mcp' in d['mcpServers'] else 1)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null; then
+      _global_present=true
+    fi
   fi
 
-  # Probe project .mcp.json for a codebase-memory-mcp key.
-  if [ -f ".mcp.json" ] && grep -q "codebase-memory-mcp" ".mcp.json" 2>/dev/null; then
-    _local_present=true
+  # Probe project .mcp.json for the same key.
+  if [ -f ".mcp.json" ]; then
+    if python3 -c "
+import json,sys
+try:
+    with open('.mcp.json') as f:
+        d = json.load(f)
+    sys.exit(0 if isinstance(d, dict) and isinstance(d.get('mcpServers'), dict) and 'codebase-memory-mcp' in d['mcpServers'] else 1)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null; then
+      _local_present=true
+    fi
+  fi
+
+  # --skip-mcp-check: bypass scope-driven skip behavior (treat as NONE for installation
+  # purposes, install locally). Still report the detected global presence so CI users
+  # know they're getting the redundant entry.
+  if [ "$SKIP_MCP_CHECK" = true ]; then
+    INSTALL_CMM_LOCAL=true
+    CMM_INSTALL_SCOPE="none"
+    if [ "$_global_present" = true ]; then
+      echo "  [info] --skip-mcp-check: bypassing global scope detection; local entry will be added even though CMM is registered globally at ${config_dir}/settings.json"
+    fi
+    return 0
   fi
 
   # Classify into four states.
@@ -510,10 +545,10 @@ detect_cmm_install_scope() {
     INSTALL_CMM_LOCAL=false
     echo "  [info] CMM registered globally — skipping local .mcp.json entry"
   elif [ "$_local_present" = true ]; then
-    CMM_INSTALL_SCOPE="local"
-    INSTALL_CMM_LOCAL=false
+    CMM_INSTALL_SCOPE="project"
+    INSTALL_CMM_LOCAL=true
   else
-    CMM_INSTALL_SCOPE="local"
+    CMM_INSTALL_SCOPE="none"
     INSTALL_CMM_LOCAL=true
   fi
   return 0
@@ -962,6 +997,10 @@ CMMEOF
       fi
       ;;
     *)
+      # F-08: user chose to keep the local entry. Flip INSTALL_CMM_LOCAL=true
+      # so the subsequent merge block reports the entry as "already in .mcp.json"
+      # instead of contradictorily printing "[skip] ... already registered globally".
+      INSTALL_CMM_LOCAL=true
       echo "  [info] Keeping local .mcp.json entry (redundant but harmless)"
       ;;
   esac
@@ -1661,14 +1700,19 @@ install_project() {
       echo "  [DRY RUN] Would merge context-mode into .mcp.json"
     fi
   else
-    if python3 - ".mcp.json" "$INSTALL_CONTEXT_MODE" "$INSTALL_CMM_LOCAL" <<'MCPEOF'
+    if python3 - ".mcp.json" "$INSTALL_CONTEXT_MODE" "$INSTALL_CMM_LOCAL" "$(detect_config_dir)" <<'MCPEOF'
 import json, os, sys
 
 mcp_path = sys.argv[1]
 install_ctx = sys.argv[2] == "true"
 install_cmm_local = sys.argv[3].lower() == "true"
-config_dir = os.environ.get("CLAUDE_CONFIG_DIR", os.path.expanduser("~/.config/claude-code"))
+# F-05: bash detect_config_dir() resolves the live config dir (preferring
+# ~/.config/claude-code only if it exists, else ~/.claude). Receive the
+# resolved path from bash so the [skip] message points at the file the
+# probe actually read.
+config_dir = sys.argv[4] if len(sys.argv) > 4 else os.environ.get("CLAUDE_CONFIG_DIR", os.path.expanduser("~/.config/claude-code"))
 
+file_existed = os.path.isfile(mcp_path)
 try:
     with open(mcp_path) as f:
         data = json.load(f)
@@ -1723,11 +1767,17 @@ if install_ctx:
         else:
             print("  [skip] context-mode already in .mcp.json (user-customized; left untouched)")
 
-tmp = mcp_path + ".tmp"
-with open(tmp, "w") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-os.replace(tmp, mcp_path)
+# F-07: skip the write when the file did NOT pre-exist AND mcpServers is empty.
+# Otherwise --skip-context-mode + global CMM would leave a spurious empty
+# `{"mcpServers": {}}` polluting the project dir.
+if not file_existed and not data.get("mcpServers"):
+    print("  [skip] no MCP servers to register; not creating .mcp.json")
+else:
+    tmp = mcp_path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, mcp_path)
 MCPEOF
     then
       python3 -m json.tool ".mcp.json" > /dev/null 2>&1 || \
