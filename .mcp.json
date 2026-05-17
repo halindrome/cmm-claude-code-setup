@@ -4,14 +4,6 @@
       "command": "codebase-memory-mcp",
       "args": [],
       "type": "stdio"
-    },
-    "context-mode": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "context-mode@latest"
-      ],
-      "type": "stdio"
     }
   }
 }

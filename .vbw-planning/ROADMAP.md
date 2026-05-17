@@ -21,12 +21,12 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [x] Phase 16: jmunch Security Hardening
 - [ ] Phase 17: Git Branching Strategy
 - [x] Phase 18: Implement Branching Strategy
-- [ ] Phase 19: Fix Session-Gate CMM Deadlock
+- [x] Phase 19: Fix Session-Gate CMM Deadlock
 - [x] Phase 20: CMM Sentinel Staleness After Commits
 - [x] Phase 21: Require index_repository for Stale Sentinel
 - [x] Phase 22: Context Mode Monorepo Root Path Fix
 - [x] Phase 23: Enforce CMM Hooks Inside Subagents
-- [ ] Phase 24: Context Mode Integration Verification
+- [x] Phase 24: Context Mode Integration Verification
 - [x] Phase 25: CMM Index and UI Offer in Setup
 - [x] Phase 26: Uninstall Option
 - [x] Phase 27: CMM Touch Project Post-Commit Hook
@@ -40,12 +40,12 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [x] Phase 35: Expand Agent CMM Gate to Explore and Plan
 - [x] Phase 36: Hook Block Counter and Statusline Integration
 - [x] Phase 46: Source-Code Search CMM Gate
-- [ ] Phase 48: Setup Statusline Reprompt with Defaults
-- [ ] Phase 49: Align with VBW Agent Updates (v1.35.0) (superseded by Phase 52)
+- [x] Phase 48: Setup Statusline Reprompt with Defaults
+- [x] Phase 49: Align with VBW Agent Updates (v1.35.0) (superseded by Phase 52)
 - [x] Phase 51: Promote Context-Mode Hooks to First-Class
-- [ ] Phase 52: Audit VBW v1.36.1+ Upstream Changes
-- [ ] Phase 53: Review Context-Mode Updates for Tool Guidance
-- [ ] Phase 54: Map VBW v1.36.2 Per-Project Agent Installation Updates
+- [x] Phase 52: Audit VBW v1.36.1+ Upstream Changes
+- [x] Phase 53: Review Context-Mode Updates for Tool Guidance
+- [x] Phase 54: Map VBW v1.36.2 Per-Project Agent Installation Updates
 - [x] Phase 55: Sync VBW v1.37.0 Agent and Orchestration Changes
 - [x] Phase 56: Sync to CMM Upstream main (v0.6.1+101)
 - [ ] Phase 57: Sync context-mode integration to upstream v1.0.122

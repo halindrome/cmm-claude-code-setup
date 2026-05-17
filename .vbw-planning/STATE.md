@@ -3,10 +3,10 @@
 **Project:** cmm-claude-code-setup
 
 ## Current Phase
-Phase: 9 of 41 (Cmm Index Offer In Setup)
-Plans: 0/0
-Progress: 0%
-Status: ready
+Phase: 36 of 36 (Sync Context Mode v1.0.122 + Prohibit head/tail in ctx_execute)
+Plans: 3/3
+Progress: 100%
+Status: all_done
 
 ## Key Decisions
 
@@ -34,8 +34,8 @@ Status: ready
 - Investigate PostToolUse hook on ctx_* tools that injects `additionalContext` instructing Claude to summarize the ctx result in one sentence before the next tool call (and answer directly if sufficient) — may reduce redundant ctx_search/ctx_execute chains. User-suggested pattern: `hookSpecificOutput.additionalContext = "STOP — before your next tool call, state in ONE short sentence what this ctx* result told you. If it already answers the user's question, answer directly instead of running another search. If you can't summarize it, re-read the result above — do not run another ctx* call."` (added 2026-04-18)
 - Drift detection: at session startup, compare installed .vbw files (especially agent definitions) against local mods; warn if .vbw upstream has been updated since install (added 2026-04-22) (ref:6f269994)
 - [HIGH] MCP tool outputs (jira/grafana/sentry) not captured by context-mode PostToolUse; root cause is upstream extractEvents hardcoded categories, not a Phase 51 gap (added 2026-04-22) (ref:9a6d5248)
-
-
+- [KNOWN-ISSUE] bash scripts/generate-checksums.sh (idempotency) (scripts/generate-checksums.sh): Generator does not glob agents/; re-running drops the 6 agents/vbw-*.md check... — accepted as process-exception for this phase (phase 50, seen 1x) (see remediation/qa/round-01/R01-SUMMARY.md) (added 2026-05-17) (ref:0297733b)
+- [KNOWN-ISSUE] fixture A/B merge_settings_json basename-dedup (setup.sh): _last_token_basename was introduced in commit b8f8be0 (Phase 51 fix round 1),... (phase 57, seen 1x) (see 57-VERIFICATION.md) (added 2026-05-17) (ref:62cd2bef)
 ## Recent Activity
 - 2026-05-14: Phase 58 (Prohibit head/tail truncation inside ctx_execute sandbox) added — Planned.
 - 2026-03-31: Picked up todo via /vbw:debug: Context Mode: investigate forcing Bash calls through ctx_execute via a PreToolUse hook
@@ -43,4 +43,3 @@ Status: ready
 
 ## Blockers
 None
-
