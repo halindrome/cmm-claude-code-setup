@@ -918,6 +918,56 @@ PYEOF
 }
 
 # ---------------------------------------------------------------------------
+# maybe_offer_redundant_cmm_cleanup (Phase 59)
+# ---------------------------------------------------------------------------
+# Called from install_project() when CMM_INSTALL_SCOPE="both" (codebase-memory-mcp
+# present in both global settings.json and project .mcp.json). The local entry is
+# redundant; offer a one-line [y/N] prompt to remove it unless non-interactive.
+# Mirrors maybe_offer_redundant_mcp_cleanup with Phase-58/R2 hardening:
+#   atomic .tmp + os.replace, if/else wrapped python, EOF-safe read.
+maybe_offer_redundant_cmm_cleanup() {
+  if [ "$NO_MIGRATE" = true ] || [ ! -t 0 ] || [ "${YES_FLAG:-false}" = true ] || [ "$DRY_RUN" = true ]; then
+    return 0
+  fi
+  printf "  [info] CMM is registered both globally and in .mcp.json. Remove the local entry? [y/N] "
+  local _answer
+  # EOF-safe: treat read failure (piped/non-TTY) as 'N' to match [y/N] default.
+  read -r _answer || _answer=n
+  case "$_answer" in
+    y|Y|yes|YES)
+      if [ -f ".mcp.json" ]; then
+        if python3 - <<'CMMEOF'
+import json, os
+try:
+    with open(".mcp.json") as f:
+        data = json.load(f)
+except Exception:
+    raise SystemExit(0)
+if isinstance(data, dict):
+    servers = data.get("mcpServers")
+    if isinstance(servers, dict) and "codebase-memory-mcp" in servers:
+        del servers["codebase-memory-mcp"]
+        tmp = ".mcp.json.tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, ".mcp.json")
+        print("  [ok] Removed local codebase-memory-mcp entry from .mcp.json")
+CMMEOF
+        then
+          :
+        else
+          echo "  [warn] Failed to update .mcp.json (redundant-entry cleanup skipped)"
+        fi
+      fi
+      ;;
+    *)
+      echo "  [info] Keeping local .mcp.json entry (redundant but harmless)"
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # print_preflight_summary
 # ---------------------------------------------------------------------------
 
@@ -1593,6 +1643,11 @@ install_project() {
           ;;
       esac
     fi
+  fi
+
+  # Offer to clean up redundant local CMM entry when registered in both scopes.
+  if [ "$CMM_INSTALL_SCOPE" = "both" ]; then
+    maybe_offer_redundant_cmm_cleanup
   fi
 
   # Merge MCP servers into .mcp.json (creates if missing, preserves existing servers)
