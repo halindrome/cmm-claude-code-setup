@@ -70,6 +70,12 @@ claude mcp add codebase-memory-mcp -- codebase-memory-mcp
 
 Or add manually to `~/.claude/settings.json` under `mcpServers`.
 
+> **Global-first behavior (Phase 59):** When you run `setup.sh --project`, it checks
+> `${CLAUDE_CONFIG_DIR:-~/.config/claude-code}/settings.json` before writing `.mcp.json`.
+> If `codebase-memory-mcp` is already registered globally, the project `.mcp.json` entry
+> is skipped to avoid redundancy. To override and force a per-project pin (e.g., for CI
+> environment isolation or a pinned version), pass `--force-local-cmm`.
+
 ---
 
 ## Step 3: Allow the MCP Tools
