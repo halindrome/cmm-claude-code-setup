@@ -4,6 +4,13 @@
       "command": "codebase-memory-mcp",
       "args": [],
       "type": "stdio"
+    },
+    "token-analyzer": {
+      "command": "/Users/ahby/.local/bin/cta-mcp-server",
+      "args": [],
+      "env": {
+        "CTA_DB_PATH": "/Users/ahby/Sources/gitops/.claude/token-analyzer.db"
+      }
     }
   }
 }
