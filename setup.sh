@@ -1597,16 +1597,22 @@ install_project() {
 
   # Merge MCP servers into .mcp.json (creates if missing, preserves existing servers)
   if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would merge CMM into .mcp.json"
+    if [ "$INSTALL_CMM_LOCAL" = true ]; then
+      echo "  [DRY RUN] Would merge CMM into .mcp.json"
+    else
+      echo "  [DRY RUN] Would skip CMM (global registration in $(detect_config_dir)/settings.json)"
+    fi
     if [ "$INSTALL_CONTEXT_MODE" = true ]; then
       echo "  [DRY RUN] Would merge context-mode into .mcp.json"
     fi
   else
-    if python3 - ".mcp.json" "$INSTALL_CONTEXT_MODE" <<'MCPEOF'
+    if python3 - ".mcp.json" "$INSTALL_CONTEXT_MODE" "$INSTALL_CMM_LOCAL" <<'MCPEOF'
 import json, os, sys
 
 mcp_path = sys.argv[1]
 install_ctx = sys.argv[2] == "true"
+install_cmm_local = sys.argv[3].lower() == "true"
+config_dir = os.environ.get("CLAUDE_CONFIG_DIR", os.path.expanduser("~/.config/claude-code"))
 
 try:
     with open(mcp_path) as f:
@@ -1617,16 +1623,19 @@ except (FileNotFoundError, json.JSONDecodeError):
 if "mcpServers" not in data:
     data["mcpServers"] = {}
 
-# Always ensure CMM is registered
-if "codebase-memory-mcp" not in data["mcpServers"]:
-    data["mcpServers"]["codebase-memory-mcp"] = {
-        "command": "codebase-memory-mcp",
-        "args": [],
-        "type": "stdio"
-    }
-    print("  [ok] Registered codebase-memory-mcp in .mcp.json")
+# Register CMM locally only when not already present globally.
+if install_cmm_local:
+    if "codebase-memory-mcp" not in data["mcpServers"]:
+        data["mcpServers"]["codebase-memory-mcp"] = {
+            "command": "codebase-memory-mcp",
+            "args": [],
+            "type": "stdio"
+        }
+        print("  [ok] Registered codebase-memory-mcp in .mcp.json")
+    else:
+        print("  [skip] codebase-memory-mcp already in .mcp.json")
 else:
-    print("  [skip] codebase-memory-mcp already in .mcp.json")
+    print("  [skip] codebase-memory-mcp already registered globally at " + config_dir)
 
 # Register context-mode if requested.
 # We pin `context-mode@latest` so `npx` re-resolves against the npm registry on
