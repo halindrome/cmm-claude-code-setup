@@ -1437,22 +1437,6 @@ install_project() {
     done
   fi
 
-  # --- Project skills (slash commands) ---
-  # Source skills live in skills/<name>/. Installed to .claude/skills/<name>/
-  # where Claude Code discovers them as /<name>.
-  if [ -d "$SCRIPT_DIR/skills" ]; then
-    for skill_dir in "$SCRIPT_DIR/skills/"/*/; do
-      [ -d "$skill_dir" ] || continue
-      skill_name="$(basename "$skill_dir")"
-      mkdir -p ".claude/skills/$skill_name"
-      for skill_file in "$skill_dir"*; do
-        [ -f "$skill_file" ] || continue
-        copy_file "$skill_file" ".claude/skills/$skill_name/$(basename "$skill_file")"
-        case "$skill_file" in *.sh) set_executable ".claude/skills/$skill_name/$(basename "$skill_file")" ;; esac
-      done
-    done
-  fi
-
   # Purge deprecated hook files and their settings.json entries (unconditional).
   # When hooks are renamed or merged, stale files in .claude/hooks/ that remain
   # registered in settings.json can deadlock the session (e.g. old cmm-session-gate.sh
