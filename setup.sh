@@ -39,6 +39,13 @@ INSTALL_GLOBAL=false
 INSTALL_PROJECT=false
 SKIP_MCP_CHECK=false
 SKIP_STATUSLINE=false
+# CMM install-scope globals (set by detect_cmm_install_scope; consumed by install_project)
+# Four-value enum: local | global | both
+CMM_INSTALL_SCOPE="local"
+# Whether to write codebase-memory-mcp into project .mcp.json (default on; detect may flip false)
+INSTALL_CMM_LOCAL=true
+# Set by --force-local-cmm. When true, detect_cmm_install_scope short-circuits and forces local install.
+FORCE_LOCAL_CMM=false
 VERIFY=false
 YES_FLAG=false
 RECONFIGURE_STATUSLINE=false
@@ -452,6 +459,62 @@ detect_cmm_registration() {
   if [ "$choice" != "y" ] && [ "$choice" != "Y" ]; then
     echo "Aborting. Register CMM and re-run setup.sh." >&2
     exit 1
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# detect_cmm_install_scope (Phase 59)
+# ---------------------------------------------------------------------------
+# Probe global + local CMM registration and set INSTALL_CMM_LOCAL / CMM_INSTALL_SCOPE.
+#   NONE   (neither) → INSTALL_CMM_LOCAL=true,  CMM_INSTALL_SCOPE="local"
+#   GLOBAL only      → INSTALL_CMM_LOCAL=false, CMM_INSTALL_SCOPE="global"
+#   PROJECT only     → INSTALL_CMM_LOCAL=false, CMM_INSTALL_SCOPE="local"
+#   BOTH             → INSTALL_CMM_LOCAL=false, CMM_INSTALL_SCOPE="both"
+detect_cmm_install_scope() {
+  # --force-local-cmm: skip all probes and force local install.
+  if [ "$FORCE_LOCAL_CMM" = true ]; then
+    INSTALL_CMM_LOCAL=true
+    echo "  [info] --force-local-cmm: skipping global scope detection; will register CMM in .mcp.json"
+    return 0
+  fi
+
+  # --skip-mcp-check: treat as NONE (no checks, install locally).
+  if [ "$SKIP_MCP_CHECK" = true ]; then
+    INSTALL_CMM_LOCAL=true
+    return 0
+  fi
+
+  local _global_present=false
+  local _local_present=false
+
+  # Probe global settings.json for a codebase-memory-mcp key.
+  local config_dir
+  config_dir=$(detect_config_dir)
+  if grep -q "codebase-memory-mcp" "${config_dir}/settings.json" 2>/dev/null; then
+    _global_present=true
+  fi
+
+  # Probe project .mcp.json for a codebase-memory-mcp key.
+  if [ -f ".mcp.json" ] && grep -q "codebase-memory-mcp" ".mcp.json" 2>/dev/null; then
+    _local_present=true
+  fi
+
+  # Classify into four states.
+  if [ "$_global_present" = true ] && [ "$_local_present" = true ]; then
+    CMM_INSTALL_SCOPE="both"
+    INSTALL_CMM_LOCAL=false
+    echo "  [info] CMM registered in both global settings and local .mcp.json"
+  elif [ "$_global_present" = true ]; then
+    CMM_INSTALL_SCOPE="global"
+    INSTALL_CMM_LOCAL=false
+    echo "  [info] CMM registered globally — skipping local .mcp.json entry"
+  elif [ "$_local_present" = true ]; then
+    CMM_INSTALL_SCOPE="local"
+    INSTALL_CMM_LOCAL=false
+  else
+    CMM_INSTALL_SCOPE="local"
+    INSTALL_CMM_LOCAL=true
   fi
   return 0
 }
@@ -924,6 +987,7 @@ check_mcp_availability() {
   # regardless of flag ordering. Stdout is silenced so the skip path stays quiet.
   if [ "$SKIP_MCP_CHECK" = true ]; then
     detect_context_mode >/dev/null
+    detect_cmm_install_scope >/dev/null
     return 0
   fi
 
@@ -931,6 +995,7 @@ check_mcp_availability() {
   detect_cmm_registration
   detect_cmm_tools_allowed
   detect_context_mode
+  detect_cmm_install_scope
   print_preflight_summary
 }
 
