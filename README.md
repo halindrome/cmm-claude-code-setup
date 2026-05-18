@@ -79,7 +79,13 @@ bash setup.sh --help
   --force           Overwrite existing files
   --dry-run         Preview changes without writing anything
   --skip-mcp-check  Skip MCP availability prompts (for CI/automation)
+  --force-local-cmm Register CMM in project .mcp.json even if globally installed
 ```
+
+`--project` is global-scope-aware: if `codebase-memory-mcp` is already registered in
+`${CLAUDE_CONFIG_DIR:-~/.config/claude-code}/settings.json`, the project `.mcp.json`
+entry is skipped to avoid redundancy. Use `--force-local-cmm` for an explicit
+per-project pin (e.g., version isolation or CI environment).
 
 See [docs/setup-guide.md](docs/setup-guide.md) for the full step-by-step walkthrough.
 
