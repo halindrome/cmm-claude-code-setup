@@ -44,8 +44,8 @@ INSTALL_PROJECT=false
 SKIP_MCP_CHECK=false
 SKIP_STATUSLINE=false
 # CMM install-scope globals (set by detect_cmm_install_scope; consumed by install_project)
-# Four-value enum: local | global | both
-CMM_INSTALL_SCOPE="local"
+# Four-value enum: none | global | project | both
+CMM_INSTALL_SCOPE="none"
 # Whether to write codebase-memory-mcp into project .mcp.json (default on; detect may flip false)
 INSTALL_CMM_LOCAL=true
 # Set by --force-local-cmm. When true, detect_cmm_install_scope short-circuits and forces local install.
@@ -2519,7 +2519,7 @@ Flags:
   --dry-run         Show what would be done without making changes
   --skip-mcp-check  Bypass all MCP availability checks (useful for CI/automation).
                     Note: this does NOT skip context-mode registration — use --skip-context-mode for that.
-  --force-local-cmm     Register CMM in project .mcp.json even if globally installed.
+  --force-local-cmm  Register CMM in project .mcp.json even if globally installed.
                     Useful for per-project version pinning or CI environment isolation.
   --skip-context-mode  Skip registering context-mode in .mcp.json (default: register context-mode).
                     Existing context-mode entries in .mcp.json are preserved regardless.

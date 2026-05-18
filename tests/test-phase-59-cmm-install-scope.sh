@@ -379,58 +379,26 @@ else
 }
 JSON
 
+    # F-N-02 fix: exercise the awk-extracted PRODUCTION function, not a
+    # re-implementation. The function has an early-return guard that fires on
+    # non-TTY stdin (`[ ! -t 0 ]`). Tests run with piped/here-string stdin, so
+    # we sed-strip just that one clause from the extracted file, leaving the
+    # printf, read, case statement, python heredoc, atomic write, and warn
+    # wrapper all intact and exercised. Other guard clauses (NO_MIGRATE,
+    # YES_FLAG, DRY_RUN) are satisfied by setting those env vars to false.
+    sed 's/\[ ! -t 0 \] || //' "$SCRATCH/cleanup.sh" > "$SCRATCH/cleanup-testable.sh"
+
     (
         cd "$C6_PROJ_Y" || exit 99
         NO_MIGRATE=false
         YES_FLAG=false
         DRY_RUN=false
         INSTALL_CMM_LOCAL=false
-        # Defeat the [ ! -t 0 ] gate by stdin-piping `y\n` but the gate fires
-        # because piped stdin is non-TTY. Use a pseudo-TTY when available;
-        # otherwise temporarily neutralize the gate by overriding `test`.
-        # Simpler: stub the gate. Re-source the function then call manually.
         # shellcheck disable=SC1091
-        . "$SCRATCH/cleanup.sh"
-        # The function returns early on non-TTY stdin. Override by calling the
-        # body directly via process-substitution stdin: use `echo y` piped in
-        # AFTER stripping the early-return guard. Simplest: extract the body
-        # past the guard.
-        # ---
-        # Pragmatic approach: re-define the function with the guard removed.
-        maybe_offer_redundant_cmm_cleanup() {
-            printf "  [info] CMM is registered both globally and in .mcp.json. Remove the local entry? [y/N] "
-            local _answer
-            read -r _answer || _answer=n
-            case "$_answer" in
-                y|Y|yes|YES)
-                    if [ -f ".mcp.json" ]; then
-                        python3 - <<'CMMEOF'
-import json, os
-try:
-    with open(".mcp.json") as f:
-        data = json.load(f)
-except Exception:
-    raise SystemExit(0)
-if isinstance(data, dict):
-    servers = data.get("mcpServers")
-    if isinstance(servers, dict) and "codebase-memory-mcp" in servers:
-        del servers["codebase-memory-mcp"]
-        tmp = ".mcp.json.tmp"
-        with open(tmp, "w") as f:
-            json.dump(data, f, indent=2)
-            f.write("\n")
-        os.replace(tmp, ".mcp.json")
-        print("  [ok] Removed local codebase-memory-mcp entry from .mcp.json")
-CMMEOF
-                    fi
-                    ;;
-                *)
-                    INSTALL_CMM_LOCAL=true
-                    echo "  [info] Keeping local .mcp.json entry (redundant but harmless)"
-                    ;;
-            esac
-        }
-        # Here-string (not pipe) — see N-branch comment below.
+        . "$SCRATCH/cleanup-testable.sh"
+        # Here-string (not pipe) — pipe would put the function in a sub-subshell
+        # and the INSTALL_CMM_LOCAL mutation in the N branch wouldn't propagate
+        # back to this subshell's `echo "INSTALL_CMM_LOCAL=..."` line below.
         maybe_offer_redundant_cmm_cleanup <<< "y"
         echo "INSTALL_CMM_LOCAL=$INSTALL_CMM_LOCAL"
     ) > "$SCRATCH/c6y.out" 2>&1
@@ -486,23 +454,13 @@ JSON
 
     (
         cd "$C6_PROJ_N" || exit 99
+        NO_MIGRATE=false
+        YES_FLAG=false
+        DRY_RUN=false
         INSTALL_CMM_LOCAL=false
-        maybe_offer_redundant_cmm_cleanup() {
-            printf "  [info] CMM is registered both globally and in .mcp.json. Remove the local entry? [y/N] "
-            local _answer
-            read -r _answer || _answer=n
-            case "$_answer" in
-                y|Y|yes|YES) : ;;
-                *)
-                    INSTALL_CMM_LOCAL=true
-                    echo "  [info] Keeping local .mcp.json entry (redundant but harmless)"
-                    ;;
-            esac
-        }
-        # Use here-string (not pipe) so the function runs in the current
-        # subshell — pipe puts the function in a child process and
-        # INSTALL_CMM_LOCAL mutations don't propagate. Production code calls
-        # the function directly, so here-string mirrors that scoping.
+        # shellcheck disable=SC1091
+        . "$SCRATCH/cleanup-testable.sh"
+        # Here-string scoping: see Y-branch comment above.
         maybe_offer_redundant_cmm_cleanup <<< "n"
         echo "INSTALL_CMM_LOCAL=$INSTALL_CMM_LOCAL"
     ) > "$SCRATCH/c6n.out" 2>&1
