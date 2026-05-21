@@ -152,6 +152,43 @@ if echo "$COMMAND" | grep -q "ctx-exempt"; then
     exit 0
 fi
 
+# --- Compound-shell normalization (Phase 61 follow-up) ---
+# Agents frequently bypass exemptions by prefixing with `cd <dir> && <command>`
+# because `cd ` matches the navigation exemption. Peel off any leading
+# `cd <single-token> &&` prefixes so the EFFECTIVE command is what gets
+# matched against exemption patterns below. Anything still compound after
+# peeling falls through to the default block — exemption patterns assume a
+# single bounded command.
+_ORIG_COMMAND="$COMMAND"
+while [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]]; do
+    COMMAND="${COMMAND#${BASH_REMATCH[0]}}"
+done
+# If the stripped command still has compound shell operators, do NOT exempt —
+# fall straight through to the default block path. Detected operators:
+# `&&`, `||`, unquoted `;`, unquoted `|`, `$(...)`, and backtick command subs.
+if [[ "$COMMAND" == *"&&"* ]] || [[ "$COMMAND" == *"||"* ]] || \
+   [[ "$COMMAND" == *";"* ]]   || [[ "$COMMAND" == *"|"* ]]  || \
+   [[ "$COMMAND" == *'$('* ]]  || [[ "$COMMAND" == *'`'* ]]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-compound" 2>/dev/null || true
+    cat >&2 <<COMPOUND
+BLOCKED: Compound shell command cannot be exempted.
+
+Detected:
+  $_ORIG_COMMAND
+
+Exemption patterns (cd, git status, ls, mkdir, …) only apply to single bounded
+commands. Compounds like \`cd <dir> && <cmd>\` or \`<cmd> | <cmd>\` can hide
+arbitrary output behind an exempt prefix.
+
+Fix options:
+  1. Use absolute paths and drop the \`cd\` prefix.
+  2. Route the real command through ctx_execute for output sandboxing:
+       mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="...")
+  3. Run the two halves as separate Bash calls if both are independently exempt.
+COMPOUND
+    exit 2
+fi
+
 # --- Exempt Patterns (always allow, exit 0) ---
 # Each exempt group increments a bash-exempt counter via track-hook-blocks.sh
 # for audit instrumentation (47-02). Non-blocking; exit-0 outcome unchanged.
@@ -191,6 +228,7 @@ esac
 # Short-read utilities (bounded output)
 case "$COMMAND" in
   wc\ *|head\ *|tail\ -[0-9]*|tail\ -n\ [0-9]*)  _track_exempt short-reads; exit 0 ;;
+  ls|ls\ *)                                       _track_exempt short-reads; exit 0 ;;
 esac
 
 # Remote commands (output belongs to remote context, not local CTX store)
