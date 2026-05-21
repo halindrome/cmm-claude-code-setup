@@ -82,19 +82,24 @@ else
          "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
         CONTEXT_MODE_INSTALLED=1
     else
-        # Scan ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/<marketplace>/context-mode/ for an installed plugin.
+        # Scan ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/ for an installed context-mode plugin.
+        # The real layout is <cache>/<marketplace>/<plugin>/[<version>/]/.claude-plugin/plugin.json,
+        # so a fixed-depth glob misses versioned installs. Use find to discover any nesting.
         if [ -d "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" ]; then
-            for _ctx_pl in "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache"/*/context-mode/.claude-plugin/plugin.json; do
-                [ -f "$_ctx_pl" ] || continue
+            while IFS= read -r _ctx_pl; do
+                [ -z "$_ctx_pl" ] && continue
                 if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_ctx_pl" 2>/dev/null; then
                     CONTEXT_MODE_INSTALLED=1
                     break
                 fi
-            done
+            done < <(find "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" \
+                -maxdepth 7 -name 'plugin.json' -path '*/.claude-plugin/*' 2>/dev/null)
         fi
     fi
 
-    # 2. MCP-server-form probe (legacy, listed second per G3).
+    # 2. MCP-server-form probe (legacy, listed second per G3) — plus enabledPlugins fallback.
+    # context-mode can be installed as a Claude Code plugin without registering an mcpServers entry;
+    # enabledPlugins entries take the form "<plugin>@<marketplace>: true".
     if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
         if python3 -c "
 import json, os, sys
@@ -104,13 +109,17 @@ try:
         if 'context-mode' in json.load(f).get('mcpServers', {}):
             sys.exit(0)
 except Exception: pass
-# 2. Global Claude Code settings
+# 2. Global Claude Code settings — mcpServers OR enabledPlugins
 for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
     if not d: continue
     try:
         with open(os.path.join(d, 'settings.json')) as f:
-            if 'context-mode' in json.load(f).get('mcpServers', {}):
+            cfg = json.load(f)
+            if 'context-mode' in cfg.get('mcpServers', {}):
                 sys.exit(0)
+            for key, enabled in cfg.get('enabledPlugins', {}).items():
+                if enabled and key.split('@', 1)[0] == 'context-mode':
+                    sys.exit(0)
     except Exception: pass
 sys.exit(1)
 " 2>/dev/null; then
