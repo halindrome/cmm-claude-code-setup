@@ -52,7 +52,10 @@ else
     ADVISORY="CMM index is ready. Use search_graph, get_code_snippet, trace_call_path, and query_graph as the primary method for code exploration."
 fi
 
-printf '{"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":"%s"}}\n' \
-    "$(printf '%s' "$ADVISORY" | sed 's/"/\\"/g')"
+# JSON-encode via python3 json.dumps so embedded quotes, backslashes, and
+# control characters survive correctly. The previous sed-based escape only
+# handled bare double-quotes and could emit invalid JSON for richer payloads.
+python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":sys.argv[1]}}))' \
+    "$ADVISORY"
 
 exit 0
