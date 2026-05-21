@@ -36,6 +36,7 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-orient-nudge.sh"
+skills: [cmm-rules, ctx-rules]
 ---
 
 <!-- CMM: Frontmatter `tools:` allowlist (line 4) is an intentional CMM extension. VBW source

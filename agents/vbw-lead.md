@@ -36,6 +36,7 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-orient-nudge.sh"
+skills: [cmm-rules, ctx-rules]
 ---
 
 <!-- PROJECT-LEVEL OVERRIDE: This file shadows the VBW plugin agent "vbw-lead" to inject
