@@ -17,3 +17,9 @@ benchmarks/results/raw-*.csv
 benchmarks/results/aggregated-*.csv
 benchmarks/results/REPORT-*.md
 !benchmarks/results/REPORT-TEMPLATE.md
+
+# CMM-generated session artifacts
+.codebase-memory/
+
+# Node.js v8 compile cache
+node-compile-cache/

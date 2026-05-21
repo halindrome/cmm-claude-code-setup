@@ -11,6 +11,14 @@
       "env": {
         "CTA_DB_PATH": "/Users/ahby/Sources/gitops/.claude/token-analyzer.db"
       }
+    },
+    "context-mode": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "context-mode@latest"
+      ],
+      "type": "stdio"
     }
   }
 }
