@@ -431,14 +431,16 @@ detect_cmm_registration() {
     return 0
   fi
 
-  # 2. Global settings.json
+  # 2. Global settings.json + user-scope .claude.json (where `claude mcp add` writes).
   local config_dir
   config_dir=$(detect_config_dir)
-  if grep -q "codebase-memory-mcp" "${config_dir}/settings.json" 2>/dev/null; then
-    CMM_REGISTRATION_STATUS="ok"
-    echo "  [ok] CMM registered (global settings.json)"
-    return 0
-  fi
+  for _cmm_probe in "${config_dir}/settings.json" "${config_dir}/.claude.json" "${HOME}/.claude.json"; do
+    if grep -q "codebase-memory-mcp" "$_cmm_probe" 2>/dev/null; then
+      CMM_REGISTRATION_STATUS="ok"
+      echo "  [ok] CMM registered ($_cmm_probe)"
+      return 0
+    fi
+  done
 
   # Not registered yet
   if [ "$INSTALL_PROJECT" = true ] || [ "$INSTALL_GLOBAL" = true ]; then
@@ -491,22 +493,32 @@ detect_cmm_install_scope() {
   local _global_present=false
   local _local_present=false
 
-  # Probe global settings.json for an mcpServers.codebase-memory-mcp key (JSON-aware).
+  # Probe global Claude Code config for an mcpServers.codebase-memory-mcp key.
+  # User-scope MCP entries added via `claude mcp add` live in ~/.claude.json (and
+  # ${config_dir}/.claude.json on macOS). Global plugin-style entries live in
+  # settings.json under mcpServers. Check all three locations.
   local config_dir
   config_dir=$(detect_config_dir)
-  if [ -f "${config_dir}/settings.json" ]; then
+  local _probe_paths=(
+    "${config_dir}/settings.json"
+    "${config_dir}/.claude.json"
+    "${HOME}/.claude.json"
+  )
+  for _probe in "${_probe_paths[@]}"; do
+    [ -f "$_probe" ] || continue
     if python3 -c "
 import json,sys
 try:
-    with open('${config_dir}/settings.json') as f:
+    with open('${_probe}') as f:
         d = json.load(f)
     sys.exit(0 if isinstance(d, dict) and isinstance(d.get('mcpServers'), dict) and 'codebase-memory-mcp' in d['mcpServers'] else 1)
 except Exception:
     sys.exit(1)
 " 2>/dev/null; then
       _global_present=true
+      break
     fi
-  fi
+  done
 
   # Probe project .mcp.json for the same key.
   if [ -f ".mcp.json" ]; then
@@ -688,13 +700,37 @@ detect_context_mode() {
        "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
     _plugin_form_present=true
   else
-    # Fall back to scanning ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/<marketplace>/context-mode/.
+    # Fall back to scanning ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/ for any context-mode
+    # plugin install. Real layout is <cache>/<marketplace>/<plugin>/[<version>/]/.claude-plugin/...
+    # so a fixed-depth glob misses versioned installs — use find with broader nesting.
     local _plugin_cache_root="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache"
     if [ -d "$_plugin_cache_root" ]; then
-      local _plugin_manifest
-      for _plugin_manifest in "$_plugin_cache_root"/*/context-mode/.claude-plugin/plugin.json; do
-        [ -f "$_plugin_manifest" ] || continue
+      while IFS= read -r _plugin_manifest; do
+        [ -z "$_plugin_manifest" ] && continue
         if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_plugin_manifest" 2>/dev/null; then
+          _plugin_form_present=true
+          break
+        fi
+      done < <(find "$_plugin_cache_root" -maxdepth 7 -name 'plugin.json' \
+        -path '*/.claude-plugin/*' 2>/dev/null)
+    fi
+    # Also accept enabledPlugins entry (form: "context-mode@<marketplace>: true") in any
+    # global Claude Code config location — this is the canonical install flag.
+    if [ "$_plugin_form_present" = false ]; then
+      for _probe in "${CLAUDE_CONFIG_DIR:-${HOME}/.config/claude-code}/settings.json" \
+                    "${HOME}/.claude/settings.json"; do
+        [ -f "$_probe" ] || continue
+        if python3 -c "
+import json,sys
+try:
+    with open('${_probe}') as f:
+        cfg = json.load(f)
+    for k,v in (cfg.get('enabledPlugins') or {}).items():
+        if v and k.split('@',1)[0] == 'context-mode':
+            sys.exit(0)
+except Exception: pass
+sys.exit(1)
+" 2>/dev/null; then
           _plugin_form_present=true
           break
         fi
