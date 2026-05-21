@@ -773,10 +773,15 @@ sys.exit(1)
   case "$CONTEXT_MODE_INSTALL_FORM" in
     PLUGIN)
       CONTEXT_MODE_STATUS="ok"
+      # Plugin form is canonical — do not add a redundant MCP-server entry.
+      INSTALL_CONTEXT_MODE=false
       echo "  [ok] context-mode detected (plugin form: /plugin install context-mode@context-mode)"
+      echo "  [info] plugin form is canonical — skipping .mcp.json entry"
       ;;
     BOTH)
       CONTEXT_MODE_STATUS="ok"
+      # User already has both forms; keep the existing entry but do not re-add.
+      INSTALL_CONTEXT_MODE=false
       echo "  [ok] context-mode detected (plugin form preferred; MCP-server entry in .mcp.json is redundant)"
       ;;
     MCP_ONLY)
