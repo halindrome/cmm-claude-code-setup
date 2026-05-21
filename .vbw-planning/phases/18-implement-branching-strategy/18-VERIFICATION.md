@@ -6,7 +6,7 @@ passed: 12
 failed: 0
 total: 12
 date: 2026-05-21
-verified_at_commit: 31f888c
+verified_at_commit: 31f888cb7991f751196b4f6d32706b6f5786790f
 notes: retroactive verification — phase executed 2026-03-17; all durable artifacts present and correct. verified_at_commit refreshed 2026-05-21 after external validation in downstream project; phase 18 behavior unchanged since original 2026-05-17 verification.
 writer: write-verification.sh
 plans_verified:
