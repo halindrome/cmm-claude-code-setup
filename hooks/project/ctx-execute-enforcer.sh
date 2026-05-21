@@ -166,9 +166,18 @@ done
 # If the stripped command still has compound shell operators, do NOT exempt —
 # fall straight through to the default block path. Detected operators:
 # `&&`, `||`, unquoted `;`, unquoted `|`, `$(...)`, and backtick command subs.
-if [[ "$COMMAND" == *"&&"* ]] || [[ "$COMMAND" == *"||"* ]] || \
-   [[ "$COMMAND" == *";"* ]]   || [[ "$COMMAND" == *"|"* ]]  || \
-   [[ "$COMMAND" == *'$('* ]]  || [[ "$COMMAND" == *'`'* ]]; then
+#
+# Quote-awareness: strip single-quoted and double-quoted substrings before the
+# operator scan so legitimate exempt commands carrying these characters inside
+# string arguments (e.g. `git commit -m "wip; cleanup"`, `sed 's/a|b/x/'`) are
+# not false-positive blocked. Conservative scrub — no attempt to handle escape
+# sequences or here-docs.
+_OPCHECK="$COMMAND"
+_OPCHECK=$(printf '%s' "$_OPCHECK" | sed "s/'[^']*'//g")
+_OPCHECK=$(printf '%s' "$_OPCHECK" | sed 's/"[^"]*"//g')
+if [[ "$_OPCHECK" == *"&&"* ]] || [[ "$_OPCHECK" == *"||"* ]] || \
+   [[ "$_OPCHECK" == *";"* ]]   || [[ "$_OPCHECK" == *"|"* ]]  || \
+   [[ "$_OPCHECK" == *'$('* ]]  || [[ "$_OPCHECK" == *'`'* ]]; then
     bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-compound" 2>/dev/null || true
     cat >&2 <<COMPOUND
 BLOCKED: Compound shell command cannot be exempted.

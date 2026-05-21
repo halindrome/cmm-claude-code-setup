@@ -103,6 +103,26 @@ _assert_exit "mkdir exempt" 0 \
 _assert_exit "date exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"date"}}'
 
+_assert_exit "ls exempt (short-reads)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}'
+
+_assert_exit "bare ls exempt (short-reads)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"ls"}}'
+
+# F-04 (Phase 61 round-1 follow-up): compound-shell detector must respect quoting.
+# Operators inside single- or double-quoted argument strings are not real shell
+# separators, so an otherwise-exempt single command (git commit, etc.) must not
+# be false-positive blocked when its message/args contain `;`, `|`, `&&`, etc.
+_assert_exit "git commit with quoted ; exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"wip; cleanup\""}}'
+
+_assert_exit "git commit with quoted | exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"foo|bar\""}}'
+
+# But unquoted compound operators must still block (defence in depth).
+_assert_exit "unquoted git status && cat blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git status && cat /etc/passwd"}}'
+
 _assert_exit "git status exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
 
@@ -118,9 +138,6 @@ _assert_exit "find command blocked" 2 \
 
 _assert_exit "grep command blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"grep -r TODO src/"}}'
-
-_assert_exit "ls command blocked" 2 \
-    '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}'
 
 _assert_exit "curl command blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"curl https://example.com"}}'

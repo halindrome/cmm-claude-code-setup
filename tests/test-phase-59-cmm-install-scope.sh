@@ -177,12 +177,17 @@ CASE="case 2 - no global CMM: write codebase-memory-mcp to .mcp.json"
 
 C2_DIR="$SCRATCH/case2"
 C2_CONF="$SCRATCH/case2-conf"
+C2_HOME="$SCRATCH/case2-home"
+mkdir -p "$C2_HOME"
 _make_project "$C2_DIR"
 _make_empty_global_fixture "$C2_CONF"
 
+# Isolate HOME so detect_cmm_install_scope's $HOME/.claude.json probe (added in
+# Phase 61 for `claude mcp add --user-scope` coverage) does not pick up the real
+# developer's user-scope CMM registration and falsely report "global present".
 (
     cd "$C2_DIR"
-    CLAUDE_CONFIG_DIR="$C2_CONF" bash "$SETUP" --project --yes --skip-context-mode 2>&1
+    HOME="$C2_HOME" CLAUDE_CONFIG_DIR="$C2_CONF" bash "$SETUP" --project --yes --skip-context-mode 2>&1
 ) > "$SCRATCH/c2.out" 2>&1 || true
 
 # Assert: stdout contains the registered-ok message
@@ -309,13 +314,18 @@ else
 
     # Sub-case B: global settings.json has NO codebase-memory-mcp → NONE branch.
     FIXTURE_EMPTY="$SCRATCH/c5-empty-conf"
+    C5B_HOME="$SCRATCH/c5b-home"
+    mkdir -p "$C5B_HOME"
     _make_empty_global_fixture "$FIXTURE_EMPTY"
 
     C5_PROJ_B="$C5_DIR/proj-b"
     mkdir -p "$C5_PROJ_B"
 
+    # Isolate HOME so the function's $HOME/.claude.json probe cannot pick up
+    # the developer's real user-scope CMM registration (Phase 61 follow-up).
     (
         cd "$C5_PROJ_B"
+        HOME="$C5B_HOME"
         FORCE_LOCAL_CMM=false
         SKIP_MCP_CHECK=false
         CMM_INSTALL_SCOPE="local"

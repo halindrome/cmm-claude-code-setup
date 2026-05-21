@@ -637,6 +637,11 @@ CONTEXT_MODE_INSTALL_FORM="NONE"
 # Set to 1 when BOTH forms are detected, so the caller can warn-and-offer to remove
 # the now-redundant MCP-server .mcp.json entry. Reset to empty on each detect call.
 REDUNDANT_MCP=""
+# Set to true by detect_context_mode when CONTEXT_MODE_INSTALL_FORM is PLUGIN or BOTH.
+# Gates ONLY the .mcp.json context-mode entry write — upstream hook registration
+# and the tool allowlist still treat context-mode as installed and proceed normally
+# (because hooks and allowlist apply equally to plugin-form installs).
+SUPPRESS_MCP_CONTEXT_ENTRY=false
 
 # detect_context_mode — Phase 57 G1 four-state install-form matrix:
 #   NONE       — neither install form present. Fresh-install path: register
@@ -686,6 +691,7 @@ detect_context_mode() {
   # --- Phase 57 G1: probe both install forms independently ---
   # Reset transitional state on each call (idempotency: re-runs reclassify cleanly).
   REDUNDANT_MCP=""
+  SUPPRESS_MCP_CONTEXT_ENTRY=false
 
   local _plugin_form_present=false
   local _mcp_server_form_present=false
@@ -774,14 +780,17 @@ sys.exit(1)
     PLUGIN)
       CONTEXT_MODE_STATUS="ok"
       # Plugin form is canonical — do not add a redundant MCP-server entry.
-      INSTALL_CONTEXT_MODE=false
+      # Only suppress the .mcp.json write; upstream hooks and the tool allowlist
+      # still need to register because they apply to plugin-form installs too.
+      SUPPRESS_MCP_CONTEXT_ENTRY=true
       echo "  [ok] context-mode detected (plugin form: /plugin install context-mode@context-mode)"
       echo "  [info] plugin form is canonical — skipping .mcp.json entry"
       ;;
     BOTH)
       CONTEXT_MODE_STATUS="ok"
-      # User already has both forms; keep the existing entry but do not re-add.
-      INSTALL_CONTEXT_MODE=false
+      # User already has both forms; suppress only the .mcp.json re-add. Upstream
+      # hooks + allowlist still register (same reasoning as PLUGIN above).
+      SUPPRESS_MCP_CONTEXT_ENTRY=true
       echo "  [ok] context-mode detected (plugin form preferred; MCP-server entry in .mcp.json is redundant)"
       ;;
     MCP_ONLY)
@@ -1755,11 +1764,18 @@ install_project() {
     else
       echo "  [DRY RUN] Would skip CMM (global registration in $(detect_config_dir)/settings.json)"
     fi
-    if [ "$INSTALL_CONTEXT_MODE" = true ]; then
+    if [ "$INSTALL_CONTEXT_MODE" = true ] && [ "$SUPPRESS_MCP_CONTEXT_ENTRY" != true ]; then
       echo "  [DRY RUN] Would merge context-mode into .mcp.json"
     fi
   else
-    if python3 - ".mcp.json" "$INSTALL_CONTEXT_MODE" "$INSTALL_CMM_LOCAL" "$(detect_config_dir)" <<'MCPEOF'
+    # Compose effective MCP-entry flag: INSTALL_CONTEXT_MODE governs the overall
+    # opt-in; SUPPRESS_MCP_CONTEXT_ENTRY=true (set when plugin form is detected)
+    # vetoes only the .mcp.json line, leaving upstream hooks/allowlist alone.
+    _ctx_mcp_entry=true
+    if [ "$INSTALL_CONTEXT_MODE" != true ] || [ "$SUPPRESS_MCP_CONTEXT_ENTRY" = true ]; then
+      _ctx_mcp_entry=false
+    fi
+    if python3 - ".mcp.json" "$_ctx_mcp_entry" "$INSTALL_CMM_LOCAL" "$(detect_config_dir)" <<'MCPEOF'
 import json, os, sys
 
 mcp_path = sys.argv[1]
