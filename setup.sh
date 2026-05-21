@@ -1488,6 +1488,15 @@ install_global() {
   done
   shopt -u nullglob
 
+  # Install skills (global skills available to all subagents via skills: frontmatter)
+  shopt -s nullglob
+  for skill_dir in "$SCRIPT_DIR/skills/"*/; do
+    skill_name=$(basename "$skill_dir")
+    mkdir -p "${config_dir}/skills/${skill_name}"
+    copy_file "${skill_dir}SKILL.md" "${config_dir}/skills/${skill_name}/SKILL.md"
+  done
+  shopt -u nullglob
+
   # Purge deprecated hook files and their settings.json entries (unconditional).
   # Mirrors the project-scope cleanup in install_project — historically, retired
   # hooks copied here by older setup.sh runs lingered indefinitely. Same shared
@@ -1647,6 +1656,15 @@ install_project() {
       project-settings-example.json|allowed-tools.txt|mcp-example.json) continue ;;
     esac
     copy_file "$file" ".claude/rules/$(basename "$file")"
+  done
+  shopt -u nullglob
+
+  # Install skills (project skills available to subagents via skills: frontmatter)
+  shopt -s nullglob
+  for skill_dir in "$SCRIPT_DIR/skills/"*/; do
+    skill_name=$(basename "$skill_dir")
+    mkdir -p ".claude/skills/${skill_name}"
+    copy_file "${skill_dir}SKILL.md" ".claude/skills/${skill_name}/SKILL.md"
   done
   shopt -u nullglob
 
