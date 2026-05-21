@@ -89,16 +89,16 @@ trap 'rm -rf "$TMPDIR_ROOT"; rm -f "/tmp/ctx-subagent-avail-${PH_YES}" "/tmp/ctx
 ENV_NOCFG="HOME=$FAKE_HOME CLAUDE_CONFIG_DIR=$FAKE_HOME/.config/claude-code"
 
 MARKER="[ctx-startup]"
-TOOL="mcp__context-mode__ctx_stats"
+SKILL_REF="ctx-rules"
 
-echo "--- Test a: context-mode present -> stdout contains marker and names ctx_stats ---"
+echo "--- Test a: context-mode present -> stdout contains marker and skill pointer ---"
 # Run once, check marker present
 _assert "a1) context-mode present -> stdout contains $MARKER" \
     0 "$MARKER" 0 \
     "{\"cwd\":\"$PROJ_YES\"}"
-# And names the ctx_stats MCP tool explicitly
-_assert "a2) context-mode present -> stdout names $TOOL" \
-    0 "$TOOL" 0 \
+# And references the ctx-rules skill (new short pointer text)
+_assert "a2) context-mode present -> stdout references $SKILL_REF skill" \
+    0 "$SKILL_REF" 0 \
     "{\"cwd\":\"$PROJ_YES\"}"
 
 echo "--- Test b: context-mode absent -> stdout empty, exit 0 ---"

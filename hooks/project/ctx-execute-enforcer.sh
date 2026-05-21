@@ -217,5 +217,6 @@ Or (MCP-server form, legacy):
 
 Context Mode captures only the relevant output portion, preventing context bloat.
 If this is a source-code search, prefer search_code / search_graph (CMM) over ctx_execute.
+See skill \`ctx-rules\` for the full protocol.
 BLOCKED
 exit 2

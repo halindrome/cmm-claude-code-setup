@@ -153,6 +153,7 @@ BLOCKED: Use CMM tools instead of Grep for code search on $BLOCK_TARGET.
   - Text search:    mcp__codebase-memory-mcp__search_code(query="...")
   - Trace callers:  mcp__codebase-memory-mcp__trace_call_path
   Grep is allowed for: non-code files (JSON, YAML, Markdown, config, env)
+See skill \`cmm-rules\` for the full protocol.
 EOF
 
 # --- Block Counter ---

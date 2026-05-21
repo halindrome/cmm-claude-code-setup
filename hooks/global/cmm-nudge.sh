@@ -176,6 +176,7 @@ BLOCKED: Use CMM graph tools instead of Read for '$BASENAME'.
     - need imports/globals/module-level init
     - file < 50 lines
     - non-code files (JSON, YAML, Markdown, config)
+See skill \`cmm-rules\` for the full protocol.
 EOF
 
 # --- Block Counter ---

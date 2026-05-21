@@ -47,9 +47,9 @@ fi
 # SubagentStart hooks output: {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": "..."}}
 # Always exit 0 — this hook is advisory only, never blocking.
 if [ ! -f "$CMM_SENTINEL" ] || grep -q '^stale$' "$CMM_SENTINEL"; then
-    ADVISORY="⚠ CMM index is stale or uninitialized. Call index_repository before using search_graph, get_code_snippet, trace_call_path, or query_graph — results will be incomplete or absent until the graph is rebuilt."
+    ADVISORY="CMM index is stale. Consult skill \`cmm-rules\` for orient-first pattern; run index_repository first."
 else
-    ADVISORY="CMM index is ready. Use search_graph, get_code_snippet, trace_call_path, and query_graph as the primary method for code exploration."
+    ADVISORY="CMM graph is indexed. Consult skill \`cmm-rules\` before reading source files."
 fi
 
 # JSON-encode via python3 json.dumps so embedded quotes, backslashes, and
