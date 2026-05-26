@@ -18,7 +18,7 @@ date: "2026-03-13"
 | 4 | MH-04 | Agent branch lists allow-listed tools | PASS | Lines 39–43: all 5 tools listed |
 | 5 | MH-05 | Agent branch includes sentinel bypass instruction | PASS | Lines 45–46: `touch "/tmp/cmm-session-ready-..."` |
 | 6 | MH-06 | Agent branch includes `.vbw-planning/STATE.md` task hint | PASS | Line 50: `Check .vbw-planning/STATE.md` |
-| 7 | MH-07 | Agent branch includes CMM workflow hint | PASS | Lines 55–56: `search_graph → trace_call_path → get_code_snippet` |
+| 7 | MH-07 | Agent branch includes CMM workflow hint | PASS | Lines 55–56: `search_graph → trace_path → get_code_snippet` |
 | 8 | MH-08 | Human branch still contains original minimal prompt | PASS | Lines 60–68: unchanged 3-step prompt |
 | 9 | MH-09 | Script always exits 0 | PASS | Line 71: `exit 0` unconditional |
 | 10 | MH-10 | Sentinel deletion present before branch | PASS | Lines 14–15: `rm -f "$SENTINEL"` precedes IS_AGENT branch |

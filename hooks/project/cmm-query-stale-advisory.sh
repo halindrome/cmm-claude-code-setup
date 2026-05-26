@@ -4,7 +4,7 @@
 #
 # Install: cp hooks/project/cmm-query-stale-advisory.sh .claude/hooks/ && chmod +x .claude/hooks/cmm-query-stale-advisory.sh
 # Register in .claude/settings.json under PostToolUse with matcher:
-#   mcp__codebase-memory-mcp__search_graph|mcp__codebase-memory-mcp__get_code_snippet|mcp__codebase-memory-mcp__trace_call_path|mcp__codebase-memory-mcp__query_graph
+#   mcp__codebase-memory-mcp__search_graph|mcp__codebase-memory-mcp__get_code_snippet|mcp__codebase-memory-mcp__trace_path|mcp__codebase-memory-mcp__query_graph
 # Matcher: PostToolUse:CMM query tools
 
 # --- Project root detection (shared library with /tmp cache) ---

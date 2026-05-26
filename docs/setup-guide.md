@@ -149,7 +149,7 @@ Claude Code needs permission to use each MCP tool. Add all 14 tools to your proj
       "mcp__codebase-memory-mcp__search_code",
       "mcp__codebase-memory-mcp__query_graph",
       "mcp__codebase-memory-mcp__get_code_snippet",
-      "mcp__codebase-memory-mcp__trace_call_path",
+      "mcp__codebase-memory-mcp__trace_path",
       "mcp__codebase-memory-mcp__detect_changes",
       "mcp__codebase-memory-mcp__manage_adr",
       "mcp__codebase-memory-mcp__ingest_traces",
@@ -414,7 +414,7 @@ mcp__codebase-memory-mcp__index_repository
 | `search_graph` | Find functions/classes/modules by name pattern. Filter by label, degree, relationship type, file pattern. Case-insensitive regex by default. Paginated (10/page). Use regex alternatives for broad matching: `'handler\|hdlr\|ctrl'`. |
 | `search_code` | Grep-like text search scoped to indexed project. For string literals, TODOs, config values, import statements. Case-insensitive by default. Paginated. |
 | `get_code_snippet` | Fetch source code for a specific function/class by name (exact, partial, or short name). Returns signature, return type, complexity, decorators, docstring, caller/callee counts. |
-| `trace_call_path` | BFS traversal of call graph. Who calls it (inbound), what it calls (outbound), or both. Hop-by-hop with edge types (CALLS, HTTP_CALLS, ASYNC_CALLS, USAGE, OVERRIDE). Depth 1-5. |
+| `trace_path` | BFS traversal of call graph. Who calls it (inbound), what it calls (outbound), or both. Hop-by-hop with edge types (CALLS, HTTP_CALLS, ASYNC_CALLS, USAGE, OVERRIDE). Depth 1-5. |
 | `query_graph` | Cypher-like queries for complex patterns. Edge property filtering (`r.confidence >= 0.6`), cross-service links, change coupling. 200-row cap — use `search_graph` with degree filters for counting. |
 | `get_graph_schema` | Node labels, edge types, relationship patterns, sample names. Understand the graph structure before writing queries. |
 
@@ -444,18 +444,18 @@ Start with `get_architecture` to get the full picture: language breakdown, top p
 
 ```
 search_graph(name_pattern='.*Order.*')
-  -> trace_call_path('processOrder', direction='both')
+  -> trace_path('processOrder', direction='both')
   -> get_code_snippet('myapp.services.order.processOrder')
 ```
 
-Use `search_graph` to discover the exact name, `trace_call_path` to understand its context in the call graph, and `get_code_snippet` to read the actual source with metadata.
+Use `search_graph` to discover the exact name, `trace_path` to understand its context in the call graph, and `get_code_snippet` to read the actual source with metadata.
 
 ### Pre-commit impact analysis
 
 ```
 detect_changes(scope='staged', depth=3)
   -> review CRITICAL/HIGH risk symbols
-  -> trace_call_path on high-risk functions for deeper context
+  -> trace_path on high-risk functions for deeper context
 ```
 
 Run before committing to see which graph symbols are affected by your changes and their risk classification based on call-graph distance.

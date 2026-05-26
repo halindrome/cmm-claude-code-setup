@@ -202,7 +202,7 @@ with open('$FAKE_HOME_T5/.cache/codebase-memory-mcp/_block-counts-${HASH_T5}.jso
 # Write minimal call-counts JSON so CMM stats section works
 python3 -c "
 import json
-data = {'total_calls': 47, 'by_tool': {'mcp__codebase-memory-mcp__search_graph': 20, 'mcp__codebase-memory-mcp__get_code_snippet': 15, 'mcp__codebase-memory-mcp__trace_call_path': 12}}
+data = {'total_calls': 47, 'by_tool': {'mcp__codebase-memory-mcp__search_graph': 20, 'mcp__codebase-memory-mcp__get_code_snippet': 15, 'mcp__codebase-memory-mcp__trace_path': 12}}
 with open('$FAKE_HOME_T5/.cache/codebase-memory-mcp/_call-counts-${HASH_T5}.json', 'w') as f:
     json.dump(data, f)
 "

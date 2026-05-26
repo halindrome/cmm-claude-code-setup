@@ -148,7 +148,7 @@ data = {
     'by_tool': {
         'mcp__codebase-memory-mcp__search_graph': 50,
         'mcp__codebase-memory-mcp__get_code_snippet': 30,
-        'mcp__codebase-memory-mcp__trace_call_path': 19
+        'mcp__codebase-memory-mcp__trace_path': 19
     }
 }
 with open('$COUNTER_S', 'w') as f:

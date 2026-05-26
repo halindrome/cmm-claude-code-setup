@@ -24,7 +24,7 @@ hooks:
       hooks:
         - type: command
           command: "bash .claude/hooks/track-cmm-calls.sh"
-    - matcher: "mcp__codebase-memory-mcp__search_graph|mcp__codebase-memory-mcp__get_code_snippet|mcp__codebase-memory-mcp__trace_call_path|mcp__codebase-memory-mcp__query_graph"
+    - matcher: "mcp__codebase-memory-mcp__search_graph|mcp__codebase-memory-mcp__get_code_snippet|mcp__codebase-memory-mcp__trace_path|mcp__codebase-memory-mcp__query_graph"
       hooks:
         - type: command
           command: "bash .claude/hooks/cmm-query-stale-advisory.sh"

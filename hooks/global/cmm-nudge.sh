@@ -168,7 +168,7 @@ cat >&2 <<EOF
 BLOCKED: Use CMM graph tools instead of Read for '$BASENAME'.
   - Find by name:  mcp__codebase-memory-mcp__search_graph
   - Fetch source:  mcp__codebase-memory-mcp__get_code_snippet
-  - Trace callers: mcp__codebase-memory-mcp__trace_call_path
+  - Trace callers: mcp__codebase-memory-mcp__trace_path
   - Edit workflow: search_graph -> get_code_snippet (line range) -> Read(offset=N, limit=M) -> Edit
   Full Read is allowed when:
     - targeted read with offset+limit (up to 100 lines)

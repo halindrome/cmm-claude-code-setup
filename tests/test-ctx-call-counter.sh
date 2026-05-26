@@ -196,7 +196,7 @@ import json
 data = {'total_calls': 10, 'by_tool': {
     'mcp__codebase-memory-mcp__search_graph': 5,
     'mcp__codebase-memory-mcp__get_code_snippet': 3,
-    'mcp__codebase-memory-mcp__trace_call_path': 2
+    'mcp__codebase-memory-mcp__trace_path': 2
 }}
 with open('$FAKE_HOME_T5/.cache/codebase-memory-mcp/_call-counts-${HASH_T5}.json', 'w') as f:
     json.dump(data, f)
@@ -283,7 +283,7 @@ with open('$FAKE_HOME_T7/.cache/codebase-memory-mcp/_ctx-call-counts-${HASH_T7}.
 cmm = {'total_calls': 6, 'by_tool': {
     'mcp__codebase-memory-mcp__search_graph': 3,
     'mcp__codebase-memory-mcp__get_code_snippet': 2,
-    'mcp__codebase-memory-mcp__trace_call_path': 1
+    'mcp__codebase-memory-mcp__trace_path': 1
 }}
 with open('$FAKE_HOME_T7/.cache/codebase-memory-mcp/_call-counts-${HASH_T7}.json', 'w') as f:
     json.dump(cmm, f)
@@ -376,7 +376,7 @@ import json
 cmm = {'total_calls': 20, 'by_tool': {
     'mcp__codebase-memory-mcp__search_graph': 10,
     'mcp__codebase-memory-mcp__get_code_snippet': 7,
-    'mcp__codebase-memory-mcp__trace_call_path': 3
+    'mcp__codebase-memory-mcp__trace_path': 3
 }}
 with open('$FAKE_HOME_T9/.cache/codebase-memory-mcp/_call-counts-${HASH_T9}.json', 'w') as f:
     json.dump(cmm, f)
@@ -434,7 +434,7 @@ with open('$FAKE_HOME_T10/.cache/codebase-memory-mcp/_ctx-call-counts-${HASH_T10
 cmm = {'total_calls': 30, 'by_tool': {
     'mcp__codebase-memory-mcp__search_graph': 15,
     'mcp__codebase-memory-mcp__get_code_snippet': 10,
-    'mcp__codebase-memory-mcp__trace_call_path': 5
+    'mcp__codebase-memory-mcp__trace_path': 5
 }}
 with open('$FAKE_HOME_T10/.cache/codebase-memory-mcp/_call-counts-${HASH_T10}.json', 'w') as f:
     json.dump(cmm, f)

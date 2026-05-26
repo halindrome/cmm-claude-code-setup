@@ -32,9 +32,9 @@ echo "--- Test 2: search_graph keyword -> allowed (exit 0) ---"
 _assert_exit "Test 2: search_graph allowed" 0 \
     '{"tool_name":"Agent","tool_input":{"subagent_type":"dev","prompt":"Use search_graph to find the Handler class in the codebase"}}'
 
-echo "--- Test 3: trace_call_path keyword -> allowed (exit 0) ---"
-_assert_exit "Test 3: trace_call_path allowed" 0 \
-    '{"tool_name":"Agent","tool_input":{"subagent_type":"scout","prompt":"Run trace_call_path on the main function to see callers"}}'
+echo "--- Test 3: trace_path keyword -> allowed (exit 0) ---"
+_assert_exit "Test 3: trace_path allowed" 0 \
+    '{"tool_name":"Agent","tool_input":{"subagent_type":"scout","prompt":"Run trace_path on the main function to see callers"}}'
 
 echo "--- Test 4: get_code_snippet keyword -> allowed (exit 0) ---"
 _assert_exit "Test 4: get_code_snippet allowed" 0 \
@@ -65,8 +65,8 @@ _assert_exit "Test 10: Explore with get_architecture allowed" 0 \
     '{"tool_name":"Agent","tool_input":{"subagent_type":"Explore","prompt":"Use get_architecture to understand the codebase structure and search_graph to find the function"}}'
 
 echo "--- Test 11: Plan with CMM keywords -> allowed (exit 0) ---"
-_assert_exit "Test 11: Plan with trace_call_path allowed" 0 \
-    '{"tool_name":"Agent","tool_input":{"subagent_type":"Plan","prompt":"Use trace_call_path and get_architecture to analyze dependencies before planning the refactor"}}'
+_assert_exit "Test 11: Plan with trace_path allowed" 0 \
+    '{"tool_name":"Agent","tool_input":{"subagent_type":"Plan","prompt":"Use trace_path and get_architecture to analyze dependencies before planning the refactor"}}'
 
 echo "--- Test 12: VBW agent type still exempt (exit 0) ---"
 _assert_exit "Test 12: vbw:vbw-dev exempt" 0 \

@@ -27,7 +27,7 @@ CMM and Context Mode are complementary, not competing:
 
 | Layer | Tool | When to use |
 |-------|------|-------------|
-| Code exploration | CMM (`search_graph`, `get_code_snippet`, `trace_call_path`) | Finding functions, call chains, architecture — always |
+| Code exploration | CMM (`search_graph`, `get_code_snippet`, `trace_path`) | Finding functions, call chains, architecture — always |
 | Command execution | Context Mode (`ctx_execute`) | Any Bash command producing large output (logs, tests, API responses) |
 | Web content | Context Mode (`ctx_fetch_and_index` + `ctx_search`) | URLs referenced more than once in a session |
 | Indexed doc search | Context Mode (`ctx_search`) | Querying content previously indexed by Context Mode |
@@ -175,7 +175,7 @@ The `track-cmm-calls.sh` hook tracks how many times each CMM tool is called. Acc
   "by_tool": {
     "mcp__codebase-memory-mcp__search_graph": 32,
     "mcp__codebase-memory-mcp__get_code_snippet": 19,
-    "mcp__codebase-memory-mcp__trace_call_path": 14,
+    "mcp__codebase-memory-mcp__trace_path": 14,
     "mcp__codebase-memory-mcp__get_architecture": 8,
     "mcp__codebase-memory-mcp__query_graph": 6,
     "mcp__codebase-memory-mcp__index_repository": 4
@@ -203,7 +203,7 @@ if [ -f "$COUNTS_FILE" ]; then
   TOTAL=$(jq -r '.total_calls // 0' "$COUNTS_FILE")
   SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$COUNTS_FILE")
   SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$COUNTS_FILE")
-  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$COUNTS_FILE")
+  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_path"] // 0' "$COUNTS_FILE")
   echo "CMM:${TOTAL} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
 else
   echo "CMM:0"
@@ -229,7 +229,7 @@ When spawning subagents, include these instructions to ensure they use CMM:
 **Code navigation (MANDATORY):** Use codebase-memory-mcp MCP tools for all code exploration.
 - Use mcp__codebase-memory-mcp__search_graph to find functions/classes by name pattern — NEVER grep through files to find definitions
 - Use mcp__codebase-memory-mcp__get_code_snippet to fetch specific function source code by qualified name
-- Use mcp__codebase-memory-mcp__trace_call_path to understand call chains and dependencies
+- Use mcp__codebase-memory-mcp__trace_path to understand call chains and dependencies
 - Use mcp__codebase-memory-mcp__get_architecture for codebase orientation (languages, packages, hotspots, routes)
 - Use mcp__codebase-memory-mcp__detect_changes to assess impact of your modifications
 - Full Read only when: editing 6+ functions in same file, need imports/globals, file <50 lines, non-code files

@@ -148,7 +148,7 @@ Prefer CMM tools over Read/Grep for code navigation:
   Unfamiliar area / package map                             -> get_architecture
   Find by name (function, class, module)                    -> search_graph
   Source of a specific symbol                               -> get_code_snippet
-  Who calls X / what does X call                            -> trace_call_path
+  Who calls X / what does X call                            -> trace_path
   Cross-service or graph-wide queries (Cypher)              -> query_graph
   Text search in code (string literals, error msgs, TODOs)  -> search_code
 

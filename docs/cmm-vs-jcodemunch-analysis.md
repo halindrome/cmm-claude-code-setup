@@ -18,7 +18,7 @@ A detailed evaluation of two approaches to code indexing and searching for Claud
 
 ### CMM excels at structural understanding
 
-- Call graph traversal (`trace_call_path`) — who calls what, full dependency chains
+- Call graph traversal (`trace_path`) — who calls what, full dependency chains
 - Cross-service HTTP linking (REST route -> handler -> caller)
 - Change impact analysis (`detect_changes`) — maps git diff to blast radius with risk levels
 - Community detection (Louvain clustering for module boundaries)
@@ -94,7 +94,7 @@ Both setup repos use nearly identical hook patterns (the CMM setup is adapted fr
 | `search_code` | Text search in files (grep-like) |
 | `query_graph` | Cypher-like graph queries |
 | `get_code_snippet` | Fetch function/class source by qualified name |
-| `trace_call_path` | Trace who calls what, call chains |
+| `trace_path` | Trace who calls what, call chains |
 | `detect_changes` | Map git diff to affected symbols + risk |
 | `manage_adr` | Persistent Architecture Decision Record |
 | `ingest_traces` | Validate/enrich edges with OpenTelemetry data |

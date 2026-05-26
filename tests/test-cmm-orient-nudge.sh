@@ -36,7 +36,7 @@ import sys, json
 try:
     d = json.load(sys.stdin)
     ac = d['hookSpecificOutput']['additionalContext']
-    need = ['get_architecture', 'query_graph', 'trace_call_path']
+    need = ['get_architecture', 'query_graph', 'trace_path']
     missing = [t for t in need if t not in ac]
     print('missing:' + ','.join(missing) if missing else 'ok')
 except Exception as e:
@@ -131,7 +131,7 @@ try:
         print('bad-event-name')
         sys.exit(0)
     ac = d['hookSpecificOutput']['additionalContext']
-    for t in ('get_architecture', 'query_graph', 'trace_call_path'):
+    for t in ('get_architecture', 'query_graph', 'trace_path'):
         if t not in ac:
             print('missing-' + t)
             sys.exit(0)

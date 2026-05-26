@@ -1,7 +1,7 @@
 #!/bin/bash
 # cmm-orient-nudge.sh — PostToolUse:mcp__codebase-memory-mcp__search_graph one-shot orientation nudge
 # On the FIRST search_graph call of a session, emits hookSpecificOutput.additionalContext
-# suggesting get_architecture / trace_call_path / query_graph for the three underused CMM tools.
+# suggesting get_architecture / trace_path / query_graph for the three underused CMM tools.
 # Session-scoped sentinel dedups subsequent calls. Always exits 0 (fail-open on every path).
 #
 # Install: cp hooks/global/cmm-orient-nudge.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/cmm-orient-nudge.sh
@@ -83,9 +83,9 @@ if [ -n "$PROJECT_HASH" ] && [ -n "$SESSION_ID" ]; then
 fi
 
 # --- Advisory Message (architect voice; terse; imperative) ---
-# Names the three under-promoted tools by name: get_architecture, query_graph, trace_call_path.
+# Names the three under-promoted tools by name: get_architecture, query_graph, trace_path.
 read -r -d '' MSG <<'EOF'
-First search_graph call this session. If you do not yet know this codebase, run get_architecture next for the package map. For cross-service or edge-level questions use query_graph (Cypher). To trace callers/callees of any symbol use trace_call_path(direction="both").
+First search_graph call this session. If you do not yet know this codebase, run get_architecture next for the package map. For cross-service or edge-level questions use query_graph (Cypher). To trace callers/callees of any symbol use trace_path(direction="both").
 EOF
 
 # --- Emit JSON envelope via python3 json.dumps (handles quotes/backslashes/newlines correctly) ---

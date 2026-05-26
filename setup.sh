@@ -1656,7 +1656,7 @@ install_project() {
 
   # Copy cmm-orient-nudge.sh from hooks/global/ to .claude/hooks/
   # One-shot-per-session PostToolUse nudge after the first search_graph call —
-  # suggests get_architecture / trace_call_path / query_graph for unfamiliar areas.
+  # suggests get_architecture / trace_path / query_graph for unfamiliar areas.
   # No-ops when CMM is not installed thanks to the hook's built-in probe.
   if [ -f "$SCRIPT_DIR/hooks/global/cmm-orient-nudge.sh" ]; then
     copy_file "$SCRIPT_DIR/hooks/global/cmm-orient-nudge.sh" ".claude/hooks/cmm-orient-nudge.sh"
@@ -2140,7 +2140,7 @@ if [ -f "$CACHE" ]; then
   TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
   SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
   SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
   if [ "$SHOW_CMM_TOTAL" = "true" ]; then
     CMM_OUTPUT="CMM:${TOTAL}"
     if [ "$SHOW_CMM_DETAILS" = "true" ]; then
@@ -2256,7 +2256,7 @@ if [ -f "$CACHE" ]; then
   TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
   SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
   SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
   if [ "$SHOW_CMM_TOTAL" = "true" ]; then
     CMM_OUTPUT="CMM:${TOTAL}"
     if [ "$SHOW_CMM_DETAILS" = "true" ]; then
@@ -2499,7 +2499,7 @@ CMM_TOOLS = [
     "mcp__codebase-memory-mcp__search_code",
     "mcp__codebase-memory-mcp__query_graph",
     "mcp__codebase-memory-mcp__get_code_snippet",
-    "mcp__codebase-memory-mcp__trace_call_path",
+    "mcp__codebase-memory-mcp__trace_path",
     "mcp__codebase-memory-mcp__detect_changes",
     "mcp__codebase-memory-mcp__manage_adr",
     "mcp__codebase-memory-mcp__ingest_traces",
