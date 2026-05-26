@@ -90,7 +90,7 @@ fi
 # Matches the documented Claude Code SubagentStart hook contract:
 #   {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": "..."}}
 # Marker [ctx-startup] preserved for test assertions. Full protocol in ctx-rules skill.
-NUDGE_TEXT="[ctx-startup] Context-mode is active. Consult skill \`ctx-rules\` before Bash/Read/Grep/MCP calls."
+NUDGE_TEXT="[ctx-startup] Context-mode is active. Invoke Skill('ctx-rules') via the Skill tool now, then follow its retrieval protocol: call ctx_stats first, and ctx_search before re-running any command."
 python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":sys.argv[1]}}))' \
     "$NUDGE_TEXT"
 

@@ -167,8 +167,11 @@ whose text content is empty, and that 400 error poisons the rest of the session.
 1. Say one short line AND call `index_repository` in the same turn — the index is incremental
    and fast when already indexed.
 2. Only after the index is confirmed current, proceed with the user's request.
+3. Invoke `Skill('cmm-rules')` and `Skill('ctx-rules')` via the Skill tool so their protocols
+   load into context: CMM orient-first navigation (get_architecture → search_graph → get_code_snippet)
+   for source code; ctx_stats / ctx_search before re-running commands.
 
-Do NOT skip this step. Until the sentinel is created, write and network tools are blocked (Edit, Write, WebFetch, etc.).
+Do NOT skip these steps. Until the sentinel is created, write and network tools are blocked (Edit, Write, WebFetch, etc.).
 A stale index (after a recent commit) does not block tools — you'll see an advisory note on CMM queries.
 PROMPT
 fi
