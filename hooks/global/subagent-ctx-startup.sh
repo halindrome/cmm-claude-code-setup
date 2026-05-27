@@ -89,8 +89,10 @@ fi
 # --- Emit orientation instruction as JSON SubagentStart envelope ---
 # Matches the documented Claude Code SubagentStart hook contract:
 #   {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": "..."}}
-# Marker [ctx-startup] preserved for test assertions. Full protocol in ctx-rules skill.
-NUDGE_TEXT="[ctx-startup] Context-mode is active. Invoke Skill('ctx-rules') via the Skill tool now, then follow its retrieval protocol: call ctx_stats first, and ctx_search before re-running any command."
+# Marker [ctx-startup] preserved for test assertions. ctx-rules Skill directive is now
+# emitted by subagent-cmm-startup.sh (single-block pattern). This hook preserves the
+# [ctx-startup] sentinel for test compatibility and availability signalling only.
+NUDGE_TEXT="[ctx-startup] Context Mode is active. Use ctx_search before re-running commands this session."
 python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":sys.argv[1]}}))' \
     "$NUDGE_TEXT"
 

@@ -1,6 +1,6 @@
 ---
 name: ctx-rules
-description: Context-mode FTS5 session index. PostToolUse capture always on. ctx_search before re-running commands. Tool table, retrieval protocol, anti-patterns (no pipe-to-truncate).
+description: "Use ctx_search before re-running commands this session. Triggers on: search indexed output, check prior results, avoid re-fetching, session memory, retrieval protocol, anti-patterns, ctx_execute vs Bash, when to use ctx_search."
 ---
 
 ## Context Mode (session memory)

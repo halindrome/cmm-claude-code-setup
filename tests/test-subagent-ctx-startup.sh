@@ -89,16 +89,19 @@ trap 'rm -rf "$TMPDIR_ROOT"; rm -f "/tmp/ctx-subagent-avail-${PH_YES}" "/tmp/ctx
 ENV_NOCFG="HOME=$FAKE_HOME CLAUDE_CONFIG_DIR=$FAKE_HOME/.config/claude-code"
 
 MARKER="[ctx-startup]"
-SKILL_REF="ctx-rules"
+# ctx-rules Skill directive moved to subagent-cmm-startup.sh (single-block pattern, Phase 61 plan 02).
+# subagent-ctx-startup.sh now emits a thin sentinel: "[ctx-startup] Context Mode is active. Use ctx_search..."
+# a2 checks for "ctx_search" which is present in the new text.
+CTX_SEARCH_REF="ctx_search"
 
-echo "--- Test a: context-mode present -> stdout contains marker and skill pointer ---"
+echo "--- Test a: context-mode present -> stdout contains marker and ctx_search pointer ---"
 # Run once, check marker present
 _assert "a1) context-mode present -> stdout contains $MARKER" \
     0 "$MARKER" 0 \
     "{\"cwd\":\"$PROJ_YES\"}"
-# And references the ctx-rules skill (new short pointer text)
-_assert "a2) context-mode present -> stdout references $SKILL_REF skill" \
-    0 "$SKILL_REF" 0 \
+# And references ctx_search (thin sentinel; ctx-rules Skill is now invoked by subagent-cmm-startup.sh)
+_assert "a2) context-mode present -> stdout references ctx_search protocol" \
+    0 "$CTX_SEARCH_REF" 0 \
     "{\"cwd\":\"$PROJ_YES\"}"
 
 echo "--- Test b: context-mode absent -> stdout empty, exit 0 ---"
