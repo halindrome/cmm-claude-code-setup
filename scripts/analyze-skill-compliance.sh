@@ -3,6 +3,7 @@
 # Usage: ./scripts/analyze-skill-compliance.sh [project-dir]
 # Default project-dir: $CLAUDE_CONFIG_DIR/projects (falls back to ~/.claude/projects)
 # Exit: 0 always (reporting-only, no enforcement)
+# Supports both the flat fixture format and the real Claude Code nested JSONL format.
 
 set -euo pipefail
 
@@ -60,6 +61,9 @@ for f in "${JSONL_FILES[@]}"; do
   SHORT="${AGENT_NAME:0:38}"
 
   # Parse metrics from JSONL using python3
+  # Handles two formats:
+  # 1. Flat: {"type":"tool_use","name":"Skill","input":{...}}  (fixtures)
+  # 2. Nested: {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{...}}]}}
   METRICS=$(python3 -c "
 import sys, json
 
@@ -72,6 +76,25 @@ read_calls = 0
 
 CMM_TOOLS = {'search_graph', 'get_code_snippet', 'trace_path', 'query_graph', 'get_architecture', 'search_code'}
 
+def process_tool(name, inp):
+    global cmm_rules, ctx_rules, ctx_search, cmm_tools, bash_calls, read_calls
+    if name == 'Skill':
+        skill = inp.get('skill', '') if isinstance(inp, dict) else ''
+        if skill == 'cmm-rules':
+            cmm_rules += 1
+        elif skill == 'ctx-rules':
+            ctx_rules += 1
+    elif name == 'Bash':
+        bash_calls += 1
+    elif name == 'Read':
+        read_calls += 1
+    elif 'ctx_search' in name or name.endswith('ctx_search'):
+        ctx_search += 1
+    elif 'codebase-memory-mcp' in name:
+        tool_short = name.split('__')[-1] if '__' in name else name
+        if tool_short in CMM_TOOLS:
+            cmm_tools += 1
+
 with open(sys.argv[1]) as fh:
     for line in fh:
         line = line.strip()
@@ -82,26 +105,25 @@ with open(sys.argv[1]) as fh:
         except Exception:
             continue
         t = obj.get('type', '')
-        name = obj.get('name', '')
-        inp = obj.get('input', obj.get('tool_input', {})) or {}
-
-        if t == 'tool_use' or t == 'tool_call':
-            if name == 'Skill':
-                skill = inp.get('skill', '')
-                if skill == 'cmm-rules':
-                    cmm_rules += 1
-                elif skill == 'ctx-rules':
-                    ctx_rules += 1
-            elif name == 'Bash':
-                bash_calls += 1
-            elif name == 'Read':
-                read_calls += 1
-            elif 'ctx_search' in name or name.endswith('ctx_search'):
-                ctx_search += 1
-            elif 'codebase-memory-mcp' in name:
-                tool_short = name.split('__')[-1] if '__' in name else name
-                if tool_short in CMM_TOOLS:
-                    cmm_tools += 1
+        # Format 1: flat tool_use record
+        if t in ('tool_use', 'tool_call'):
+            process_tool(obj.get('name', ''), obj.get('input', obj.get('tool_input', {})))
+        # Format 2: nested inside assistant/user message.content[]
+        elif t in ('assistant', 'user'):
+            msg = obj.get('message', {})
+            if isinstance(msg, dict):
+                content = msg.get('content', [])
+                if isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict) and item.get('type') == 'tool_use':
+                            process_tool(item.get('name', ''), item.get('input', {}))
+        # Format 3: direct message object (no outer wrapper)
+        elif t == 'message':
+            content = obj.get('content', [])
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get('type') == 'tool_use':
+                        process_tool(item.get('name', ''), item.get('input', {}))
 
 print(cmm_rules, ctx_rules, ctx_search, cmm_tools, bash_calls, read_calls)
 " "$f" 2>/dev/null) || METRICS="0 0 0 0 0 0"
