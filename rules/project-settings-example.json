@@ -61,6 +61,16 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/cmm-grep-nudge.sh",
+            "_comment": "Blocks Bash grep/find/cat navigation against source paths; redirects to CMM tools (no-ops if CMM not indexed)"
+          }
+        ]
+      },
+      {
         "matcher": "Grep",
         "hooks": [
           {
