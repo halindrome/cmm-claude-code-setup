@@ -1,0 +1,8 @@
+{"type": "tool_use", "name": "Skill", "input": {"skill": "cmm-rules"}}
+{"type": "tool_use", "name": "Skill", "input": {"skill": "ctx-rules"}}
+{"type": "tool_use", "name": "mcp__plugin_context-mode_context-mode__ctx_search", "input": {"queries": ["parse function"]}}
+{"type": "tool_use", "name": "mcp__codebase-memory-mcp__search_graph", "input": {"query": "parse"}}
+{"type": "tool_use", "name": "mcp__codebase-memory-mcp__get_code_snippet", "input": {"qualified_name": "parse"}}
+{"type": "tool_use", "name": "Bash", "input": {"command": "git status"}}
+{"type": "tool_use", "name": "Bash", "input": {"command": "git add ."}}
+{"type": "tool_use", "name": "Read", "input": {"file_path": "README.md"}}
