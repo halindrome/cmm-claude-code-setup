@@ -10,6 +10,7 @@ c1df50b4ecf78c49e68b4fd37459831e9cb58d0b87f4c3575973f4556d552464  agents/vbw-qa.
 7d966d2deb5c726c1a9bd43ebb60271a3255b6844904775d34206d037c0cc381  hooks/global/cmm-orient-nudge.sh
 97eca54dfdb29f18400e0e7d78b28b935243f02a37346d4b1e0fe31cab6fdb67  hooks/global/reindex-after-edit.sh
 169865897ddcb91bd6a25de2de08147d91bf49ab465146c838b0489e8149b2e8  hooks/global/subagent-ctx-startup.sh
+1fec5ef4c953b3d3a54ce361d5cc2057b63ca71d07427b0adc63558f30e663b0  hooks/global/user-prompt-submit-skill-nudge.sh
 c15e97f5ae0ba2082513d7ae459ce31918f65e6ae0dfcefbabba26e0dc1a51f8  hooks/global/webfetch-nudge.sh
 7f1b7311360dee3a239beeef477d4f5371494f360e006c2f36eac0789f10d9b1  hooks/lib/is-cmm-ext.sh
 d578b2536e4e2c14983c745e84be2e6791d39ea72ca1b36ac746a79139e2d43b  hooks/lib/project-root.sh

@@ -1209,6 +1209,12 @@ merge_settings_json() {
         "matcher": "mcp__plugin_context-mode_context-mode__*|mcp__context-mode__*",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-ctx-calls.sh\""}]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/user-prompt-submit-skill-nudge.sh\""}]
+      }
     ]
   }
 }
@@ -1670,6 +1676,15 @@ install_project() {
   if [ -f "$SCRIPT_DIR/hooks/global/subagent-ctx-startup.sh" ]; then
     copy_file "$SCRIPT_DIR/hooks/global/subagent-ctx-startup.sh" ".claude/hooks/subagent-ctx-startup.sh"
     set_executable ".claude/hooks/subagent-ctx-startup.sh"
+  fi
+
+  # Copy user-prompt-submit-skill-nudge.sh from hooks/global/ to .claude/hooks/
+  # UserPromptSubmit hook — fires on every prompt; injects cmm-rules + ctx-rules skill
+  # activation when the prompt contains code-navigation verbs (find, trace, grep, etc.).
+  # Registered under UserPromptSubmit; applies to both main session and subagents.
+  if [ -f "$SCRIPT_DIR/hooks/global/user-prompt-submit-skill-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/user-prompt-submit-skill-nudge.sh" ".claude/hooks/user-prompt-submit-skill-nudge.sh"
+    set_executable ".claude/hooks/user-prompt-submit-skill-nudge.sh"
   fi
 
 

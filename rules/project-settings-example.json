@@ -145,7 +145,7 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/cmm-orient-nudge.sh",
-            "_comment": "One-shot-per-session PostToolUse nudge after first search_graph call — suggests get_architecture/trace_path/query_graph (no-ops if CMM not installed)"
+            "_comment": "One-shot-per-session PostToolUse nudge after first search_graph call \u2014 suggests get_architecture/trace_path/query_graph (no-ops if CMM not installed)"
           }
         ]
       }
@@ -168,6 +168,18 @@
             "type": "command",
             "command": "bash .claude/hooks/subagent-ctx-startup.sh",
             "_comment": "Injects a ctx_stats nudge into subagents via additionalContext JSON at startup (no-ops if Context Mode not installed)"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/user-prompt-submit-skill-nudge.sh",
+            "_comment": "Injects cmm-rules + ctx-rules skill activation on code-navigation prompts (find, trace, grep, etc.)"
           }
         ]
       }
