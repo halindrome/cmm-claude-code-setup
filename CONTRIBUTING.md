@@ -154,6 +154,12 @@ The `SubagentStart` hook in `.claude/settings.json` fires in the **parent sessio
 
 SubagentStart hooks cannot intercept tool calls inside the subagent. Use agent frontmatter hooks (`.claude/agents/<name>.md`) for ongoing per-tool enforcement.
 
+### Hook Advisory Style
+
+The wording of `additionalContext` text in SubagentStart and UserPromptSubmit hooks has a measurable impact on whether the model actually invokes a Skill. Imperative directives ("Invoke Skill('cmm-rules') via the Skill tool now") yield 80%+ activation rates; passive suggestions ("Consult skill X") yield ~0%.
+
+See **[docs/hook-advisory-style.md](docs/hook-advisory-style.md)** for the full empirical finding, the 5 rules for hook advisory text, and SKILL.md description anti-patterns.
+
 ### Requirements
 
 - Agent frontmatter hooks require **Claude Code v1.0.33+**. On older versions, hooks in `.claude/agents/` are silently ignored. The agent still works; only the `SUBAGENT_COMMIT=1` bypass is lost.
