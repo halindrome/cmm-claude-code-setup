@@ -32,8 +32,22 @@ trap 'rm -rf "$SCRATCH"' EXIT
 
 cd "$SCRATCH"
 
+# Isolate HOME and CLAUDE_CONFIG_DIR so detect_context_mode's plugin-form probe
+# (which scans $CLAUDE_CONFIG_DIR/plugins/cache and $HOME/.claude) does not pick
+# up the developer's globally-installed context-mode plugin and suppress the
+# .mcp.json entry the test expects (Phase 61 follow-up).
+# Also clear CLAUDE_PLUGIN_ROOT — when this test is launched from inside an
+# active Claude Code session, that env var points at the live plugin install
+# and the same probe fires from there.
+mkdir -p "$SCRATCH/.home" "$SCRATCH/.claude-config"
+export HOME="$SCRATCH/.home"
+export CLAUDE_CONFIG_DIR="$SCRATCH/.claude-config"
+unset CLAUDE_PLUGIN_ROOT
+
 # Minimal git repo so setup.sh --project has a project root to anchor to.
 git init -q
+git config user.email "test@example.com"
+git config user.name "Test"
 git commit --allow-empty -q -m "init"
 
 # Run install (non-interactive, skip MCP availability check).

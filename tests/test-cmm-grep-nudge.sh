@@ -109,6 +109,42 @@ echo "--- Test 12: Grep with glob=*.tsx blocked (exit 2) ---"
 _assert_exit "Test 12: glob=*.tsx blocked" 2 \
     "{\"tool_input\":{\"pattern\":\"import\",\"glob\":\"*.tsx\",\"path\":\"$PROJ\"}}"
 
+# --- Bash navigation block tests (c1-c5) ---
+# The Bash block requires the CMM sentinel to be present (indexed state).
+# Compute the sentinel path using the normalized (realpath) form — the hook
+# resolves symlinks via `cd ... && pwd -P` before hashing (macOS /var/folders fix).
+PROJ_REAL=$(cd "$PROJ" && pwd -P)
+PROJ_HASH=$(echo "$PROJ_REAL" | md5 -q 2>/dev/null || echo "$PROJ_REAL" | md5sum | awk '{print $1}')
+BASH_SENTINEL="/tmp/cmm-session-ready-${PROJ_HASH}"
+# Create sentinel (mark as ready)
+echo "ready" > "$BASH_SENTINEL"
+trap 'rm -rf "$TMPDIR_ROOT" "$BASH_SENTINEL"' EXIT
+
+echo "--- Test c1: Bash grep against src/ + CMM ready -> exit 2 (BLOCKED) ---"
+_assert_exit "c1: Bash grep src/ blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -r 'parse' src/\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c2: Bash grep with # cmm-exempt -> exit 0 (bypass) ---"
+_assert_exit "c2: Bash grep src/ cmm-exempt allowed" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -r 'parse' src/ # cmm-exempt\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c3: Bash find against hooks/ -> exit 2 (BLOCKED) ---"
+_assert_exit "c3: Bash find hooks/ blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"find hooks/ -name '*.sh'\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c4: Bash echo (non-navigation) -> exit 0 ---"
+_assert_exit "c4: Bash echo allowed" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo hello\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c5: Bash grep against src/ with CMM absent -> exit 0 (fail-open) ---"
+# Remove sentinel so CMM appears not indexed
+rm -f "$BASH_SENTINEL"
+_assert_exit "c5: Bash grep src/ CMM absent allowed" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -r 'parse' src/\"},\"cwd\":\"$PROJ_NO_CMM\"}" \
+    "CLAUDE_CONFIG_DIR=$FAKE_CONFIG"
+# Restore sentinel for any subsequent tests
+echo "ready" > "$BASH_SENTINEL"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

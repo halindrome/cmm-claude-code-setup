@@ -1,3 +1,8 @@
+---
+name: cmm-rules
+description: Code navigation via codebase-memory-mcp. CMM Tool Decision Table, orient-first pattern (get_architecture→search_graph→get_code_snippet), behavior notes, CMM vs context-mode.
+---
+
 ## Code Navigation
 
 Use codebase-memory-mcp tools as the primary method for code exploration.

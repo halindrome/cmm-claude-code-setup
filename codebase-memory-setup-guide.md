@@ -92,7 +92,7 @@ mcp__codebase-memory-mcp__search_graph
 mcp__codebase-memory-mcp__search_code
 mcp__codebase-memory-mcp__query_graph
 mcp__codebase-memory-mcp__get_code_snippet
-mcp__codebase-memory-mcp__trace_call_path
+mcp__codebase-memory-mcp__trace_path
 mcp__codebase-memory-mcp__detect_changes
 mcp__codebase-memory-mcp__manage_adr
 mcp__codebase-memory-mcp__ingest_traces
@@ -146,7 +146,7 @@ When codebase-memory-mcp tools (`mcp__codebase-memory-mcp__*`) are available, us
   definitions — it returns connectivity (callers/callees) and supports regex patterns
 - **Fetch specific code**: Use `get_code_snippet` to retrieve individual functions/classes with
   metadata — avoids reading entire files
-- **Trace relationships**: Use `trace_call_path` to understand who calls a function and what it
+- **Trace relationships**: Use `trace_path` to understand who calls a function and what it
   calls — essential before refactoring
 - **Blast radius**: Use `detect_changes` before committing to see which symbols are affected by
   your git changes and their risk classification
@@ -298,7 +298,7 @@ Register in `~/.claude/settings.json`:
 | `search_graph` | Find functions/classes/modules by name pattern. Filter by label, degree, relationship type. Case-insensitive regex. Paginated (10/page). |
 | `search_code` | Grep-like text search scoped to indexed project. For string literals, TODOs, config values. Paginated. |
 | `get_code_snippet` | Fetch source code for a specific function/class by name. Returns signature, complexity, decorators, docstring, caller/callee counts. |
-| `trace_call_path` | BFS traversal of call graph. Who calls it (inbound), what it calls (outbound), or both. Hop-by-hop with edge types. |
+| `trace_path` | BFS traversal of call graph. Who calls it (inbound), what it calls (outbound), or both. Hop-by-hop with edge types. |
 | `query_graph` | Cypher queries for complex patterns. Edge property filtering, cross-service links, change coupling. 200-row cap. |
 | `get_graph_schema` | Node labels, edge types, relationship patterns, sample names. Understand graph structure before querying. |
 
@@ -323,7 +323,7 @@ index_repository → get_architecture(aspects=['all']) → search_graph for key 
 ### Finding and understanding a function
 
 ```
-search_graph(name_pattern='.*Order.*') → trace_call_path('processOrder') → get_code_snippet('myapp.services.order.processOrder')
+search_graph(name_pattern='.*Order.*') → trace_path('processOrder') → get_code_snippet('myapp.services.order.processOrder')
 ```
 
 ### Pre-commit impact analysis

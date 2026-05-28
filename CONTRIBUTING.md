@@ -77,8 +77,8 @@ feature/my-work
    2. get_code_snippet — Retrieve source code for a function/class by name
       Example: get_code_snippet(qualified_name="main.HandleRequest")
 
-   3. trace_call_path — Trace who calls a function and what it calls
-      Example: trace_call_path(function_name="ProcessOrder", direction="both")
+   3. trace_path — Trace who calls a function and what it calls
+      Example: trace_path(function_name="ProcessOrder", direction="both")
 
    4. get_architecture — Get codebase architecture overview
       Example: get_architecture(aspects=["packages", "hotspots"])
@@ -92,7 +92,7 @@ feature/my-work
    7. index_repository — Index or refresh the code graph
       Example: index_repository()
 
-   Workflow: search_graph → trace_call_path → get_code_snippet
+   Workflow: search_graph → trace_path → get_code_snippet
    Prefer these over Read/Grep for understanding code structure and relationships.
 
    1. Review the commits in the PR to understand the change narrative.
@@ -153,6 +153,12 @@ hooks:
 The `SubagentStart` hook in `.claude/settings.json` fires in the **parent session** (not inside the subagent) when any subagent starts. It runs `subagent-cmm-startup.sh`, which injects CMM index state into the subagent via `additionalContext` JSON output — telling the agent whether the index is ready or stale before it begins work. This is informational only — it never blocks the agent.
 
 SubagentStart hooks cannot intercept tool calls inside the subagent. Use agent frontmatter hooks (`.claude/agents/<name>.md`) for ongoing per-tool enforcement.
+
+### Hook Advisory Style
+
+The wording of `additionalContext` text in SubagentStart and UserPromptSubmit hooks has a measurable impact on whether the model actually invokes a Skill. Imperative directives ("Invoke Skill('cmm-rules') via the Skill tool now") yield 80%+ activation rates; passive suggestions ("Consult skill X") yield ~0%.
+
+See **[docs/hook-advisory-style.md](docs/hook-advisory-style.md)** for the full empirical finding, the 5 rules for hook advisory text, and SKILL.md description anti-patterns.
 
 ### Requirements
 

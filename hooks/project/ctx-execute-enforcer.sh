@@ -82,19 +82,24 @@ else
          "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
         CONTEXT_MODE_INSTALLED=1
     else
-        # Scan ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/<marketplace>/context-mode/ for an installed plugin.
+        # Scan ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/ for an installed context-mode plugin.
+        # The real layout is <cache>/<marketplace>/<plugin>/[<version>/]/.claude-plugin/plugin.json,
+        # so a fixed-depth glob misses versioned installs. Use find to discover any nesting.
         if [ -d "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" ]; then
-            for _ctx_pl in "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache"/*/context-mode/.claude-plugin/plugin.json; do
-                [ -f "$_ctx_pl" ] || continue
+            while IFS= read -r _ctx_pl; do
+                [ -z "$_ctx_pl" ] && continue
                 if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_ctx_pl" 2>/dev/null; then
                     CONTEXT_MODE_INSTALLED=1
                     break
                 fi
-            done
+            done < <(find "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" \
+                -maxdepth 7 -name 'plugin.json' -path '*/.claude-plugin/*' 2>/dev/null)
         fi
     fi
 
-    # 2. MCP-server-form probe (legacy, listed second per G3).
+    # 2. MCP-server-form probe (legacy, listed second per G3) — plus enabledPlugins fallback.
+    # context-mode can be installed as a Claude Code plugin without registering an mcpServers entry;
+    # enabledPlugins entries take the form "<plugin>@<marketplace>: true".
     if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
         if python3 -c "
 import json, os, sys
@@ -104,13 +109,17 @@ try:
         if 'context-mode' in json.load(f).get('mcpServers', {}):
             sys.exit(0)
 except Exception: pass
-# 2. Global Claude Code settings
+# 2. Global Claude Code settings — mcpServers OR enabledPlugins
 for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
     if not d: continue
     try:
         with open(os.path.join(d, 'settings.json')) as f:
-            if 'context-mode' in json.load(f).get('mcpServers', {}):
+            cfg = json.load(f)
+            if 'context-mode' in cfg.get('mcpServers', {}):
                 sys.exit(0)
+            for key, enabled in cfg.get('enabledPlugins', {}).items():
+                if enabled and key.split('@', 1)[0] == 'context-mode':
+                    sys.exit(0)
     except Exception: pass
 sys.exit(1)
 " 2>/dev/null; then
@@ -141,6 +150,66 @@ fi
 # Internal bypass marker — undocumented, for operator use only.
 if echo "$COMMAND" | grep -q "ctx-exempt"; then
     exit 0
+fi
+
+# --- Compound-shell normalization (Phase 61 follow-up) ---
+# Agents frequently bypass exemptions by prefixing with `cd <dir> && <command>`
+# because `cd ` matches the navigation exemption. Peel off any leading
+# `cd <single-token> &&` prefixes so the EFFECTIVE command is what gets
+# matched against exemption patterns below. Anything still compound after
+# peeling falls through to the default block — exemption patterns assume a
+# single bounded command.
+_ORIG_COMMAND="$COMMAND"
+while [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\"[^\"]*\"[[:space:]]*\&\&[[:space:]]* ]] || \
+      [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\'[^\']*\'[[:space:]]*\&\&[[:space:]]* ]] || \
+      [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]]; do
+    COMMAND="${COMMAND#${BASH_REMATCH[0]}}"
+done
+# If the stripped command still has compound shell operators, do NOT exempt —
+# fall straight through to the default block path. Detected operators:
+# `&&`, `||`, unquoted `;`, unquoted `|`, `$(...)`, backtick command subs,
+# bare `&` (backgrounding), and embedded newlines (multi-command payloads —
+# an unquoted newline is a command separator that otherwise rides the `cd *`
+# navigation exemption).
+#
+# Quote-awareness: strip single-quoted and double-quoted substrings before the
+# operator scan so legitimate exempt commands carrying these characters inside
+# string arguments (e.g. `git commit -m "wip; cleanup"`, `sed 's/a|b/x/'`) are
+# not false-positive blocked. Quoted spans may cross newlines (e.g. a multi-line
+# `git commit -m "..."`), so the scrub is whole-string, not line-based: a
+# line-based sed leaves the embedded newline in place and false-positives the
+# newline check above. No attempt to handle escape sequences or here-docs.
+# Falls back to the raw command (safe — may over-block) if python3 is absent.
+_OPCHECK=$(COMMAND="$COMMAND" python3 <<'PY' 2>/dev/null
+import os, re, sys
+c = os.environ.get("COMMAND", "")
+c = re.sub(r"'[^']*'", "", c, flags=re.S)
+c = re.sub(r'"[^"]*"', "", c, flags=re.S)
+sys.stdout.write(c)
+PY
+) || _OPCHECK="$COMMAND"
+if [[ "$_OPCHECK" == *"&&"* ]] || [[ "$_OPCHECK" == *"||"* ]] || \
+   [[ "$_OPCHECK" == *";"* ]]   || [[ "$_OPCHECK" == *"|"* ]]  || \
+   [[ "$_OPCHECK" == *'$('* ]]  || [[ "$_OPCHECK" == *'`'* ]]  || \
+   [[ "$_OPCHECK" == *"&"* ]]   || [[ "$_OPCHECK" == *$'\n'* ]]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-compound" 2>/dev/null || true
+    cat >&2 <<COMPOUND
+BLOCKED: Compound shell command cannot be exempted.
+
+Detected:
+  $_ORIG_COMMAND
+
+Exemption patterns (cd, git status, ls, mkdir, …) only apply to single bounded
+commands. Compounds like \`cd <dir> && <cmd>\` or \`<cmd> | <cmd>\` can hide
+arbitrary output behind an exempt prefix.
+
+Fix options:
+  1. Use absolute paths and drop the \`cd\` prefix.
+  2. Route the real command through ctx_execute for output sandboxing:
+       mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="...")
+  3. Run the two halves as separate Bash calls if both are independently exempt.
+COMPOUND
+    exit 2
 fi
 
 # --- Exempt Patterns (always allow, exit 0) ---
@@ -182,6 +251,7 @@ esac
 # Short-read utilities (bounded output)
 case "$COMMAND" in
   wc\ *|head\ *|tail\ -[0-9]*|tail\ -n\ [0-9]*)  _track_exempt short-reads; exit 0 ;;
+  ls|ls\ *)                                       _track_exempt short-reads; exit 0 ;;
 esac
 
 # Remote commands (output belongs to remote context, not local CTX store)
@@ -217,5 +287,6 @@ Or (MCP-server form, legacy):
 
 Context Mode captures only the relevant output portion, preventing context bloat.
 If this is a source-code search, prefer search_code / search_graph (CMM) over ctx_execute.
+See skill \`ctx-rules\` for the full protocol.
 BLOCKED
 exit 2

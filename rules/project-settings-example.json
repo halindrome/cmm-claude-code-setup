@@ -61,6 +61,16 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/cmm-grep-nudge.sh",
+            "_comment": "Blocks Bash grep/find/cat navigation against source paths; redirects to CMM tools (no-ops if CMM not indexed)"
+          }
+        ]
+      },
+      {
         "matcher": "Grep",
         "hooks": [
           {
@@ -92,12 +102,12 @@
         ]
       },
       {
-        "matcher": "mcp__context-mode__ctx_execute|mcp__context-mode__ctx_stats|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index|mcp__context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_search",
+        "matcher": "mcp__plugin_context-mode_context-mode__ctx_execute|mcp__plugin_context-mode_context-mode__ctx_stats|mcp__plugin_context-mode_context-mode__ctx_index|mcp__plugin_context-mode_context-mode__ctx_fetch_and_index|mcp__plugin_context-mode_context-mode__ctx_batch_execute|mcp__plugin_context-mode_context-mode__ctx_execute_file|mcp__plugin_context-mode_context-mode__ctx_search|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_stats|mcp__context-mode__ctx_index|mcp__context-mode__ctx_fetch_and_index|mcp__context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_search",
         "hooks": [
           {
             "type": "command",
             "command": "bash .claude/hooks/context-mode-sentinel-writer.sh",
-            "_comment": "optional: writes Context Mode sentinel to unblock session-gate.sh"
+            "_comment": "Writes Context Mode sentinel to unblock ctx-execute-enforcer. Matches both plugin form (mcp__plugin_context-mode_context-mode__*) and legacy MCP-server form (mcp__context-mode__*)."
           }
         ]
       },
@@ -121,7 +131,7 @@
         ]
       },
       {
-        "matcher": "mcp__context-mode__*",
+        "matcher": "mcp__plugin_context-mode_context-mode__*|mcp__context-mode__*",
         "hooks": [
           {
             "type": "command",
@@ -130,7 +140,7 @@
         ]
       },
       {
-        "matcher": "mcp__codebase-memory-mcp__search_graph|mcp__codebase-memory-mcp__get_code_snippet|mcp__codebase-memory-mcp__trace_call_path|mcp__codebase-memory-mcp__query_graph",
+        "matcher": "mcp__codebase-memory-mcp__search_graph|mcp__codebase-memory-mcp__get_code_snippet|mcp__codebase-memory-mcp__trace_path|mcp__codebase-memory-mcp__query_graph",
         "hooks": [
           {
             "type": "command",
@@ -145,7 +155,7 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/cmm-orient-nudge.sh",
-            "_comment": "One-shot-per-session PostToolUse nudge after first search_graph call — suggests get_architecture/trace_call_path/query_graph (no-ops if CMM not installed)"
+            "_comment": "One-shot-per-session PostToolUse nudge after first search_graph call \u2014 suggests get_architecture/trace_path/query_graph (no-ops if CMM not installed)"
           }
         ]
       }
@@ -168,6 +178,18 @@
             "type": "command",
             "command": "bash .claude/hooks/subagent-ctx-startup.sh",
             "_comment": "Injects a ctx_stats nudge into subagents via additionalContext JSON at startup (no-ops if Context Mode not installed)"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/user-prompt-submit-skill-nudge.sh",
+            "_comment": "Injects cmm-rules + ctx-rules skill activation on code-navigation prompts (find, trace, grep, etc.)"
           }
         ]
       }

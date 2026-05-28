@@ -37,7 +37,7 @@ if [ "$PROMPT_LEN" -lt 300 ] && ! echo "$PROMPT" | grep -qiE "$CODE_SIGNALS"; th
 fi
 
 # --- Keyword Check: CMM tool function names ---
-KEYWORDS="search_graph|trace_call_path|get_code_snippet|index_repository|detect_changes|get_architecture|query_graph|ctx_execute|ctx_search|ctx_index|ctx_fetch_and_index|ctx_batch_execute"
+KEYWORDS="search_graph|trace_path|get_code_snippet|index_repository|detect_changes|get_architecture|query_graph|ctx_execute|ctx_search|ctx_index|ctx_fetch_and_index|ctx_batch_execute"
 if echo "$PROMPT" | grep -qiE "$KEYWORDS"; then
   exit 0
 fi
@@ -59,8 +59,8 @@ Use codebase-memory-mcp (CMM) tools for code exploration. Available tools:
 2. get_code_snippet — Retrieve source code for a function/class by name
    Example: get_code_snippet(qualified_name="main.HandleRequest")
 
-3. trace_call_path — Trace who calls a function and what it calls
-   Example: trace_call_path(function_name="ProcessOrder", direction="both")
+3. trace_path — Trace who calls a function and what it calls
+   Example: trace_path(function_name="ProcessOrder", direction="both")
 
 4. get_architecture — Get codebase architecture overview
    Example: get_architecture(aspects=["packages", "hotspots"])
@@ -74,7 +74,7 @@ Use codebase-memory-mcp (CMM) tools for code exploration. Available tools:
 7. index_repository — Index or refresh the code graph
    Example: index_repository()
 
-Workflow: search_graph → trace_call_path → get_code_snippet
+Workflow: search_graph → trace_path → get_code_snippet
 Prefer these over Read/Grep for understanding code structure and relationships.
 
 If using Context Mode MCP: ctx_execute, ctx_search, ctx_index, ctx_fetch_and_index

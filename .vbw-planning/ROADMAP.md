@@ -50,6 +50,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [x] Phase 56: Sync to CMM Upstream main (v0.6.1+101)
 - [ ] Phase 57: Sync context-mode integration to upstream v1.0.122
 - [ ] Phase 58: Prohibit head/tail truncation inside ctx_execute sandbox
+- [ ] Phase 61: Convert CMM/ctx rules to Claude Code Skills
 
 ### Phase 49: Align with VBW Agent Updates (v1.35.0)
 > **Superseded by Phase 52** (2026-05-04): Phase 52 absorbs the v1.35.0 alignment scope into a broader audit covering all VBW changes through v1.36.1+ on `origin/main`. Phase 49's specific gaps (vbw-qa write-verification gate, vbw-dev pre_existing_issues rule, `<skill_no_activation>` handling, agent frontmatter `tools:` allowlists) remain in scope and will be addressed inside Phase 52's planning.
@@ -696,3 +697,33 @@ Scope is the per-project CMM-aware surface only: `is-cmm-ext.sh`, `statusline-cm
 - `ctx-rules.md` (both `rules/ctx-rules.md` source and `.claude/rules/ctx-rules.md` installed) has `### Anti-patterns` section after `### Prefer`
 - The section accurately describes why `head`/`tail` inside `ctx_execute` is harmful (discards data before FTS5 indexing)
 - The section prescribes programmatic analysis as the correct replacement pattern
+
+### Phase 61: Convert CMM/ctx rules to Claude Code Skills
+**Goal:** Refactor `rules/cmm-rules.md` and `rules/ctx-rules.md` from project-instruction files (auto-loaded into the main session via `.claude/rules/*.md`) into proper **Claude Code Skills** so VBW subagents can opt into them via `skills:` frontmatter with progressive disclosure (Anthropic's documented "98% token reduction" architecture — ~30 description tokens per inactive subagent vs the current main-session-only inheritance + exit-2-retry-and-learn pattern).
+
+Concretely:
+1. Package `cmm-rules.md` and `ctx-rules.md` as Skills under `.claude/skills/cmm-rules/` and `.claude/skills/ctx-rules/` (with `SKILL.md` body + appropriate frontmatter per [docs.claude.com/docs/en/skills](https://code.claude.com/docs/en/skills)).
+2. List `skills: [cmm-rules, ctx-rules]` in each VBW subagent's frontmatter where the rules are materially helpful (dev, lead, scout, qa, debugger — likely all of them; pr-qa-reviewer too).
+3. Shrink the SubagentStart hook output from "advisory + nothing" (current minimal-injection state after phase-60 backout) to a ~100-token pointer: "Context-mode/CMM is active in this project. Consult the `cmm-rules` and `ctx-rules` skills before issuing Bash, Read, Grep, or MCP tool calls." The skills then load lazily on first relevant tool consideration.
+4. Keep the PreToolUse exit-2 hooks (`ctx-execute-enforcer.sh`, `cmm-nudge.sh`, `cmm-grep-nudge.sh`) as the hard backstop regardless — they enforce correctness independent of whether the skill has been consulted.
+
+**Deps:** Phase 60 (Harden subagent hook envelopes — established the JSON SubagentStart envelope this phase will narrow). The phase-60-injection branch (`feature/phase-60-inject-rules-into-subagents`) is abandoned; the actual landed code (`feature/phase-60-harden-subagent-hook-envelopes`, commits `ac8d4ac`, `4d9fcc7`, `0ff5fac`) is what Phase 61 builds on.
+
+**Reqs:** none (DX / token-efficiency — phase-60 research surfaced this as the architecturally preferred shape per Anthropic skill docs and Issue #23885 which notes `additionalContext` doesn't reach the system prompt anyway).
+
+**Success:**
+- `.claude/skills/cmm-rules/SKILL.md` exists with the body of `rules/cmm-rules.md` and valid Skill frontmatter (concise `description:` field for progressive disclosure)
+- `.claude/skills/ctx-rules/SKILL.md` exists with the body of `rules/ctx-rules.md` and valid Skill frontmatter
+- `setup.sh --project` installs both skills into the target project's `.claude/skills/` (mirror the existing `.claude/rules/` install path)
+- All VBW agent definition files in `agents/` declare `skills: [cmm-rules, ctx-rules]` in frontmatter (verify each agent body actually benefits — Scout and Docs may need only one of the two; document the rationale per agent)
+- `hooks/global/subagent-ctx-startup.sh` SubagentStart output shrinks to a ~100-token pointer that references the skill names rather than re-stating protocol
+- `hooks/project/subagent-cmm-startup.sh` does the same — pointer instead of advisory body
+- PreToolUse exit-2 hooks unchanged (still block raw Bash/Read on code, still redirect to ctx_execute / CMM tools)
+- `tests/test-phase-61-*.sh` asserts: (a) both skill dirs install correctly via setup.sh, (b) agent frontmatter contains the `skills:` field, (c) SubagentStart pointer is short (under ~150 tokens / ~600 bytes), (d) PreToolUse hooks still exit 2 on the violations they used to
+- `tests/test-phase-51-upstream-hooks.sh`, `tests/test-subagent-ctx-startup.sh`, and `tests/test-phase-59-cmm-install-scope.sh` continue to pass — no regression
+- README and `codebase-memory-setup-guide.md` reflect that rules now live as skills (with the old `.claude/rules/*.md` files kept as-is for main-session inheritance OR removed — open question for Plan mode)
+- `CHECKSUMS.sha256` regenerated for changed files
+
+**Out of scope:** changing the *content* of cmm-rules / ctx-rules (this phase is packaging only — separate phase if the rule text needs revision), creating skills for other rules files (none exist), making subagents discover skills dynamically (use the explicit frontmatter `skills:` list per Anthropic's recommended pattern), removing the PreToolUse exit-2 hooks (they remain as the enforcement backstop), and packaging VBW-plugin agent definitions themselves as skills (out of grain — VBW manages its own agents).
+
+**Research deferred to Plan mode.** Multiple open implementation questions exist (skill frontmatter exact schema, whether to keep or remove the `.claude/rules/*.md` files after migration to skills, per-agent skill inclusion rationale, exact size of the SubagentStart pointer text). Plan mode should spawn Scout to verify the Skill packaging contract against current Claude Code docs and existing skills in the ecosystem (`.claude/skills/` examples in `liverpool_patches`, vbw plugin, context-mode plugin) before Lead writes the implementation plan.

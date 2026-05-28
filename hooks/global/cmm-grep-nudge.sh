@@ -1,13 +1,75 @@
 #!/bin/bash
-# cmm-grep-nudge.sh — PreToolUse:Grep hook (hard-blocking CMM Grep gate)
-# BLOCKING: exits 2 for code-targeted Grep when CMM is available, redirecting to graph tools.
+# cmm-grep-nudge.sh — PreToolUse:Grep+Bash hook (hard-blocking CMM navigation gate)
+# BLOCKING: exits 2 for code-targeted Grep or Bash navigation commands when CMM is
+# available, redirecting to graph tools. Honors # cmm-exempt override in Bash commands.
 #
 # Install: cp hooks/global/cmm-grep-nudge.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/cmm-grep-nudge.sh
-# Register in ~/.claude/settings.json:
-#   "hooks": { "PreToolUse": [{ "matcher": "Grep", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-grep-nudge.sh"}] }] }
+# Register in ~/.claude/settings.json under both Grep and Bash matchers:
+#   "hooks": { "PreToolUse": [
+#     { "matcher": "Grep", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-grep-nudge.sh"}] },
+#     { "matcher": "Bash", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-grep-nudge.sh"}] }
+#   ]}
 
 # --- Input Parsing ---
 INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+print(d.get('tool_name','') or '')
+" 2>/dev/null)
+
+# --- Bash navigation block ---
+# When invoked for a Bash tool call: check for code-navigation commands against source paths.
+# Only enforced when CMM sentinel is present (fail-open when CMM not indexed).
+if [ "$TOOL_NAME" = "Bash" ]; then
+  BASH_CMD=$(echo "$INPUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+print(d.get('tool_input',{}).get('command','') or '')
+" 2>/dev/null)
+
+  # # cmm-exempt in command string bypasses the block
+  if echo "$BASH_CMD" | grep -q '# cmm-exempt'; then
+    exit 0
+  fi
+
+  # Only block when command is a navigation verb against a source path
+  if echo "$BASH_CMD" | grep -qE '(grep|rg|find|cat|head|tail|wc)' &&      echo "$BASH_CMD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
+
+    # CMM availability check for Bash block (fail-open if CMM not configured)
+    BASH_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
+    # Normalize path to resolve symlinks (macOS /var/folders -> /private/var/folders)
+    BASH_REPO_ROOT=$(cd "${BASH_CWD:-.}" 2>/dev/null && pwd -P) || BASH_REPO_ROOT="${BASH_CWD:-.}"
+    BASH_CMM_FOUND=false
+    if [ -f "$BASH_REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$BASH_REPO_ROOT/.mcp.json" 2>/dev/null; then
+      BASH_CMM_FOUND=true
+    fi
+    if [ "$BASH_CMM_FOUND" = false ]; then
+      CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+      if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
+        BASH_CMM_FOUND=true
+      fi
+    fi
+
+    # Only block when CMM sentinel is present (index is ready)
+    BASH_PROJECT_HASH=$(echo "$BASH_REPO_ROOT" | md5 -q 2>/dev/null || echo "$BASH_REPO_ROOT" | md5sum | awk '{print $1}')
+    BASH_SENTINEL="/tmp/cmm-session-ready-${BASH_PROJECT_HASH}"
+    if [ "$BASH_CMM_FOUND" = true ] && [ -f "$BASH_SENTINEL" ] && ! grep -q '^stale$' "$BASH_SENTINEL" 2>/dev/null; then
+      cat >&2 <<EOF
+BLOCKED: Use CMM tools instead of Bash navigation for code search.
+  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern="...")
+  - Text search:    mcp__codebase-memory-mcp__search_code(query="...")
+  - Fetch source:   mcp__codebase-memory-mcp__get_code_snippet(qualified_name="...")
+Add # cmm-exempt to the command to bypass this gate.
+See skill \`cmm-rules\` for the full protocol.
+EOF
+      bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-nav" 2>/dev/null || true
+      exit 2
+    fi
+  fi
+  exit 0
+fi
+
 PARSED=$(echo "$INPUT" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
@@ -151,8 +213,9 @@ cat >&2 <<EOF
 BLOCKED: Use CMM tools instead of Grep for code search on $BLOCK_TARGET.
   - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern="...")
   - Text search:    mcp__codebase-memory-mcp__search_code(query="...")
-  - Trace callers:  mcp__codebase-memory-mcp__trace_call_path
+  - Trace callers:  mcp__codebase-memory-mcp__trace_path
   Grep is allowed for: non-code files (JSON, YAML, Markdown, config, env)
+See skill \`cmm-rules\` for the full protocol.
 EOF
 
 # --- Block Counter ---

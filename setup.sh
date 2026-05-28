@@ -431,14 +431,16 @@ detect_cmm_registration() {
     return 0
   fi
 
-  # 2. Global settings.json
+  # 2. Global settings.json + user-scope .claude.json (where `claude mcp add` writes).
   local config_dir
   config_dir=$(detect_config_dir)
-  if grep -q "codebase-memory-mcp" "${config_dir}/settings.json" 2>/dev/null; then
-    CMM_REGISTRATION_STATUS="ok"
-    echo "  [ok] CMM registered (global settings.json)"
-    return 0
-  fi
+  for _cmm_probe in "${config_dir}/settings.json" "${config_dir}/.claude.json" "${HOME}/.claude.json"; do
+    if grep -q "codebase-memory-mcp" "$_cmm_probe" 2>/dev/null; then
+      CMM_REGISTRATION_STATUS="ok"
+      echo "  [ok] CMM registered ($_cmm_probe)"
+      return 0
+    fi
+  done
 
   # Not registered yet
   if [ "$INSTALL_PROJECT" = true ] || [ "$INSTALL_GLOBAL" = true ]; then
@@ -491,22 +493,32 @@ detect_cmm_install_scope() {
   local _global_present=false
   local _local_present=false
 
-  # Probe global settings.json for an mcpServers.codebase-memory-mcp key (JSON-aware).
+  # Probe global Claude Code config for an mcpServers.codebase-memory-mcp key.
+  # User-scope MCP entries added via `claude mcp add` live in ~/.claude.json (and
+  # ${config_dir}/.claude.json on macOS). Global plugin-style entries live in
+  # settings.json under mcpServers. Check all three locations.
   local config_dir
   config_dir=$(detect_config_dir)
-  if [ -f "${config_dir}/settings.json" ]; then
+  local _probe_paths=(
+    "${config_dir}/settings.json"
+    "${config_dir}/.claude.json"
+    "${HOME}/.claude.json"
+  )
+  for _probe in "${_probe_paths[@]}"; do
+    [ -f "$_probe" ] || continue
     if python3 -c "
 import json,sys
 try:
-    with open('${config_dir}/settings.json') as f:
+    with open('${_probe}') as f:
         d = json.load(f)
     sys.exit(0 if isinstance(d, dict) and isinstance(d.get('mcpServers'), dict) and 'codebase-memory-mcp' in d['mcpServers'] else 1)
 except Exception:
     sys.exit(1)
 " 2>/dev/null; then
       _global_present=true
+      break
     fi
-  fi
+  done
 
   # Probe project .mcp.json for the same key.
   if [ -f ".mcp.json" ]; then
@@ -625,6 +637,11 @@ CONTEXT_MODE_INSTALL_FORM="NONE"
 # Set to 1 when BOTH forms are detected, so the caller can warn-and-offer to remove
 # the now-redundant MCP-server .mcp.json entry. Reset to empty on each detect call.
 REDUNDANT_MCP=""
+# Set to true by detect_context_mode when CONTEXT_MODE_INSTALL_FORM is PLUGIN or BOTH.
+# Gates ONLY the .mcp.json context-mode entry write — upstream hook registration
+# and the tool allowlist still treat context-mode as installed and proceed normally
+# (because hooks and allowlist apply equally to plugin-form installs).
+SUPPRESS_MCP_CONTEXT_ENTRY=false
 
 # detect_context_mode — Phase 57 G1 four-state install-form matrix:
 #   NONE       — neither install form present. Fresh-install path: register
@@ -674,6 +691,7 @@ detect_context_mode() {
   # --- Phase 57 G1: probe both install forms independently ---
   # Reset transitional state on each call (idempotency: re-runs reclassify cleanly).
   REDUNDANT_MCP=""
+  SUPPRESS_MCP_CONTEXT_ENTRY=false
 
   local _plugin_form_present=false
   local _mcp_server_form_present=false
@@ -688,13 +706,37 @@ detect_context_mode() {
        "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
     _plugin_form_present=true
   else
-    # Fall back to scanning ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/<marketplace>/context-mode/.
+    # Fall back to scanning ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/ for any context-mode
+    # plugin install. Real layout is <cache>/<marketplace>/<plugin>/[<version>/]/.claude-plugin/...
+    # so a fixed-depth glob misses versioned installs — use find with broader nesting.
     local _plugin_cache_root="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache"
     if [ -d "$_plugin_cache_root" ]; then
-      local _plugin_manifest
-      for _plugin_manifest in "$_plugin_cache_root"/*/context-mode/.claude-plugin/plugin.json; do
-        [ -f "$_plugin_manifest" ] || continue
+      while IFS= read -r _plugin_manifest; do
+        [ -z "$_plugin_manifest" ] && continue
         if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_plugin_manifest" 2>/dev/null; then
+          _plugin_form_present=true
+          break
+        fi
+      done < <(find "$_plugin_cache_root" -maxdepth 7 -name 'plugin.json' \
+        -path '*/.claude-plugin/*' 2>/dev/null)
+    fi
+    # Also accept enabledPlugins entry (form: "context-mode@<marketplace>: true") in any
+    # global Claude Code config location — this is the canonical install flag.
+    if [ "$_plugin_form_present" = false ]; then
+      for _probe in "${CLAUDE_CONFIG_DIR:-${HOME}/.config/claude-code}/settings.json" \
+                    "${HOME}/.claude/settings.json"; do
+        [ -f "$_probe" ] || continue
+        if python3 -c "
+import json,sys
+try:
+    with open('${_probe}') as f:
+        cfg = json.load(f)
+    for k,v in (cfg.get('enabledPlugins') or {}).items():
+        if v and k.split('@',1)[0] == 'context-mode':
+            sys.exit(0)
+except Exception: pass
+sys.exit(1)
+" 2>/dev/null; then
           _plugin_form_present=true
           break
         fi
@@ -737,10 +779,18 @@ detect_context_mode() {
   case "$CONTEXT_MODE_INSTALL_FORM" in
     PLUGIN)
       CONTEXT_MODE_STATUS="ok"
+      # Plugin form is canonical — do not add a redundant MCP-server entry.
+      # Only suppress the .mcp.json write; upstream hooks and the tool allowlist
+      # still need to register because they apply to plugin-form installs too.
+      SUPPRESS_MCP_CONTEXT_ENTRY=true
       echo "  [ok] context-mode detected (plugin form: /plugin install context-mode@context-mode)"
+      echo "  [info] plugin form is canonical — skipping .mcp.json entry"
       ;;
     BOTH)
       CONTEXT_MODE_STATUS="ok"
+      # User already has both forms; suppress only the .mcp.json re-add. Upstream
+      # hooks + allowlist still register (same reasoning as PLUGIN above).
+      SUPPRESS_MCP_CONTEXT_ENTRY=true
       echo "  [ok] context-mode detected (plugin form preferred; MCP-server entry in .mcp.json is redundant)"
       ;;
     MCP_ONLY)
@@ -1144,6 +1194,10 @@ merge_settings_json() {
       {
         "matcher": "Grep",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-grep-nudge.sh\""}]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/cmm-grep-nudge.sh\""}]
       }
     ],
     "PostToolUse": [
@@ -1158,6 +1212,12 @@ merge_settings_json() {
       {
         "matcher": "mcp__plugin_context-mode_context-mode__*|mcp__context-mode__*",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-ctx-calls.sh\""}]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/user-prompt-submit-skill-nudge.sh\""}]
       }
     ]
   }
@@ -1488,6 +1548,15 @@ install_global() {
   done
   shopt -u nullglob
 
+  # Install skills (global skills available to all subagents via skills: frontmatter)
+  shopt -s nullglob
+  for skill_dir in "$SCRIPT_DIR/skills/"*/; do
+    skill_name=$(basename "$skill_dir")
+    mkdir -p "${config_dir}/skills/${skill_name}"
+    copy_file "${skill_dir}SKILL.md" "${config_dir}/skills/${skill_name}/SKILL.md"
+  done
+  shopt -u nullglob
+
   # Purge deprecated hook files and their settings.json entries (unconditional).
   # Mirrors the project-scope cleanup in install_project — historically, retired
   # hooks copied here by older setup.sh runs lingered indefinitely. Same shared
@@ -1597,7 +1666,7 @@ install_project() {
 
   # Copy cmm-orient-nudge.sh from hooks/global/ to .claude/hooks/
   # One-shot-per-session PostToolUse nudge after the first search_graph call —
-  # suggests get_architecture / trace_call_path / query_graph for unfamiliar areas.
+  # suggests get_architecture / trace_path / query_graph for unfamiliar areas.
   # No-ops when CMM is not installed thanks to the hook's built-in probe.
   if [ -f "$SCRIPT_DIR/hooks/global/cmm-orient-nudge.sh" ]; then
     copy_file "$SCRIPT_DIR/hooks/global/cmm-orient-nudge.sh" ".claude/hooks/cmm-orient-nudge.sh"
@@ -1611,6 +1680,15 @@ install_project() {
   if [ -f "$SCRIPT_DIR/hooks/global/subagent-ctx-startup.sh" ]; then
     copy_file "$SCRIPT_DIR/hooks/global/subagent-ctx-startup.sh" ".claude/hooks/subagent-ctx-startup.sh"
     set_executable ".claude/hooks/subagent-ctx-startup.sh"
+  fi
+
+  # Copy user-prompt-submit-skill-nudge.sh from hooks/global/ to .claude/hooks/
+  # UserPromptSubmit hook — fires on every prompt; injects cmm-rules + ctx-rules skill
+  # activation when the prompt contains code-navigation verbs (find, trace, grep, etc.).
+  # Registered under UserPromptSubmit; applies to both main session and subagents.
+  if [ -f "$SCRIPT_DIR/hooks/global/user-prompt-submit-skill-nudge.sh" ]; then
+    copy_file "$SCRIPT_DIR/hooks/global/user-prompt-submit-skill-nudge.sh" ".claude/hooks/user-prompt-submit-skill-nudge.sh"
+    set_executable ".claude/hooks/user-prompt-submit-skill-nudge.sh"
   fi
 
 
@@ -1647,6 +1725,15 @@ install_project() {
       project-settings-example.json|allowed-tools.txt|mcp-example.json) continue ;;
     esac
     copy_file "$file" ".claude/rules/$(basename "$file")"
+  done
+  shopt -u nullglob
+
+  # Install skills (project skills available to subagents via skills: frontmatter)
+  shopt -s nullglob
+  for skill_dir in "$SCRIPT_DIR/skills/"*/; do
+    skill_name=$(basename "$skill_dir")
+    mkdir -p ".claude/skills/${skill_name}"
+    copy_file "${skill_dir}SKILL.md" ".claude/skills/${skill_name}/SKILL.md"
   done
   shopt -u nullglob
 
@@ -1696,11 +1783,18 @@ install_project() {
     else
       echo "  [DRY RUN] Would skip CMM (global registration in $(detect_config_dir)/settings.json)"
     fi
-    if [ "$INSTALL_CONTEXT_MODE" = true ]; then
+    if [ "$INSTALL_CONTEXT_MODE" = true ] && [ "$SUPPRESS_MCP_CONTEXT_ENTRY" != true ]; then
       echo "  [DRY RUN] Would merge context-mode into .mcp.json"
     fi
   else
-    if python3 - ".mcp.json" "$INSTALL_CONTEXT_MODE" "$INSTALL_CMM_LOCAL" "$(detect_config_dir)" <<'MCPEOF'
+    # Compose effective MCP-entry flag: INSTALL_CONTEXT_MODE governs the overall
+    # opt-in; SUPPRESS_MCP_CONTEXT_ENTRY=true (set when plugin form is detected)
+    # vetoes only the .mcp.json line, leaving upstream hooks/allowlist alone.
+    _ctx_mcp_entry=true
+    if [ "$INSTALL_CONTEXT_MODE" != true ] || [ "$SUPPRESS_MCP_CONTEXT_ENTRY" = true ]; then
+      _ctx_mcp_entry=false
+    fi
+    if python3 - ".mcp.json" "$_ctx_mcp_entry" "$INSTALL_CMM_LOCAL" "$(detect_config_dir)" <<'MCPEOF'
 import json, os, sys
 
 mcp_path = sys.argv[1]
@@ -2065,7 +2159,7 @@ if [ -f "$CACHE" ]; then
   TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
   SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
   SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
   if [ "$SHOW_CMM_TOTAL" = "true" ]; then
     CMM_OUTPUT="CMM:${TOTAL}"
     if [ "$SHOW_CMM_DETAILS" = "true" ]; then
@@ -2181,7 +2275,7 @@ if [ -f "$CACHE" ]; then
   TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
   SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
   SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_call_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
+  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
   if [ "$SHOW_CMM_TOTAL" = "true" ]; then
     CMM_OUTPUT="CMM:${TOTAL}"
     if [ "$SHOW_CMM_DETAILS" = "true" ]; then
@@ -2424,7 +2518,7 @@ CMM_TOOLS = [
     "mcp__codebase-memory-mcp__search_code",
     "mcp__codebase-memory-mcp__query_graph",
     "mcp__codebase-memory-mcp__get_code_snippet",
-    "mcp__codebase-memory-mcp__trace_call_path",
+    "mcp__codebase-memory-mcp__trace_path",
     "mcp__codebase-memory-mcp__detect_changes",
     "mcp__codebase-memory-mcp__manage_adr",
     "mcp__codebase-memory-mcp__ingest_traces",

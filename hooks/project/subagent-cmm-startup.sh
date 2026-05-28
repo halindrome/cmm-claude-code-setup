@@ -46,10 +46,13 @@ fi
 # Inject CMM index state into the subagent via additionalContext JSON.
 # SubagentStart hooks output: {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": "..."}}
 # Always exit 0 — this hook is advisory only, never blocking.
+# Both cmm-rules and ctx-rules are emitted in one block so the model does not
+# skip a second Skill() call from a separate hook turn (multi-block skip observed
+# in Phase 61 field test: 8/10 cmm-rules activations, 0/10 ctx-rules activations).
 if [ ! -f "$CMM_SENTINEL" ] || grep -q '^stale$' "$CMM_SENTINEL"; then
-    ADVISORY="⚠ CMM index is stale or uninitialized. Call index_repository before using search_graph, get_code_snippet, trace_call_path, or query_graph — results will be incomplete or absent until the graph is rebuilt."
+    ADVISORY="⚠ CMM index is stale. Call index_repository before graph tools. Invoke Skill('cmm-rules') via the Skill tool now, then Invoke Skill('ctx-rules') via the Skill tool now."
 else
-    ADVISORY="CMM index is ready. Use search_graph, get_code_snippet, trace_call_path, and query_graph as the primary method for code exploration."
+    ADVISORY="CMM index is ready. Invoke Skill('cmm-rules') via the Skill tool now, then Invoke Skill('ctx-rules') via the Skill tool now."
 fi
 
 # JSON-encode via python3 json.dumps so embedded quotes, backslashes, and
