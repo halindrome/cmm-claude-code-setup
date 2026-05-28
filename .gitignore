@@ -3,7 +3,22 @@
 
 # Local Claude Code configuration (installed hooks, local settings, session state)
 # Source hooks live in hooks/project/ — .claude/ is the local installation target
-.claude/
+.claude/*
+
+# Exception: pr-qa is a local-only QA skill that lives under .claude/ (never shipped
+# by setup.sh, which only reads from skills/ agents/ hooks/ rules/). Track its files so
+# they survive a reclone, while keeping the rest of .claude/ ignored.
+!.claude/agents/
+.claude/agents/*
+!.claude/agents/pr-qa-reviewer.md
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/pr-qa/
+!.claude/skills/pr-qa/**
+
+# MCP server registration — local/per-machine artifact (managed by setup.sh,
+# contains machine-specific paths). Not shared.
+/.mcp.json
 
 # macOS
 .DS_Store
