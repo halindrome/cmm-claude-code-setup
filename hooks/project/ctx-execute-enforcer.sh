@@ -160,12 +160,17 @@ fi
 # peeling falls through to the default block — exemption patterns assume a
 # single bounded command.
 _ORIG_COMMAND="$COMMAND"
-while [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]]; do
+while [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\"[^\"]*\"[[:space:]]*\&\&[[:space:]]* ]] || \
+      [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\'[^\']*\'[[:space:]]*\&\&[[:space:]]* ]] || \
+      [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]]; do
     COMMAND="${COMMAND#${BASH_REMATCH[0]}}"
 done
 # If the stripped command still has compound shell operators, do NOT exempt —
 # fall straight through to the default block path. Detected operators:
-# `&&`, `||`, unquoted `;`, unquoted `|`, `$(...)`, and backtick command subs.
+# `&&`, `||`, unquoted `;`, unquoted `|`, `$(...)`, backtick command subs,
+# bare `&` (backgrounding), and embedded newlines (multi-command payloads —
+# an unquoted newline is a command separator that otherwise rides the `cd *`
+# navigation exemption).
 #
 # Quote-awareness: strip single-quoted and double-quoted substrings before the
 # operator scan so legitimate exempt commands carrying these characters inside
@@ -177,7 +182,8 @@ _OPCHECK=$(printf '%s' "$_OPCHECK" | sed "s/'[^']*'//g")
 _OPCHECK=$(printf '%s' "$_OPCHECK" | sed 's/"[^"]*"//g')
 if [[ "$_OPCHECK" == *"&&"* ]] || [[ "$_OPCHECK" == *"||"* ]] || \
    [[ "$_OPCHECK" == *";"* ]]   || [[ "$_OPCHECK" == *"|"* ]]  || \
-   [[ "$_OPCHECK" == *'$('* ]]  || [[ "$_OPCHECK" == *'`'* ]]; then
+   [[ "$_OPCHECK" == *'$('* ]]  || [[ "$_OPCHECK" == *'`'* ]]  || \
+   [[ "$_OPCHECK" == *"&"* ]]   || [[ "$_OPCHECK" == *$'\n'* ]]; then
     bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-compound" 2>/dev/null || true
     cat >&2 <<COMPOUND
 BLOCKED: Compound shell command cannot be exempted.
