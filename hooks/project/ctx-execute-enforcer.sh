@@ -175,11 +175,19 @@ done
 # Quote-awareness: strip single-quoted and double-quoted substrings before the
 # operator scan so legitimate exempt commands carrying these characters inside
 # string arguments (e.g. `git commit -m "wip; cleanup"`, `sed 's/a|b/x/'`) are
-# not false-positive blocked. Conservative scrub — no attempt to handle escape
-# sequences or here-docs.
-_OPCHECK="$COMMAND"
-_OPCHECK=$(printf '%s' "$_OPCHECK" | sed "s/'[^']*'//g")
-_OPCHECK=$(printf '%s' "$_OPCHECK" | sed 's/"[^"]*"//g')
+# not false-positive blocked. Quoted spans may cross newlines (e.g. a multi-line
+# `git commit -m "..."`), so the scrub is whole-string, not line-based: a
+# line-based sed leaves the embedded newline in place and false-positives the
+# newline check above. No attempt to handle escape sequences or here-docs.
+# Falls back to the raw command (safe — may over-block) if python3 is absent.
+_OPCHECK=$(COMMAND="$COMMAND" python3 <<'PY' 2>/dev/null
+import os, re, sys
+c = os.environ.get("COMMAND", "")
+c = re.sub(r"'[^']*'", "", c, flags=re.S)
+c = re.sub(r'"[^"]*"', "", c, flags=re.S)
+sys.stdout.write(c)
+PY
+) || _OPCHECK="$COMMAND"
 if [[ "$_OPCHECK" == *"&&"* ]] || [[ "$_OPCHECK" == *"||"* ]] || \
    [[ "$_OPCHECK" == *";"* ]]   || [[ "$_OPCHECK" == *"|"* ]]  || \
    [[ "$_OPCHECK" == *'$('* ]]  || [[ "$_OPCHECK" == *'`'* ]]  || \
