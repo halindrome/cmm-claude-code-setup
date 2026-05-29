@@ -2456,18 +2456,18 @@ try:
     with open(sys.argv[1]) as f:
         data = json.load(f)
     allow = data.get("permissions", {}).get("allow", [])
-    count = sum(1 for t in allow if "mcp__context-mode__" in str(t))
+    count = sum(1 for t in allow if "mcp__context-mode__" in str(t) or "mcp__plugin_context-mode_context-mode__" in str(t))
     print(count)
 except Exception:
     print(0)
 PYEOF
 )
-      if [ "$ctx_count" -ge 9 ]; then
+      if [ "$ctx_count" -ge 16 ]; then
         echo "  [ok] context-mode tool allowlist already configured"
         echo ""
         return 0
       else
-        echo "  [warn] context-mode tools not yet allowlisted (${ctx_count}/9)"
+        echo "  [warn] context-mode tools not yet allowlisted (${ctx_count}/16)"
       fi
     else
       echo ""
@@ -2525,6 +2525,16 @@ CMM_TOOLS = [
 ]
 
 CTX_TOOLS = [
+    # plugin form (canonical — mcp__plugin_context-mode_context-mode__*), listed first per
+    # the same convention used in the hook-matcher block (~lines 1340-1376)
+    "mcp__plugin_context-mode_context-mode__ctx_execute",
+    "mcp__plugin_context-mode_context-mode__ctx_execute_file",
+    "mcp__plugin_context-mode_context-mode__ctx_search",
+    "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
+    "mcp__plugin_context-mode_context-mode__ctx_index",
+    "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index",
+    "mcp__plugin_context-mode_context-mode__ctx_stats",
+    # legacy MCP-server form (mcp__context-mode__*) — retained for installs without the plugin
     "mcp__context-mode__ctx_execute",
     "mcp__context-mode__ctx_search",
     "mcp__context-mode__ctx_index",
