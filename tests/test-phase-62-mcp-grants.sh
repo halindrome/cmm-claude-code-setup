@@ -124,6 +124,31 @@ _grep_assert "setup.sh writer block still has legacy mcp__context-mode__ctx_exec
 _assert "setup.sh has no syntax errors" bash -n setup.sh
 
 echo ""
+echo "--- setup.sh: plugin-before-legacy ordering, operator-tool exclusion, thresholds ---"
+_ctx_arr=$(awk '/^CTX_TOOLS = \[/{f=1} f{print} f&&/^\]/{exit}' setup.sh)
+_plug_ln=$(printf '%s\n' "$_ctx_arr" | grep -n 'mcp__plugin_context-mode_context-mode__ctx_execute' | head -1 | cut -d: -f1)
+_leg_ln=$(printf '%s\n' "$_ctx_arr" | grep -n '"mcp__context-mode__ctx_execute"' | head -1 | cut -d: -f1)
+if [ -n "$_plug_ln" ] && [ -n "$_leg_ln" ] && [ "$_plug_ln" -lt "$_leg_ln" ]; then
+  _pass "setup.sh writer lists plugin-form ctx_execute before legacy form"
+else
+  _fail "setup.sh writer plugin-form not before legacy (plugin=$_plug_ln legacy=$_leg_ln)"
+fi
+_assert "setup.sh writer excludes destructive delete_project" bash -c '! grep -q "codebase-memory-mcp__delete_project" setup.sh'
+_assert "setup.sh writer excludes operator ctx_doctor" bash -c '! grep -q "context-mode__ctx_doctor" setup.sh'
+_assert "setup.sh writer excludes operator ctx_upgrade" bash -c '! grep -q "context-mode__ctx_upgrade" setup.sh'
+_assert "setup.sh writer excludes destructive ctx_purge" bash -c '! grep -q "context-mode__ctx_purge" setup.sh'
+if grep -qF '"$CMM_TOOLS_COUNT" -ge 13' setup.sh; then _pass "setup.sh CMM detection threshold is 13"; else _fail "setup.sh CMM detection threshold not 13"; fi
+if grep -qF '"$ctx_count" -ge 14' setup.sh; then _pass "setup.sh ctx detection threshold is 14"; else _fail "setup.sh ctx detection threshold not 14"; fi
+
+echo ""
+echo "--- vbw-lead / vbw-debugger: full CMM tool set ---"
+for _f in agents/vbw-lead.md agents/vbw-debugger.md; do
+  for _t in get_architecture search_graph get_code_snippet trace_path query_graph search_code index_status index_repository; do
+    _grep_assert "$_f includes mcp__codebase-memory-mcp__$_t" "mcp__codebase-memory-mcp__$_t" "$_f"
+  done
+done
+
+echo ""
 echo "--- CHECKSUMS.sha256 verifies all agent files ---"
 if shasum -a 256 -c CHECKSUMS.sha256 >/dev/null 2>&1; then
   _pass "shasum -a 256 -c CHECKSUMS.sha256 exits 0"
