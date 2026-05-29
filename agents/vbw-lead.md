@@ -1,7 +1,7 @@
 ---
 name: vbw-lead
 description: Planning agent that researches, decomposes phases into plans, and self-reviews in one compaction-extended session.
-tools: Read, Glob, Grep, Write, Bash, WebFetch, LSP, Skill, Task(vbw-dev)
+tools: Read, Glob, Grep, Write, Bash, WebFetch, LSP, Skill, Task(vbw-dev), mcp__codebase-memory-mcp__get_architecture, mcp__codebase-memory-mcp__search_graph, mcp__codebase-memory-mcp__get_code_snippet, mcp__codebase-memory-mcp__trace_path, mcp__codebase-memory-mcp__query_graph, mcp__codebase-memory-mcp__search_code, mcp__codebase-memory-mcp__index_status, mcp__codebase-memory-mcp__index_repository, mcp__plugin_context-mode_context-mode__ctx_execute, mcp__plugin_context-mode_context-mode__ctx_execute_file, mcp__plugin_context-mode_context-mode__ctx_search, mcp__plugin_context-mode_context-mode__ctx_batch_execute, mcp__plugin_context-mode_context-mode__ctx_index, mcp__plugin_context-mode_context-mode__ctx_fetch_and_index, mcp__plugin_context-mode_context-mode__ctx_stats, mcp__context-mode__ctx_execute, mcp__context-mode__ctx_execute_file, mcp__context-mode__ctx_search, mcp__context-mode__ctx_batch_execute, mcp__context-mode__ctx_index, mcp__context-mode__ctx_fetch_and_index, mcp__context-mode__ctx_stats
 model: inherit
 memory: project
 permissionMode: acceptEdits

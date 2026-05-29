@@ -601,7 +601,7 @@ except Exception:
 PYEOF
 )
 
-  if [ "$CMM_TOOLS_COUNT" -ge 14 ]; then
+  if [ "$CMM_TOOLS_COUNT" -ge 13 ]; then
     CMM_TOOLS_STATUS="ok"
     return 0
   fi
@@ -1087,8 +1087,8 @@ print_preflight_summary() {
 
   # CMM tools line
   case "$CMM_TOOLS_STATUS" in
-    ok)      tools_line="[ok]   All 14 CMM tools allowlisted in .claude/settings.json" ;;
-    warn)    tools_line="[warn] ${CMM_TOOLS_COUNT}/14 CMM tools in .claude/settings.json" ;;
+    ok)      tools_line="[ok]   All 13 CMM tools allowlisted in .claude/settings.json" ;;
+    warn)    tools_line="[warn] ${CMM_TOOLS_COUNT}/13 CMM tools in .claude/settings.json" ;;
     missing) tools_line="[warn] .claude/settings.json not found — CMM tools not allowlisted" ;;
     skip)    tools_line="[skip] CMM tools check (--skip-mcp-check)" ;;
     *)       tools_line="[skip] CMM tools check (not run)" ;;
@@ -2456,18 +2456,18 @@ try:
     with open(sys.argv[1]) as f:
         data = json.load(f)
     allow = data.get("permissions", {}).get("allow", [])
-    count = sum(1 for t in allow if "mcp__context-mode__" in str(t))
+    count = sum(1 for t in allow if "mcp__context-mode__" in str(t) or "mcp__plugin_context-mode_context-mode__" in str(t))
     print(count)
 except Exception:
     print(0)
 PYEOF
 )
-      if [ "$ctx_count" -ge 9 ]; then
+      if [ "$ctx_count" -ge 14 ]; then
         echo "  [ok] context-mode tool allowlist already configured"
         echo ""
         return 0
       else
-        echo "  [warn] context-mode tools not yet allowlisted (${ctx_count}/9)"
+        echo "  [warn] context-mode tools not yet allowlisted (${ctx_count}/14)"
       fi
     else
       echo ""
@@ -2481,7 +2481,7 @@ PYEOF
     prompt_msg="  Write CMM + context-mode tool allowlist to ${settings_file}? [y/N] "
   fi
   if [ "$CMM_TOOLS_STATUS" = "warn" ]; then
-    echo "  [warn] Only ${CMM_TOOLS_COUNT}/14 CMM tools currently allowlisted"
+    echo "  [warn] Only ${CMM_TOOLS_COUNT}/13 CMM tools currently allowlisted"
   elif [ "$CMM_TOOLS_STATUS" = "missing" ]; then
     echo "  [warn] ${settings_file} not found — CMM tools not allowlisted"
   elif [ "$FORCE" = true ] && [ "$CMM_TOOLS_STATUS" = "ok" ]; then
@@ -2511,7 +2511,6 @@ CMM_TOOLS = [
     "mcp__codebase-memory-mcp__index_repository",
     "mcp__codebase-memory-mcp__index_status",
     "mcp__codebase-memory-mcp__list_projects",
-    "mcp__codebase-memory-mcp__delete_project",
     "mcp__codebase-memory-mcp__get_architecture",
     "mcp__codebase-memory-mcp__get_graph_schema",
     "mcp__codebase-memory-mcp__search_graph",
@@ -2525,6 +2524,16 @@ CMM_TOOLS = [
 ]
 
 CTX_TOOLS = [
+    # plugin form (canonical — mcp__plugin_context-mode_context-mode__*), listed first per
+    # the same convention used in the hook-matcher block (~lines 1340-1376)
+    "mcp__plugin_context-mode_context-mode__ctx_execute",
+    "mcp__plugin_context-mode_context-mode__ctx_execute_file",
+    "mcp__plugin_context-mode_context-mode__ctx_search",
+    "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
+    "mcp__plugin_context-mode_context-mode__ctx_index",
+    "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index",
+    "mcp__plugin_context-mode_context-mode__ctx_stats",
+    # legacy MCP-server form (mcp__context-mode__*) — retained for installs without the plugin
     "mcp__context-mode__ctx_execute",
     "mcp__context-mode__ctx_search",
     "mcp__context-mode__ctx_index",
@@ -2532,8 +2541,6 @@ CTX_TOOLS = [
     "mcp__context-mode__ctx_batch_execute",
     "mcp__context-mode__ctx_execute_file",
     "mcp__context-mode__ctx_stats",
-    "mcp__context-mode__ctx_doctor",
-    "mcp__context-mode__ctx_upgrade",
 ]
 
 try:
@@ -2630,7 +2637,7 @@ Flags:
 MCP pre-flight checks (run automatically unless --skip-mcp-check):
   - CMM binary       detected via PATH and common install locations
   - CMM registration checked in .mcp.json and global MCP config
-  - Tool allowlist   verified in .claude/settings.json (14 CMM tools)
+  - Tool allowlist   verified in .claude/settings.json (13 CMM tools)
   - Context Mode     optional; prompts to install if not detected
 
 Context Mode hooks (context-mode-*.sh) are always installed but gracefully
