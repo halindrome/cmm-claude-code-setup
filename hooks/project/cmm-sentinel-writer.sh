@@ -64,4 +64,10 @@ if [ "$TOOL" = "mcp__codebase-memory-mcp__index_status" ] && grep -q '^stale$' "
 fi
 echo "ready" > "$SENTINEL"
 
+# Index refresh completed for this session — clear the fail-open-while-indexing
+# marker written by cmm-session-start.sh so session-gate.sh resumes normal
+# (ready-sentinel) behavior instead of the advisory fail-open path. Reached only
+# on a real reindex/confirm (the stale index_status case returned above).
+rm -f "/tmp/cmm-indexing-${PROJECT_HASH}"
+
 exit 0

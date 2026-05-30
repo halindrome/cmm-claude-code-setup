@@ -171,6 +171,40 @@ else
     _fail "Test 11: Edit should exit 2 without sentinel (got $EXIT_CODE)"
 fi
 
+# Fail-open-while-indexing marker (written by cmm-session-start.sh in production;
+# session-gate.sh fails open with an advisory while it is present and fresh).
+INDEXING_MARKER="/tmp/cmm-indexing-${HASH}"
+
+# --- Test 11b: Write WITHOUT sentinel but WITH fresh indexing marker -> exit 0 (fail open) ---
+echo "--- Test 11b: Write WITHOUT sentinel, fresh indexing marker -> exit 0 (fail open) ---"
+rm -f "$SENTINEL"
+touch "$INDEXING_MARKER"
+EXIT_CODE=0
+echo '{"tool_name": "Write"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
+if [ "$EXIT_CODE" -eq 0 ]; then
+    _pass "Test 11b: Write fails open (exit 0) while indexing marker is fresh"
+else
+    _fail "Test 11b: Write should fail open (exit 0) with fresh indexing marker (got $EXIT_CODE)"
+fi
+rm -f "$INDEXING_MARKER"
+
+# --- Test 11c: Write WITHOUT sentinel, STALE indexing marker -> exit 2 (TTL safety valve) ---
+# Marker older than the gate's TTL (120 min) must NOT fail open — the gate falls
+# through to the hard block so a crashed/never-completed index cannot leave it open.
+echo "--- Test 11c: Write WITHOUT sentinel, stale indexing marker -> exit 2 (safety valve) ---"
+rm -f "$SENTINEL"
+touch "$INDEXING_MARKER"
+# Backdate the marker well past the TTL (touch -t works on both macOS and GNU).
+touch -t 202001010000 "$INDEXING_MARKER" 2>/dev/null || touch -d '2020-01-01 00:00' "$INDEXING_MARKER" 2>/dev/null
+EXIT_CODE=0
+echo '{"tool_name": "Write"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
+if [ "$EXIT_CODE" -eq 2 ]; then
+    _pass "Test 11c: Write blocked (exit 2) with stale indexing marker"
+else
+    _fail "Test 11c: Write should exit 2 with stale indexing marker (got $EXIT_CODE)"
+fi
+rm -f "$INDEXING_MARKER"
+
 # --- Test 12: session-gate inside legacy-modules worktree -> no path-mismatch ---
 # Regression for Phase 50 Plan 02: session-gate's inline fallback must handle a worktree
 # whose git rev-parse --show-toplevel resolves into .git/modules/<name>/ from a deinit'd

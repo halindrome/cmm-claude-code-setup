@@ -109,6 +109,20 @@ _assert_exit "ls exempt (short-reads)" 0 \
 _assert_exit "bare ls exempt (short-reads)" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"ls"}}'
 
+# Shell syntax checks (parse-only): no stdout on success, nothing to sandbox.
+_assert_exit "bash -n script exempt (syntax-check)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"bash -n scripts/generate-checksums.sh"}}'
+
+_assert_exit "sh -n script exempt (syntax-check)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"sh -n setup.sh"}}'
+
+_assert_exit "bare bash -n exempt (syntax-check)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"bash -n"}}'
+
+# But a compound that merely starts with a syntax check must still block.
+_assert_exit "bash -n then && echo still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"bash -n x.sh && echo ok"}}'
+
 # F-04 (Phase 61 round-1 follow-up): compound-shell detector must respect quoting.
 # Operators inside single- or double-quoted argument strings are not real shell
 # separators, so an otherwise-exempt single command (git commit, etc.) must not
