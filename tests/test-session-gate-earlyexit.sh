@@ -89,15 +89,31 @@ else
     _fail "Test 5: SendMessage should exit 0 (got $EXIT_CODE)"
 fi
 
-# --- Test 6: Context Mode tool -> exit 0 (Phase 2 bypass) ---
-echo "--- Test 6: Context Mode tool -> exit 0 (Phase 2 bypass) ---"
+# --- Test 6: Context Mode tool (MCP-server form) -> exit 0 (Phase 2 bypass) ---
+echo "--- Test 6: Context Mode tool (MCP-server form) -> exit 0 (Phase 2 bypass) ---"
 rm -f "$SENTINEL"
 EXIT_CODE=0
 echo '{"tool_name": "mcp__context-mode__ctx_execute"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
 if [ "$EXIT_CODE" -eq 0 ]; then
-    _pass "Test 6: Context Mode tool exits 0 without sentinel"
+    _pass "Test 6: Context Mode tool (MCP-server form) exits 0 without sentinel"
 else
-    _fail "Test 6: Context Mode tool should exit 0 (got $EXIT_CODE)"
+    _fail "Test 6: Context Mode tool (MCP-server form) should exit 0 (got $EXIT_CODE)"
+fi
+
+# --- Test 6b: Context Mode tool (plugin-install form) -> exit 0 (Phase 2 bypass) ---
+# Regression for the plugin-form deadlock: when context-mode is installed via
+# `/plugin install`, the tool name is mcp__plugin_context-mode_context-mode__ctx_*.
+# Before the fix this fell through to the sentinel block (exit 2) and instructed
+# Claude to run the very ctx_* tools it had just blocked -> circular deadlock,
+# because the CM sentinel is only written by a PostToolUse hook that never fires.
+echo "--- Test 6b: Context Mode tool (plugin-install form) -> exit 0 (Phase 2 bypass) ---"
+rm -f "$SENTINEL"
+EXIT_CODE=0
+echo '{"tool_name": "mcp__plugin_context-mode_context-mode__ctx_execute"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
+if [ "$EXIT_CODE" -eq 0 ]; then
+    _pass "Test 6b: Context Mode tool (plugin form) exits 0 without sentinel"
+else
+    _fail "Test 6b: Context Mode tool (plugin form) should exit 0 (got $EXIT_CODE)"
 fi
 
 # --- Test 7: Read tool -> exit 0 (Phase 2 bypass) ---
@@ -154,6 +170,40 @@ if [ "$EXIT_CODE" -eq 2 ]; then
 else
     _fail "Test 11: Edit should exit 2 without sentinel (got $EXIT_CODE)"
 fi
+
+# Fail-open-while-indexing marker (written by cmm-session-start.sh in production;
+# session-gate.sh fails open with an advisory while it is present and fresh).
+INDEXING_MARKER="/tmp/cmm-indexing-${HASH}"
+
+# --- Test 11b: Write WITHOUT sentinel but WITH fresh indexing marker -> exit 0 (fail open) ---
+echo "--- Test 11b: Write WITHOUT sentinel, fresh indexing marker -> exit 0 (fail open) ---"
+rm -f "$SENTINEL"
+touch "$INDEXING_MARKER"
+EXIT_CODE=0
+echo '{"tool_name": "Write"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
+if [ "$EXIT_CODE" -eq 0 ]; then
+    _pass "Test 11b: Write fails open (exit 0) while indexing marker is fresh"
+else
+    _fail "Test 11b: Write should fail open (exit 0) with fresh indexing marker (got $EXIT_CODE)"
+fi
+rm -f "$INDEXING_MARKER"
+
+# --- Test 11c: Write WITHOUT sentinel, STALE indexing marker -> exit 2 (TTL safety valve) ---
+# Marker older than the gate's TTL (120 min) must NOT fail open — the gate falls
+# through to the hard block so a crashed/never-completed index cannot leave it open.
+echo "--- Test 11c: Write WITHOUT sentinel, stale indexing marker -> exit 2 (safety valve) ---"
+rm -f "$SENTINEL"
+touch "$INDEXING_MARKER"
+# Backdate the marker well past the TTL (touch -t works on both macOS and GNU).
+touch -t 202001010000 "$INDEXING_MARKER" 2>/dev/null || touch -d '2020-01-01 00:00' "$INDEXING_MARKER" 2>/dev/null
+EXIT_CODE=0
+echo '{"tool_name": "Write"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
+if [ "$EXIT_CODE" -eq 2 ]; then
+    _pass "Test 11c: Write blocked (exit 2) with stale indexing marker"
+else
+    _fail "Test 11c: Write should exit 2 with stale indexing marker (got $EXIT_CODE)"
+fi
+rm -f "$INDEXING_MARKER"
 
 # --- Test 12: session-gate inside legacy-modules worktree -> no path-mismatch ---
 # Regression for Phase 50 Plan 02: session-gate's inline fallback must handle a worktree
