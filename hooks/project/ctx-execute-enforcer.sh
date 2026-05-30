@@ -254,6 +254,13 @@ case "$COMMAND" in
   ls|ls\ *)                                       _track_exempt short-reads; exit 0 ;;
 esac
 
+# Shell syntax checks (parse-only: no stdout on success, short error output on failure).
+# Routing these through ctx_execute is pure friction — there is nothing to sandbox.
+case "$COMMAND" in
+  bash\ -n\ *|sh\ -n\ *|zsh\ -n\ *|dash\ -n\ *)  _track_exempt syntax-check; exit 0 ;;
+  bash\ -n|sh\ -n|zsh\ -n|dash\ -n)              _track_exempt syntax-check; exit 0 ;;
+esac
+
 # Remote commands (output belongs to remote context, not local CTX store)
 case "$COMMAND" in
   ssh\ *|scp\ *|rsync\ *|sftp\ *)                _track_exempt remote; exit 0 ;;
