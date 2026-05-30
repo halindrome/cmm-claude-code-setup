@@ -89,15 +89,31 @@ else
     _fail "Test 5: SendMessage should exit 0 (got $EXIT_CODE)"
 fi
 
-# --- Test 6: Context Mode tool -> exit 0 (Phase 2 bypass) ---
-echo "--- Test 6: Context Mode tool -> exit 0 (Phase 2 bypass) ---"
+# --- Test 6: Context Mode tool (MCP-server form) -> exit 0 (Phase 2 bypass) ---
+echo "--- Test 6: Context Mode tool (MCP-server form) -> exit 0 (Phase 2 bypass) ---"
 rm -f "$SENTINEL"
 EXIT_CODE=0
 echo '{"tool_name": "mcp__context-mode__ctx_execute"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
 if [ "$EXIT_CODE" -eq 0 ]; then
-    _pass "Test 6: Context Mode tool exits 0 without sentinel"
+    _pass "Test 6: Context Mode tool (MCP-server form) exits 0 without sentinel"
 else
-    _fail "Test 6: Context Mode tool should exit 0 (got $EXIT_CODE)"
+    _fail "Test 6: Context Mode tool (MCP-server form) should exit 0 (got $EXIT_CODE)"
+fi
+
+# --- Test 6b: Context Mode tool (plugin-install form) -> exit 0 (Phase 2 bypass) ---
+# Regression for the plugin-form deadlock: when context-mode is installed via
+# `/plugin install`, the tool name is mcp__plugin_context-mode_context-mode__ctx_*.
+# Before the fix this fell through to the sentinel block (exit 2) and instructed
+# Claude to run the very ctx_* tools it had just blocked -> circular deadlock,
+# because the CM sentinel is only written by a PostToolUse hook that never fires.
+echo "--- Test 6b: Context Mode tool (plugin-install form) -> exit 0 (Phase 2 bypass) ---"
+rm -f "$SENTINEL"
+EXIT_CODE=0
+echo '{"tool_name": "mcp__plugin_context-mode_context-mode__ctx_execute"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
+if [ "$EXIT_CODE" -eq 0 ]; then
+    _pass "Test 6b: Context Mode tool (plugin form) exits 0 without sentinel"
+else
+    _fail "Test 6b: Context Mode tool (plugin form) should exit 0 (got $EXIT_CODE)"
 fi
 
 # --- Test 7: Read tool -> exit 0 (Phase 2 bypass) ---
