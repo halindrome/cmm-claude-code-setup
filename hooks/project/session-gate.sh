@@ -107,6 +107,28 @@ fi
 
 # Check CMM sentinel
 if [ ! -f "$CMM_SENTINEL" ]; then
+  # Fail-open-while-indexing (large-repo startup): cmm-session-start.sh writes
+  # /tmp/cmm-indexing-<hash> at session start; cmm-sentinel-writer.sh clears it
+  # (and writes the ready sentinel) once index_repository/index_status completes.
+  # While that marker is present AND fresh, the index is still being built for
+  # this session — fail OPEN with an advisory instead of hard-blocking, so a slow
+  # first index of a large codebase does not freeze the session (Skill, Edit,
+  # WebFetch, etc. stay usable while a background index proceeds).
+  #
+  # Safety valve: a marker older than the TTL (e.g. a crashed prior session that
+  # left it behind, or an index that never completed) is treated as stale and we
+  # fall through to the hard block — the gate must not stay open indefinitely.
+  INDEXING_MARKER="/tmp/cmm-indexing-${PROJECT_HASH}"
+  INDEXING_TTL_MIN=120
+  if [ -f "$INDEXING_MARKER" ] && [ -n "$(find "$INDEXING_MARKER" -mmin "-${INDEXING_TTL_MIN}" 2>/dev/null)" ]; then
+    cat >&2 <<INDEXING
+CMM note: the index is still being built for this session — proceeding without it.
+Code-navigation tools may return partial or stale results until indexing finishes.
+Check progress with mcp__codebase-memory-mcp__index_status; the gate closes itself
+once the index is ready (no action needed).
+INDEXING
+    exit 0
+  fi
   cat >&2 <<BLOCKED
 BLOCKED: CMM index not refreshed for this session.
 

@@ -55,6 +55,16 @@ fi
 rm -f "/tmp/cmm-session-ready-${PROJECT_HASH}"
 rm -f "/tmp/context-mode-ready-${PROJECT_HASH}"
 
+# --- Fail-open-while-indexing marker ---
+# Mark that a CMM index refresh is pending for this session. While this marker is
+# present and fresh, session-gate.sh fails OPEN with an advisory instead of hard-
+# blocking, so a slow first index of a large codebase does not freeze the session.
+# cmm-sentinel-writer.sh removes this marker (and writes the ready sentinel) once
+# index_repository/index_status completes. `touch` (re)sets the mtime each session
+# so the gate's TTL safety valve measures age from this session start, not an older
+# orphaned marker.
+touch "/tmp/cmm-indexing-${PROJECT_HASH}"
+
 # --- Context Mode Bootstrap ---
 # If Context Mode is installed, write its sentinel at session start.
 # This eliminates the manual ctx_stats call that was previously required.
