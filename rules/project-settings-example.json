@@ -41,6 +41,16 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/cwd-guard.sh",
+            "_comment": "Blocks persistent 'cd' away from the project root to prevent shell cwd drift (which breaks sentinel-hash matching in monorepos/submodules); allows absolute paths, git -C, subshells, and re-anchoring to root. Bypass with '# cwd-exempt'."
+          }
+        ]
+      },
+      {
         "matcher": "Read",
         "hooks": [
           {
