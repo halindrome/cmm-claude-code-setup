@@ -43,6 +43,10 @@ _run 2 "persistent cd into subdir blocked"            'cd apps/rest-api'
 _run 2 "cd subdir then && cmd blocked"                'cd apps/rest-api && make test'
 _run 2 "bare cd (to HOME) blocked"                    'cd'
 _run 2 "cd relative .. blocked"                       'cd ..'
+_run 2 "pushd into subdir blocked"                    'pushd apps/rest-api'
+_run 2 "popd (drift to prior dir) blocked"            'popd'
+_run 2 "env-prefixed cd blocked"                      'FOO=1 cd apps/rest-api'
+_run 2 "cd - (previous dir) blocked"                  'cd -'
 
 # --- ALLOW: cwd-independent or root-anchoring forms ---
 _run 0 "re-anchor to absolute root allowed"           "cd $FAKE_ROOT"
@@ -53,6 +57,9 @@ _run 0 "absolute-path command (no cd) allowed"        'cat /etc/hosts'
 _run 0 "command with no cd allowed"                   'npm test'
 _run 0 "cwd-exempt bypass allowed"                    'cd apps/rest-api  # cwd-exempt'
 _run 0 "command substitution cd is local, allowed"    'echo "$(cd apps && pwd)"'
+_run 0 "cd -P to absolute root allowed (flag skipped)" "cd -P $FAKE_ROOT"
+_run 0 "backgrounded cd is non-persistent, allowed"   'cd apps/rest-api &'
+_run 0 "backgrounded pushd is non-persistent, allowed" 'pushd apps/rest-api &'
 
 # --- Fail-open: malformed / empty input must never wedge Bash ---
 EXIT_CODE=0
@@ -64,6 +71,15 @@ printf '%s' '{"tool_name":"Bash","tool_input":{"command":""}}' | (cd "$FAKE_ROOT
 if [ "$EXIT_CODE" -eq 0 ]; then _pass "empty command fail-open (exit 0)"; else _fail "empty command should fail-open (got $EXIT_CODE)"; fi
 
 rm -rf "$FAKE_ROOT"
+
+# --- Static: lib integration (F-06 — the inline-fallback path above does not
+# exercise the sourced-lib branch, so assert the source wires it explicitly). ---
+if grep -q 'project-root.sh' "$SCRIPT_DIR/../hooks/project/cwd-guard.sh"; then
+    _pass "cwd-guard sources shared hooks/lib/project-root.sh"
+else
+    _fail "cwd-guard should source hooks/lib/project-root.sh for root detection"
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

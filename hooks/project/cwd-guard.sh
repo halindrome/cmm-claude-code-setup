@@ -106,22 +106,65 @@ def target_is_root(tok):
             return False
     return False
 
+# Directory-changing builtins whose top-level use persists in the shell.
+# `cd`/`pushd` take a target (allowed only when it is the root); `popd` moves to
+# an unknown prior stack dir, so any top-level `popd` is treated as drift.
+DRIFT_WITH_TARGET = {"cd", "pushd"}
+ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+def cd_target(rest):
+    # Skip leading option flags (e.g. `cd -P`, `cd -L`, `cd --`) to find the path.
+    for r in rest:
+        if r.startswith("-"):
+            continue
+        return r
+    return ""
+
 for seg in segments:
     s = seg.strip()
     if not s:
         continue
+    # A segment backgrounded with a trailing '&' runs in a child shell; its cwd
+    # change does NOT persist in the parent. (Top-level '&&' was already split out
+    # above, so a remaining trailing '&' is backgrounding.)
+    if s.endswith("&"):
+        s = s[:-1].strip()
+        if not s:
+            continue
+        # Re-check: a backgrounded cd does not drift the persistent shell.
+        try:
+            bg_toks = shlex.split(s, comments=False, posix=True)
+        except Exception:
+            continue
+        idx = 0
+        while idx < len(bg_toks) and ENV_ASSIGN.match(bg_toks[idx]):
+            idx += 1
+        if idx < len(bg_toks) and bg_toks[idx] in ("cd", "pushd", "popd"):
+            continue  # backgrounded dir change — non-persistent, allow
+        continue
     try:
         toks = shlex.split(s, comments=False, posix=True)
     except Exception:
-        # Unparseable: conservative regex fallback.
-        m = re.match(r"^\s*cd(\s+(\S+))?\s*$", s)
+        # Unparseable: conservative regex fallback (also covers pushd/popd).
+        m = re.match(r"^\s*(cd|pushd|popd)(\s+(\S+))?\s*$", s)
         if m:
-            tgt = m.group(2) or ""
-            if not tgt or not target_is_root(tgt):
+            verb = m.group(1); tgt = m.group(3) or ""
+            if verb == "popd" or not tgt or not target_is_root(tgt):
                 print("BLOCK\t" + s); sys.exit(0)
         continue
-    if toks and toks[0] == "cd":
-        tgt = toks[1] if len(toks) > 1 else ""
+    if not toks:
+        continue
+    # Skip leading NAME=VALUE env-assignment prefixes (e.g. `FOO=1 cd sub`).
+    idx = 0
+    while idx < len(toks) and ENV_ASSIGN.match(toks[idx]):
+        idx += 1
+    if idx >= len(toks):
+        continue
+    verb = toks[idx]
+    if verb == "popd":
+        print("BLOCK\t" + s); sys.exit(0)
+    if verb in DRIFT_WITH_TARGET:
+        tgt = cd_target(toks[idx + 1:])
         if not tgt or not target_is_root(tgt):
             print("BLOCK\t" + s); sys.exit(0)
 
