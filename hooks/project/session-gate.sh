@@ -40,7 +40,9 @@ esac
 case "$TOOL" in
   mcp__codebase-memory-mcp__*)  # all CMM tools bypass CMM sentinel check unconditionally
     exit 0 ;;
-  mcp__context-mode__*)         # Context Mode tools: full bypass (both CMM and CM gates)
+  mcp__context-mode__*)         # Context Mode tools (MCP-server form): full bypass (both CMM and CM gates)
+    exit 0 ;;
+  mcp__plugin_context-mode_context-mode__*)  # Context Mode tools (plugin form): full bypass — never gate the tools that write the CM sentinel
     exit 0 ;;
   Bash|Read|Grep|Glob)          # read-only tools; safe to run in parallel with index_status
     exit 0 ;;
@@ -164,6 +166,7 @@ fi
 # Context Mode allow-list (bypass Context Mode sentinel check)
 case "$TOOL" in
   mcp__context-mode__*)  exit 0 ;;
+  mcp__plugin_context-mode_context-mode__*)  exit 0 ;;  # plugin-install form of all ctx_* tools
   ctx_execute)           exit 0 ;;
   ctx_search)            exit 0 ;;
   ctx_index)             exit 0 ;;
