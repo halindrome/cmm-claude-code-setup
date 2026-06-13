@@ -5,7 +5,7 @@
 #   (a) rules/ctx-rules.md ctx_search row documents project: with three value forms
 #       (omit, "global", <absolute-path>)
 #   (b) rules/ctx-rules.md mentions sort: "timeline" and contentType
-#   (c) rules/cmm-rules.md behavior-notes label contains v0.7.0 (not v0.6.1)
+#   (c) rules/cmm-rules.md behavior-notes label contains v0.8.1 (not v0.7.0)
 #   (d) rules/cmm-rules.md documents qualified_name (trace_path fallback)
 #   (e) rules/cmm-rules.md mentions LSP (call graph accuracy)
 #   (f) diff rules/ctx-rules.md .claude/rules/ctx-rules.md exits 0 (propagation check)
@@ -87,11 +87,11 @@ _grep_assert "ctx-rules mentions contentType" \
   'contentType' "rules/ctx-rules.md"
 
 echo ""
-echo "--- (c) cmm-rules: behavior-notes label is v0.7.0, not v0.6.1 ---"
-_grep_assert "cmm-rules label contains v0.7.0" \
+echo "--- (c) cmm-rules: behavior-notes label is v0.8.1, not v0.7.0 ---"
+_grep_assert "cmm-rules label contains v0.8.1" \
+  'v0\.8\.1' "rules/cmm-rules.md"
+_grep_absent "cmm-rules label does not contain stale v0.7.0" \
   'v0\.7\.0' "rules/cmm-rules.md"
-_grep_absent "cmm-rules label does not contain stale v0.6.1" \
-  'v0\.6\.1' "rules/cmm-rules.md"
 
 echo ""
 echo "--- (d) cmm-rules: trace_path qualified_name fallback documented ---"

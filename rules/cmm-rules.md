@@ -15,13 +15,14 @@ Use codebase-memory-mcp tools as the primary method for code exploration.
 
 Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do not jump straight to reading files.
 
-### Behavior notes (upstream v0.7.0)
+### Behavior notes (upstream v0.8.1)
 
-- `search_graph` returns at most **200 rows** by default (upstream cap as of v0.7.0); pass `offset` to page or use `query_graph` with Cypher for full scans.
+- `search_graph` returns at most **200 rows** by default (upstream cap as of v0.8.1); pass `offset` to page or use `query_graph` with Cypher for full scans.
 - `search_code` auto-converts multi-word input to a regex (`foo bar` → `foo.*bar`); pass an explicit single-token regex if you need different semantics.
 - `list_projects` now returns all registered projects, including those with `/tmp/`-rooted paths (prior versions filtered tmp paths silently). Useful when triaging multiple indexed scratch projects during QA.
 - `trace_path` falls back to a `qualified_name` lookup when the bare `function_name` does not resolve — pass the fully-qualified name (e.g. `module.ClassName.method`) if a bare name returns no results.
-- As of v0.7.0, the call graph is LSP-resolved (accurate): `trace_path` and `search_graph` `CALLS` edges resolve to the right callee via hybrid LSP across six languages (Python, PHP, TS/JS/JSX/TSX, C#, C/C++/CUDA, Go). Prefer these tools over manual grep for call-chain analysis.
+- As of v0.8.1, the call graph is LSP-resolved (accurate): `trace_path` and `search_graph` `CALLS` edges resolve to the right callee via hybrid LSP across nine language families (Python, TS/JS/JSX/TSX, PHP, C#, Go, C/C++, Java, Kotlin, Rust). Prefer these tools over manual grep for call-chain analysis.
+- As of v0.8.1, `query_graph` exposes per-function complexity metrics queryable via Cypher: `cyclomatic`, `cognitive`, `param_count`, `loop_depth`, `transitive_loop_depth` (interprocedural worst-case nesting), `linear_scan_in_loop` (O(n²) detection), `alloc_in_loop`, `unguarded_recursion`, and the `recursive` flag. Use these for refactor-candidate and hot-path queries — e.g. `MATCH (f:Function) WHERE f.transitive_loop_depth >= 3 OR f.linear_scan_in_loop >= 1 RETURN f.qualified_name ORDER BY f.transitive_loop_depth DESC`.
 
 `Read` is correct for: non-code files (JSON, YAML, config, Markdown), full-file context (imports, globals), files under 50 lines, and files not yet indexed.
 
