@@ -55,6 +55,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [x] Phase 61: Convert CMM/ctx rules to Claude Code Skills
 - [x] Phase 62: Restore MCP Tool Grants to Override Agents and Setup Allowlist
 - [x] Phase 63: Refresh ctx/cmm Rule Files for Upstream Tool Versions
+- [ ] Phase 64: Gate-Frustration Advisory
 
 ### Phase 49: Align with VBW Agent Updates (v1.35.0)
 > **Superseded by Phase 52** (2026-05-04): Phase 52 absorbs the v1.35.0 alignment scope into a broader audit covering all VBW changes through v1.36.1+ on `origin/main`. Phase 49's specific gaps (vbw-qa write-verification gate, vbw-dev pre_existing_issues rule, `<skill_no_activation>` handling, agent frontmatter `tools:` allowlists) remain in scope and will be addressed inside Phase 52's planning.
@@ -337,6 +338,7 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 | 61 - Convert CMM/ctx rules to Claude Code Skills | 2/2 | complete | 2026-05-28 |
 | 62 - Restore MCP Tool Grants to Override Agents and Setup Allowlist | 1/1 | complete | 2026-05-29 |
 | 63 - Refresh ctx/cmm Rule Files for Upstream Tool Versions | 1/1 | complete | 2026-06-17 |
+| 64 - Gate-Frustration Advisory | 0/? | pending | — |
 
 ### Phase 23: Enforce CMM Hooks Inside Subagents
 **Goal:** Hooks registered in `settings.json` (session gate, stale advisory, CMM call tracker) do not fire inside VBW subagents (Dev, Scout, Lead, QA). These agents make CMM queries and file edits without the enforcement layer active — they can query a stale index silently, bypass the session gate, and skip call tracking. This is a correctness gap: the tooling is designed to guarantee all CMM usage is accurate and tracked, but that guarantee breaks down exactly when subagents are doing the most work. Fix this by using the mechanisms from Claude Code's subagent hooks API: inject the session gate check via `SubagentStart` context injection, and add the stale advisory and CMM call tracking hooks to VBW agent frontmatter files so they fire inside each agent's execution context.
@@ -752,3 +754,18 @@ Concretely:
 - Test coverage asserts each of the four agents grants the CMM `get_architecture` + `search_graph` tool names in frontmatter, and that the setup.sh allowlist writer emits the plugin-form context-mode prefix.
 
 **Research pre-loaded:** `62-RESEARCH.md` — investigation in the originating session verified the exact frontmatter of all seven override agents (4 allowlist / 3 denylist), the setup.sh allowlist-writer line range and its legacy-only context-mode names, the live MCP server/plugin naming (CMM = global server `codebase-memory-mcp`; context-mode = global plugin `mcp__plugin_context-mode_context-mode__*`, with legacy MCP-server form still default-registered by setup.sh), the stale `trace_call_path` name in settings.json, and byte-identical provenance of the downstream `liverpool_patches` install. Plan mode may proceed without re-spawning broad Scout research; a focused verification of current frontmatter and the exact setup.sh line numbers before editing is sufficient.
+
+### Phase 64: Gate-Frustration Advisory
+**Goal:** A user frustrated that Claude isn't honoring the CMM/ctx nudges often won't remember they're even running this enforcement stack — or that they can report it. When the gates block heavily in a session, surface a **once-per-session** reminder pointing to two remedies: (1) ask Claude directly why it isn't following its rules, and (2) capture a shareable gate-cost report to file. The advisory has an **active surface** — a Stop hook that prints a short, self-identifying note naming both remedies plus the exact `scripts/analyze-gate-blocks.py --all --share` command — and a **passive surface** — the existing CMM statusline (`statusline-cmm.sh`) showing a marker when the per-project block count is high. The feature reuses the existing per-project block counter (`hooks/project/track-hook-blocks.sh`) with **no new tracking** added. Trigger is bounded: fire only after the per-project block count first crosses a threshold (~15–20), guarded by a `/tmp/cmm-advised-<project-root-hash>` sentinel so it shows at most once per session, never in non-interactive/CI contexts, and silenced entirely by `CMM_NO_ADVISORY=1`.
+**Deps:** **PR #78** (`feat(metrics): shareable gate-cost report + opt-in setup.sh install`, branch `feature/metrics-share-and-install`) — provides the `analyze-gate-blocks.py --all --share` report command the advisory points at; PR #78 must merge to `develop` before this phase's active-surface message is accurate. Phase 36 (Hook Block Counter and Statusline Integration — established the block counter + statusline plumbing this advisory reads), Phase 30 (Per-Project CMM Call Count Cache — the per-project counting/hash convention reused here).
+**Reqs:** none (enforcement transparency / UX)
+**Success:**
+- The advisory fires **once per session**, only after the per-project block count first crosses the configured threshold (~15–20), guarded by a `/tmp/cmm-advised-<hash>` sentinel; it never fires in non-interactive/CI sessions.
+- **Active surface:** a Stop hook prints a short, self-identifying note that names both remedies (ask Claude why it isn't following its rules; capture a `--share` report) and includes the literal `scripts/analyze-gate-blocks.py --all --share` command.
+- **Passive surface:** the CMM statusline shows a marker when the block count is high.
+- **Escape hatch:** setting `CMM_NO_ADVISORY=1` silences the advisory entirely (both surfaces).
+- Reuses the existing `track-hook-blocks.sh` counter — no new tracking mechanism is introduced.
+- Test coverage for: threshold trigger, once-per-session (sentinel) behavior, CI/non-interactive skip, and the `CMM_NO_ADVISORY=1` escape hatch.
+- **Scope/QA:** touches `hooks/` + `setup.sh` (Stop-hook registration) + `tests/` → does **not** qualify for the CONTRIBUTING.md docs-only skip; the standard 2–4 QA rounds apply (use the global `/pr-qa`).
+
+**Research deferred to Plan mode.** The originating session verified the referenced artifacts exist on `develop`: the source counter `hooks/project/track-hook-blocks.sh`, the report script `scripts/analyze-gate-blocks.py`, and the statusline `statusline-cmm.sh`. Open implementation questions for Plan mode: the exact threshold value and whether it should be configurable; the precise Stop-hook event wiring and `setup.sh` registration block; the statusline marker format; and confirming the final `--all --share` flag surface once PR #78 lands. A focused Scout pass on the Stop-hook registration path in `setup.sh` and the current statusline rendering is sufficient — no broad research needed.
