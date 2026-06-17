@@ -1,16 +1,23 @@
 #!/bin/bash
-# test-cmm-nudge-blocking.sh — Tests for cmm-nudge.sh hard-blocking Read gate
+# test-cmm-nudge-blocking.sh — Tests for cmm-nudge.sh soft per-file read budget
 # Usage: bash tests/test-cmm-nudge-blocking.sh
 # Exit: 0 = all pass, 1 = any failure
+#
+# cmm-nudge.sh is NON-BLOCKING (always exit 0). For code files (>=50 lines) in a
+# CMM-configured repo it keeps a session-scoped per-file read counter and emits ONE
+# advisory nudge (hookSpecificOutput.additionalContext on stdout) on the (BUDGET+1)th
+# read of the same file. All exemptions still apply. These tests assert: exemptions
+# stay silent+allowed, code-file reads are ALWAYS allowed (exit 0), and the nudge fires
+# exactly once at the budget boundary, scoped per session.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 HOOK="$SCRIPT_DIR/../hooks/global/cmm-nudge.sh"
+READ_BUDGET=3   # must match cmm-nudge.sh
 
 PASS=0; FAIL=0
+
 # _assert_exit LABEL EXPECTED_EXIT JSON [ENV_PREFIX]
-# ENV_PREFIX is optional; if set, it is prepended to the bash invocation
-# (e.g. "CLAUDE_CONFIG_DIR=/tmp/fake" to override global settings lookup)
 _assert_exit() {
     local label="$1" expected="$2" json="$3" env_prefix="${4:-}"
     local actual=0
@@ -20,17 +27,31 @@ _assert_exit() {
         echo "$json" | bash "$HOOK" >/dev/null 2>&1 || actual=$?
     fi
     if [ "$actual" -eq "$expected" ]; then
-        echo "PASS: $label"
-        PASS=$((PASS+1))
+        echo "PASS: $label"; PASS=$((PASS+1))
     else
-        echo "FAIL: $label (expected exit $expected, got $actual)"
-        FAIL=$((FAIL+1))
+        echo "FAIL: $label (expected exit $expected, got $actual)"; FAIL=$((FAIL+1))
+    fi
+}
+
+# _assert_nudge LABEL EXPECT(yes|no) JSON — asserts exit 0 AND whether a nudge was emitted
+_assert_nudge() {
+    local label="$1" expect="$2" json="$3"
+    local out rc=0
+    out=$(echo "$json" | bash "$HOOK" 2>/dev/null) || rc=$?
+    local has="no"
+    case "$out" in *"times this session"*) has="yes" ;; esac
+    if [ "$rc" -eq 0 ] && [ "$has" = "$expect" ]; then
+        echo "PASS: $label"; PASS=$((PASS+1))
+    else
+        echo "FAIL: $label (exit=$rc nudge=$has; expected exit 0 nudge=$expect)"; FAIL=$((FAIL+1))
     fi
 }
 
 # --- Fixture Setup ---
 TMPDIR_ROOT=$(mktemp -d)
-trap 'rm -rf "$TMPDIR_ROOT"' EXIT
+# Clean any counter files from our controlled test sessions (and prior runs).
+trap 'rm -rf "$TMPDIR_ROOT"; rm -f /tmp/cmm-reads-sb*-* /tmp/cmm-reads-nosession-*' EXIT
+rm -f /tmp/cmm-reads-sb*-* /tmp/cmm-reads-nosession-* 2>/dev/null || true
 
 # Primary test project: CMM installed, git repo
 PROJ="$TMPDIR_ROOT/proj"
@@ -38,29 +59,14 @@ mkdir -p "$PROJ"
 git -C "$PROJ" init -q
 echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$PROJ/.mcp.json"
 
-# Large code file (>50 lines) — will be blocked
 for i in $(seq 1 60); do echo "line $i"; done > "$PROJ/big.py"
-
-# Large .ts file (>50 lines) — will be blocked
 for i in $(seq 1 60); do echo "// line $i"; done > "$PROJ/big.ts"
-
-# Small code file (<50 lines) — will be allowed
 echo 'print("hello")' > "$PROJ/small.py"
-
-# Config file — should never be blocked
 echo '{}' > "$PROJ/config.json"
-
-# Markdown file — should never be blocked
 echo '# Some doc' > "$PROJ/some-doc.md"
-
-# CLAUDE.md — basename exempt
 echo '# CLAUDE.md' > "$PROJ/CLAUDE.md"
-
-# Planning path fixture
 mkdir -p "$PROJ/.vbw-planning/phases/01"
 for i in $(seq 1 60); do echo "plan line $i"; done > "$PROJ/.vbw-planning/phases/01/big-plan.py"
-
-# .claude path fixture
 mkdir -p "$PROJ/.claude/hooks"
 for i in $(seq 1 60); do echo "hook line $i"; done > "$PROJ/.claude/hooks/some-hook.sh"
 
@@ -77,205 +83,78 @@ mkdir -p "$PROJ_NO_MCP"
 git -C "$PROJ_NO_MCP" init -q
 for i in $(seq 1 60); do echo "line $i"; done > "$PROJ_NO_MCP/big.py"
 
-# Fake CLAUDE_CONFIG_DIR without CMM — used by tests 9+10 to suppress global fallback
+# Fake CLAUDE_CONFIG_DIR without CMM — suppresses global fallback
 FAKE_CONFIG="$TMPDIR_ROOT/fake-claude-config"
 mkdir -p "$FAKE_CONFIG"
 echo '{"hooks":{}}' > "$FAKE_CONFIG/settings.json"
 
-# --- Tests ---
+# --- Exemptions: always allowed, never nudge (exit 0) ---
+echo "--- Test 1: small .py allowed ---"
+_assert_exit "Test 1: small .py allowed" 0 "{\"tool_input\":{\"file_path\":\"$PROJ/small.py\"}}"
+echo "--- Test 2: config .json allowed ---"
+_assert_exit "Test 2: config .json allowed" 0 "{\"tool_input\":{\"file_path\":\"$PROJ/config.json\"}}"
+echo "--- Test 3: markdown .md allowed ---"
+_assert_exit "Test 3: markdown allowed" 0 "{\"tool_input\":{\"file_path\":\"$PROJ/some-doc.md\"}}"
+echo "--- Test 4: CLAUDE.md basename exempt ---"
+_assert_exit "Test 4: CLAUDE.md exempt" 0 "{\"tool_input\":{\"file_path\":\"$PROJ/CLAUDE.md\"}}"
+echo "--- Test 5: .vbw-planning path exempt ---"
+_assert_exit "Test 5: planning path exempt" 0 "{\"tool_input\":{\"file_path\":\"$PROJ/.vbw-planning/phases/01/big-plan.py\"}}"
+echo "--- Test 6: .claude path exempt ---"
+_assert_exit "Test 6: .claude path exempt" 0 "{\"tool_input\":{\"file_path\":\"$PROJ/.claude/hooks/some-hook.sh\"}}"
+echo "--- Test 7: CMM not in .mcp.json -> allowed ---"
+_assert_exit "Test 7: no CMM in .mcp.json allowed" 0 "{\"tool_input\":{\"file_path\":\"$PROJ_NO_CMM/big.py\"}}" "CLAUDE_CONFIG_DIR=$FAKE_CONFIG"
+echo "--- Test 8: no .mcp.json at all -> allowed ---"
+_assert_exit "Test 8: no .mcp.json allowed" 0 "{\"tool_input\":{\"file_path\":\"$PROJ_NO_MCP/big.py\"}}" "CLAUDE_CONFIG_DIR=$FAKE_CONFIG"
+echo "--- Test 9: non-existent file allowed ---"
+_assert_exit "Test 9: non-existent allowed" 0 "{\"tool_input\":{\"file_path\":\"$PROJ/does-not-exist.py\"}}"
+echo "--- Test 10: '# cmm-exempt' marker allowed ---"
+_assert_exit "Test 10: cmm-exempt allowed" 0 "{\"tool_input\":{\"file_path\":\"$PROJ/big.py # cmm-exempt\"}}"
 
-echo "--- Test 1: Large .py file blocked (exit 2) ---"
-_assert_exit "Test 1: large .py blocked" 2 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\"}}"
+# --- Code-file reads are ALWAYS allowed now (former hard-block cases -> exit 0) ---
+echo "--- Test 11: large .py allowed (no hard block) ---"
+_assert_exit "Test 11: large .py allowed" 0 "{\"session_id\":\"sb11\",\"tool_input\":{\"file_path\":\"$PROJ/big.py\"}}"
+echo "--- Test 12: large .ts allowed (no hard block) ---"
+_assert_exit "Test 12: large .ts allowed" 0 "{\"session_id\":\"sb12\",\"tool_input\":{\"file_path\":\"$PROJ/big.ts\"}}"
+echo "--- Test 13: top-level file_path fallback allowed ---"
+_assert_exit "Test 13: top-level file_path allowed" 0 "{\"session_id\":\"sb13\",\"file_path\":\"$PROJ/big.py\"}"
+echo "--- Test 14: offset+limit >100 allowed ---"
+_assert_exit "Test 14: large offset+limit allowed" 0 "{\"session_id\":\"sb14\",\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":0,\"limit\":500}}"
+echo "--- Test 15: offset-only allowed ---"
+_assert_exit "Test 15: offset-only allowed" 0 "{\"session_id\":\"sb15\",\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":10}}"
+echo "--- Test 16: limit-only allowed ---"
+_assert_exit "Test 16: limit-only allowed" 0 "{\"session_id\":\"sb16\",\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"limit\":20}}"
 
-echo "--- Test 2: Large .ts file blocked (exit 2) ---"
-_assert_exit "Test 2: large .ts blocked" 2 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.ts\"}}"
+# --- Per-file soft budget: silent under budget, ONE nudge at BUDGET+1, silent after ---
+BUDGET_JSON="{\"session_id\":\"sbbudget\",\"tool_input\":{\"file_path\":\"$PROJ/big.py\"}}"
+rm -f /tmp/cmm-reads-sbbudget-* 2>/dev/null || true
+echo "--- Test 17: reads 1..BUDGET stay silent ---"
+silent_ok=yes
+for n in $(seq 1 "$READ_BUDGET"); do
+    out=$(echo "$BUDGET_JSON" | bash "$HOOK" 2>/dev/null) || true
+    case "$out" in *"times this session"*) silent_ok=no ;; esac
+done
+if [ "$silent_ok" = yes ]; then echo "PASS: Test 17: first $READ_BUDGET reads silent"; PASS=$((PASS+1));
+else echo "FAIL: Test 17: a read under budget emitted a nudge"; FAIL=$((FAIL+1)); fi
 
-echo "--- Test 3: Small .py file allowed (exit 0) ---"
-_assert_exit "Test 3: small .py allowed" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/small.py\"}}"
+echo "--- Test 18: (BUDGET+1)th read emits the nudge ---"
+_assert_nudge "Test 18: nudge at budget boundary" yes "$BUDGET_JSON"
 
-echo "--- Test 4: Config file (.json) allowed (exit 0) ---"
-_assert_exit "Test 4: config .json allowed" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/config.json\"}}"
+echo "--- Test 19: reads beyond BUDGET+1 are silent again ---"
+_assert_nudge "Test 19: silent after nudging once" no "$BUDGET_JSON"
 
-echo "--- Test 5: Markdown file (.md) allowed (exit 0) ---"
-_assert_exit "Test 5: markdown .md allowed" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/some-doc.md\"}}"
+echo "--- Test 20: budget is per-session (fresh session -> silent) ---"
+rm -f /tmp/cmm-reads-sbfresh-* 2>/dev/null || true
+_assert_nudge "Test 20: fresh session first read silent" no \
+    "{\"session_id\":\"sbfresh\",\"tool_input\":{\"file_path\":\"$PROJ/big.py\"}}"
 
-echo "--- Test 6: CLAUDE.md basename exempt (exit 0) ---"
-_assert_exit "Test 6: CLAUDE.md exempt" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/CLAUDE.md\"}}"
-
-echo "--- Test 7: Planning path exempt (exit 0) ---"
-_assert_exit "Test 7: .vbw-planning path exempt" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/.vbw-planning/phases/01/big-plan.py\"}}"
-
-echo "--- Test 8: .claude/ path exempt (exit 0) ---"
-_assert_exit "Test 8: .claude path exempt" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/.claude/hooks/some-hook.sh\"}}"
-
-echo "--- Test 9: CMM not in .mcp.json -> allowed (exit 0) ---"
-_assert_exit "Test 9: no CMM in .mcp.json allowed" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ_NO_CMM/big.py\"}}" \
-    "CLAUDE_CONFIG_DIR=$FAKE_CONFIG"
-
-echo "--- Test 10: No .mcp.json at all -> allowed (exit 0) ---"
-_assert_exit "Test 10: no .mcp.json allowed" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ_NO_MCP/big.py\"}}" \
-    "CLAUDE_CONFIG_DIR=$FAKE_CONFIG"
-
-echo "--- Test 11: Top-level file_path fallback (exit 2) ---"
-_assert_exit "Test 11: top-level file_path blocked" 2 \
-    "{\"file_path\":\"$PROJ/big.py\"}"
-
-# --- Phase 47 Finding B: targeted-Read exemption requires fresh cmm-recent sentinel ---
-# Compute the project hash using the same algorithm as cmm-nudge.sh (git-toplevel path
-# via md5 -q || md5sum). Must resolve realpath because git rev-parse returns the
-# canonical path which may differ from the symlinked TMPDIR path on macOS.
-# IMPORTANT: this one-liner must stay byte-equivalent to the inline hash command in
-# hooks/global/cmm-nudge.sh (and lib/project-root.sh:105). If either side changes the
-# echo flags, md5 fallback chain, or whitespace handling, the sentinel names will
-# silently diverge again and Tests 21/22 may falsely pass.
-_hash_of() {
-    echo "$1" | md5 -q 2>/dev/null || echo "$1" | md5sum 2>/dev/null | awk '{print $1}'
-}
-PROJ_REAL=$(git -C "$PROJ" rev-parse --show-toplevel)
-PROJ_HASH=$(_hash_of "$PROJ_REAL")
-PROJ_SENTINEL="/tmp/cmm-recent-${PROJ_HASH}"
-
-# Portable helper: set mtime to ~90s in the past (stale for the 60s TTL)
-_touch_stale() {
-    local target="$1"
-    touch "$target"
-    # macOS: touch -t CCYYMMDDhhmm accepts an absolute timestamp; use date -v.
-    # Linux: touch -d "NN seconds ago" works directly.
-    touch -t "$(date -v-2M +%Y%m%d%H%M 2>/dev/null)" "$target" 2>/dev/null \
-        || touch -d "2 minutes ago" "$target" 2>/dev/null
-}
-
-echo "--- Test 12: Targeted Read with offset+limit + fresh sentinel -> allowed (exit 0) ---"
-touch "$PROJ_SENTINEL"
-_assert_exit "Test 12: offset+limit allowed (fresh sentinel)" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":100,\"limit\":20}}"
-
-echo "--- Test 13: Non-existent file -> allowed (exit 0) ---"
-_assert_exit "Test 13: non-existent file allowed" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/does-not-exist.py\"}}"
-
-echo "--- Test 14: Large offset+limit (>100 lines) -> blocked (exit 2) ---"
-_assert_exit "Test 14: large limit still blocked" 2 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":0,\"limit\":500}}"
-
-echo "--- Test 15: Offset only (no limit) -> blocked (exit 2) ---"
-_assert_exit "Test 15: offset-only still blocked" 2 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":10}}"
-
-echo "--- Test 16: Limit only (no offset) -> blocked (exit 2) ---"
-_assert_exit "Test 16: limit-only still blocked" 2 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"limit\":20}}"
-
-# --- Phase 47 Finding B: cmm-recent sentinel gating on targeted-Read ---
-
-echo "--- Test 17: offset+limit with fresh sentinel -> allowed (exit 0) ---"
-touch "$PROJ_SENTINEL"
-_assert_exit "Test 17: offset+limit fresh sentinel" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":10,\"limit\":50}}"
-
-echo "--- Test 18: offset+limit with NO sentinel -> blocked (exit 2) ---"
-rm -f "$PROJ_SENTINEL"
-_assert_exit "Test 18: offset+limit no sentinel blocks" 2 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":10,\"limit\":50}}"
-
-echo "--- Test 19: offset+limit with STALE sentinel -> blocked (exit 2) ---"
-_touch_stale "$PROJ_SENTINEL"
-_assert_exit "Test 19: offset+limit stale sentinel blocks" 2 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"offset\":10,\"limit\":50}}"
-
-echo "--- Test 20: '# cmm-exempt' marker bypasses sentinel check (exit 0) ---"
-rm -f "$PROJ_SENTINEL"
-_assert_exit "Test 20: cmm-exempt marker bypasses sentinel" 0 \
-    "{\"tool_input\":{\"file_path\":\"$PROJ/big.py # cmm-exempt\",\"offset\":10,\"limit\":50}}"
-
-# --- Submodule sentinel-hash agreement (regression for cmm-nudge/track-cmm-calls drift) ---
-# Bug: when FILE_PATH lived inside a git submodule, cmm-nudge.sh hashed the SUBMODULE
-# root via `git rev-parse --show-toplevel`, but track-cmm-calls.sh (via lib/project-root.sh)
-# walked the superproject chain and hashed the OUTERMOST root. The two hooks named
-# different /tmp/cmm-recent-* sentinels, so the offset+limit<=100 exemption never fired
-# inside submodules. Fix: cmm-nudge.sh now also walks the superproject chain. This test
-# pins that contract by touching ONLY the superproject-hash sentinel and asserting that
-# a Read inside the submodule passes the freshness gate.
-echo "--- Test 21: submodule Read uses superproject hash (exit 0) ---"
-SUPER="$TMPDIR_ROOT/super"
-SUB_DIR="$SUPER/sub"
-mkdir -p "$SUPER"
-git -C "$SUPER" init -q
-echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$SUPER/.mcp.json"
-# Build a real submodule (file:// URL ensures git accepts it without a remote).
-SUB_SRC="$TMPDIR_ROOT/sub-src"
-mkdir -p "$SUB_SRC"
-git -C "$SUB_SRC" init -q
-for i in $(seq 1 60); do echo "sub line $i"; done > "$SUB_SRC/sub-big.py"
-git -C "$SUB_SRC" add . >/dev/null 2>&1
-git -C "$SUB_SRC" -c user.email=t@t -c user.name=t commit -qm init
-git -C "$SUPER" -c protocol.file.allow=always submodule add -q "$SUB_SRC" sub
-git -C "$SUPER" -c user.email=t@t -c user.name=t commit -qm super-init
-# Sanity: submodule fixture must exist — guards against silent submodule-add failure
-# on hardened CI that rejects file:// despite the -c flag (vacuous-pass risk).
-[ -f "$SUB_DIR/sub-big.py" ] || { echo "FAIL: submodule fixture missing — submodule add silently failed"; exit 1; }
-SUPER_REAL=$(git -C "$SUPER" rev-parse --show-toplevel)
-SUPER_HASH=$(_hash_of "$SUPER_REAL")
-SUPER_SENTINEL="/tmp/cmm-recent-${SUPER_HASH}"
-SUB_REAL=$(git -C "$SUB_DIR" rev-parse --show-toplevel)
-SUB_HASH=$(_hash_of "$SUB_REAL")
-SUB_SENTINEL="/tmp/cmm-recent-${SUB_HASH}"
-# Sanity: the bug only reproduces when the submodule and superproject hash to
-# different sentinel names. If they collapse to the same value, Test 21 would
-# pass vacuously without exercising the walk.
-[ "$SUPER_HASH" != "$SUB_HASH" ] || { echo "FAIL: Test 21 setup — submodule hash equals superproject hash (bug not reproducible in this fixture)"; exit 1; }
-# Touch ONLY the superproject sentinel; explicitly remove the submodule one.
-touch "$SUPER_SENTINEL"
-rm -f "$SUB_SENTINEL"
-_assert_exit "Test 21: submodule Read honors superproject sentinel" 0 \
-    "{\"tool_input\":{\"file_path\":\"$SUB_DIR/sub-big.py\",\"offset\":1,\"limit\":50}}"
-# Cleanup the test sentinels we wrote.
-rm -f "$SUPER_SENTINEL" "$SUB_SENTINEL"
-
-# --- Worktree sentinel-hash agreement (regression for cmm-nudge/track-cmm-calls drift) ---
-# Same bug class as Test 21, different trigger: `git worktree add` creates a worktree
-# whose toplevel differs from the main repo, but show-superproject-working-tree returns
-# empty for it (worktrees are not submodules). Without git-common-dir worktree detection,
-# cmm-nudge.sh hashed the WORKTREE path while the writer (lib/project-root.sh) hashed
-# the MAIN repo path — names diverged, and the offset+limit<=100 exemption was
-# unreachable inside worktrees. Fix: cmm-nudge.sh now mirrors project-root.sh's
-# git-common-dir worktree branch. This test pins that contract.
-echo "--- Test 22: worktree Read uses main project hash (exit 0) ---"
-WT_MAIN="$TMPDIR_ROOT/wt-main"
-mkdir -p "$WT_MAIN"
-git -C "$WT_MAIN" init -q
-echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$WT_MAIN/.mcp.json"
-for i in $(seq 1 60); do echo "main line $i"; done > "$WT_MAIN/main-big.py"
-git -C "$WT_MAIN" add . >/dev/null 2>&1
-git -C "$WT_MAIN" -c user.email=t@t -c user.name=t commit -qm init
-WT_DIR="$TMPDIR_ROOT/wt-feature"
-git -C "$WT_MAIN" -c user.email=t@t -c user.name=t worktree add -q "$WT_DIR"
-for i in $(seq 1 60); do echo "wt line $i"; done > "$WT_DIR/wt-file.py"
-[ -f "$WT_DIR/wt-file.py" ] || { echo "FAIL: worktree fixture missing — worktree add failed"; exit 1; }
-WT_MAIN_REAL=$(git -C "$WT_MAIN" rev-parse --show-toplevel)
-WT_REAL=$(git -C "$WT_DIR" rev-parse --show-toplevel)
-WT_MAIN_HASH=$(_hash_of "$WT_MAIN_REAL")
-WT_HASH=$(_hash_of "$WT_REAL")
-WT_MAIN_SENTINEL="/tmp/cmm-recent-${WT_MAIN_HASH}"
-WT_SENTINEL="/tmp/cmm-recent-${WT_HASH}"
-# Sanity: worktree path must differ from main repo path → different hashes
-[ "$WT_MAIN_HASH" != "$WT_HASH" ] || { echo "FAIL: Test 22 setup — worktree hash equals main hash (bug not reproducible in this fixture)"; exit 1; }
-# Touch ONLY the main-project sentinel; explicitly remove the worktree-path one.
-touch "$WT_MAIN_SENTINEL"
-rm -f "$WT_SENTINEL"
-_assert_exit "Test 22: worktree Read honors main-project sentinel" 0 \
-    "{\"tool_input\":{\"file_path\":\"$WT_DIR/wt-file.py\",\"offset\":1,\"limit\":50}}"
-rm -f "$WT_MAIN_SENTINEL" "$WT_SENTINEL"
+echo "--- Test 21: '# cmm-exempt' never nudges even when repeated ---"
+exempt_ok=yes
+for n in 1 2 3 4 5; do
+    out=$(echo "{\"session_id\":\"sbexempt\",\"tool_input\":{\"file_path\":\"$PROJ/big.py # cmm-exempt\"}}" | bash "$HOOK" 2>/dev/null) || true
+    case "$out" in *"times this session"*) exempt_ok=no ;; esac
+done
+if [ "$exempt_ok" = yes ]; then echo "PASS: Test 21: cmm-exempt never nudges"; PASS=$((PASS+1));
+else echo "FAIL: Test 21: cmm-exempt path emitted a nudge"; FAIL=$((FAIL+1)); fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

@@ -108,15 +108,15 @@ AGENT_HOOKS=(
 FAKE_CMM_NUDGE="$FAKE_PROJ/.claude/hooks/cmm-nudge.sh"
 FAKE_CTX_ENFORCER="$FAKE_PROJ/.claude/hooks/ctx-execute-enforcer.sh"
 
-# ─── Test: cmm-nudge.sh blocks Read on large code files ──────────────────
-echo "=== cmm-nudge.sh: Read enforcement per agent ==="
+# ─── Test: cmm-nudge.sh — soft per-file read budget (advisory, NEVER blocks) ──
+echo "=== cmm-nudge.sh: Read soft-budget per agent (always exit 0) ==="
 for entry in "${AGENT_HOOKS[@]}"; do
   IFS='|' read -r agent has_nudge has_ctx <<< "$entry"
   [ ! -f "$AGENTS_DIR/$agent.md" ] && continue
   [ "$has_nudge" != "yes" ] && continue
 
-  # Should BLOCK: large code file
-  _assert_hook "$agent: Read large .py BLOCKED" "$FAKE_CMM_NUDGE" 2 \
+  # Should ALLOW (soft budget never blocks): large code file
+  _assert_hook "$agent: Read large .py allowed (soft budget)" "$FAKE_CMM_NUDGE" 0 \
     "{\"tool_input\":{\"file_path\":\"$FAKE_PROJ/big_module.py\"}}"
 
   # Should ALLOW: small code file
@@ -127,16 +127,10 @@ for entry in "${AGENT_HOOKS[@]}"; do
   _assert_hook "$agent: Read .json config allowed" "$FAKE_CMM_NUDGE" 0 \
     "{\"tool_input\":{\"file_path\":\"$FAKE_PROJ/config.json\"}}"
 
-  # Should ALLOW: targeted read with offset+limit — Phase 47 Plan 01 also
-  # requires a fresh /tmp/cmm-recent-<PROJECT_HASH> sentinel (CMM call within
-  # the last 60s). Touch it to simulate a preceding CMM call.
-  touch "/tmp/cmm-recent-${FAKE_PROJ_HASH}"
+  # Should ALLOW: targeted read with offset+limit (no recency gate anymore)
   _assert_hook "$agent: Read offset+limit allowed" "$FAKE_CMM_NUDGE" 0 \
     "{\"tool_input\":{\"file_path\":\"$FAKE_PROJ/big_module.py\",\"offset\":10,\"limit\":20}}"
 done
-
-# Clean up the cmm-recent sentinel so later tests start from a known state.
-rm -f "/tmp/cmm-recent-${FAKE_PROJ_HASH}" 2>/dev/null || true
 
 # ─── Test: ctx-execute-enforcer.sh blocks large-output Bash commands ──────
 echo ""
