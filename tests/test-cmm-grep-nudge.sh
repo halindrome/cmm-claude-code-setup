@@ -145,6 +145,50 @@ _assert_exit "c5: Bash grep src/ CMM absent allowed" 0 \
 # Restore sentinel for any subsequent tests
 echo "ready" > "$BASH_SENTINEL"
 
+# --- Write / heredoc false-positive tests (c6-c9) ---
+# Regression: a write (output redirection > / >> or a heredoc <<) is NOT code
+# navigation. The gate must inspect only the command HEAD (before the first
+# redirection), so write targets and heredoc bodies cannot trip it — even when
+# the body contains a source-path token. Previously `cat > x.gd <<EOF ... EOF`
+# false-positived because `cat` matched the verb and a path token in the body
+# matched the source-path regex.
+
+echo "--- Test c6: Bash heredoc write with src path in body -> exit 0 (ALLOW) ---"
+_assert_exit "c6: heredoc write allowed" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat > /tmp/dump_desk.gd <<'EOF'\nextends Node\nscripts/foo\nEOF\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c7: Bash grep src/ with output redirected -> exit 2 (BLOCKED) ---"
+_assert_exit "c7: redirected grep src/ still blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -rn foo src/ > /tmp/out\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c8: Bash cat of a source file -> exit 2 (BLOCKED) ---"
+_assert_exit "c8: cat src file still blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c9: Bash bare heredoc (no redirect) with lib path in body -> exit 0 (ALLOW) ---"
+_assert_exit "c9: bare heredoc allowed" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat <<'EOF'\nlib/ helpers\nEOF\"},\"cwd\":\"$PROJ_REAL\"}"
+
+# --- QA round 1 (F-01): bare '<' is input-redirect / process-substitution, NOT a
+# heredoc — the path after it is real navigation and must still BLOCK. Only '>' and
+# heredoc '<<' bodies are stripped from the command head.
+echo "--- Test c10: Bash process substitution reading src -> exit 2 (BLOCKED) ---"
+_assert_exit "c10: process substitution src/ blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"diff <(cat src/a.py) /tmp/b\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c11: Bash input redirect from src -> exit 2 (BLOCKED) ---"
+_assert_exit "c11: input redirect src/ blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep foo < src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
+
+# --- Nav verb must match in COMMAND position, not as a substring of an argument ---
+echo "--- Test c12: git add of a file whose name contains 'grep' -> exit 0 (ALLOW) ---"
+_assert_exit "c12: verb substring in filename not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git add hooks/global/cmm-grep-nudge.sh tests/test-cmm-grep-nudge.sh\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c13: real 'wc' verb against src/ still -> exit 2 (BLOCKED) ---"
+_assert_exit "c13: real wc verb still blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"wc -l src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

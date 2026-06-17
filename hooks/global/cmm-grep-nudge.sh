@@ -33,8 +33,29 @@ print(d.get('tool_input',{}).get('command','') or '')
     exit 0
   fi
 
-  # Only block when command is a navigation verb against a source path
-  if echo "$BASH_CMD" | grep -qE '(grep|rg|find|cat|head|tail|wc)' &&      echo "$BASH_CMD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
+  # Only block when command is a navigation verb against a source path.
+  # Inspect only the command HEAD, dropping the two constructs whose trailing text
+  # is CONTENT/DESTINATION rather than a navigation argument:
+  #   - output redirection (`>`, `>>`): everything from the first `>` is a write
+  #     target, not a path being searched. `cat > x.gd <<'EOF' ... EOF` false-
+  #     positived because the verb (cat) matched and a path token in the written
+  #     body matched the source-path regex.
+  #   - heredoc (`<<`): the body is written content, not a search target.
+  # We cut at the first `>` and the first `<<` ONLY — NOT a bare single `<`. A bare
+  # `<` is an input redirect or process substitution (`grep foo < src/x`,
+  # `diff <(cat src/a.py)`) whose path IS real navigation and must still block
+  # (QA round 1, F-01). `2>/dev/null` is safe: the source path precedes the `2>`,
+  # so it survives in the head.
+  BNAV_HEAD="${BASH_CMD%%>*}"
+  BNAV_HEAD="${BNAV_HEAD%%<<*}"
+  # Match the nav verb only in COMMAND position — at the start of the command or
+  # right after a separator (whitespace, |, ;, &, '(') and followed by whitespace
+  # or end. A bare regex like `(grep|...)` matched the verb as a SUBSTRING of an
+  # argument (e.g. `git add hooks/global/cmm-grep-nudge.sh` matched "grep" inside
+  # the filename, and "headers"/"catalog" would match head/cat), false-positiving
+  # on commands that merely name such a file. The path regex stays substring-based
+  # (path fragments legitimately appear mid-argument).
+  if echo "$BNAV_HEAD" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)
     BASH_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)

@@ -1,11 +1,29 @@
 #!/bin/bash
-# cmm-nudge.sh — PreToolUse:Read hook (hard-blocking CMM Read gate)
-# BLOCKING: exits 2 for code files when CMM is available, redirecting to graph tools.
+# cmm-nudge.sh — PreToolUse:Read hook (soft per-file read budget; advisory, NEVER blocks)
+#
+# NON-BLOCKING: always exits 0. For code files (>=50 lines) in CMM-configured repos it
+# maintains a session-scoped per-file read counter. Under the budget it is completely
+# silent. Past the budget it emits an advisory nudge (hookSpecificOutput.additionalContext)
+# suggesting get_code_snippet / search_graph, on a BACK-OFF cadence — every read from
+# (READ_BUDGET+1) through NUDGE_CONSECUTIVE_UNTIL (4,5,6,7,8), then only at successive
+# powers of two (16, 32, 64, …). The read always proceeds; the cadence applies escalating
+# pressure on a genuine re-read loop while keeping the per-read token cost bounded.
+#
+# Why soft, not a hard block (replaces the former exit-2 gate + 60s cmm-recent recency
+# gate): transcript mining showed the hard Read gate was the costliest gate and that the
+# 60s recency exemption mostly TAXED already-bounded targeted reads (which are already
+# token-cheap) while being trivially gameable — net token-negative. A post-hoc block on a
+# single read also can't un-inject bytes, so it saves nothing; only a FORWARD-looking
+# nudge on repeated access of the same file (the pagination pattern Finding B actually
+# cared about) can change behavior and save tokens. So: nudge on repetition, never block.
 #
 # Install: cp hooks/global/cmm-nudge.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/cmm-nudge.sh
 #   (or: setup.sh --project also copies to .claude/hooks/cmm-nudge.sh for agent frontmatter hooks)
 # Register in ~/.claude/settings.json:
 #   "hooks": { "PreToolUse": [{ "matcher": "Read", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-nudge.sh"}] }] }
+
+READ_BUDGET=3              # silent for the first N reads of a file per session
+NUDGE_CONSECUTIVE_UNTIL=8  # past the budget, nudge EVERY read up to here, then back off to powers of two
 
 # --- Input Parsing (dual-form: tool_input.file_path + top-level fallback) ---
 INPUT=$(cat)
@@ -14,77 +32,19 @@ import sys,json
 d=json.load(sys.stdin)
 ti=d.get('tool_input',{})
 fp=ti.get('file_path','') or d.get('file_path','')
-has_offset='1' if (ti.get('offset') is not None and ti.get('limit') is not None) else '0'
-limit=str(ti.get('limit',0))
+sid=d.get('session_id','') or ''
 print(fp)
-print(has_offset)
-print(limit)
+print(sid)
 " 2>/dev/null)
 
 FILE_PATH=$(echo "$PARSED" | sed -n '1p')
-HAS_OFFSET=$(echo "$PARSED" | sed -n '2p')
-READ_LIMIT=$(echo "$PARSED" | sed -n '3p')
+SESSION_ID=$(echo "$PARSED" | sed -n '2p')
 
 [ -z "$FILE_PATH" ] && exit 0
 
-
-
-# --- Exception: Targeted Read with offset+limit (sliced edit workflow) ---
-# Phase 47 Finding B: exemption is gated on a recent CMM call (sentinel < 60s).
-# The offset+limit<=100 guard is NECESSARY but no longer SUFFICIENT.
-if [ "$HAS_OFFSET" = "1" ] && [ "${READ_LIMIT:-0}" -le 100 ] 2>/dev/null; then
-  # Operator bypass marker (mirrors ctx-exempt in ctx-execute-enforcer.sh).
-  if echo "$FILE_PATH" | grep -q '# cmm-exempt'; then
-    exit 0
-  fi
-  # Resolve project root + hash. Anchor on FILE_PATH's git toplevel, then walk the
-  # superproject chain to the outermost root, then re-anchor on the main project
-  # root if FILE_PATH lives inside a `git worktree add`-created worktree. This MUST
-  # match track-cmm-calls.sh's PROJECT_HASH derivation (lib/project-root.sh) so the
-  # sentinel writer and reader agree on the hash.
-  #
-  # The walk + worktree detection is intentionally INLINED rather than sourced from
-  # lib/project-root.sh because the lib derives its cache key from $(pwd) and would
-  # mis-resolve when the test harness invokes the hook from an unrelated tmp dir
-  # (regresses tests 12/17). Keep this block in lockstep with project-root.sh's
-  # superproject walk + git-common-dir worktree branch.
-  _CN_ROOT=$(git -C "$(dirname "$FILE_PATH")" rev-parse --show-toplevel 2>/dev/null)
-  if [ -n "$_CN_ROOT" ]; then
-    _CN_WALK="$_CN_ROOT"
-    while true; do
-      _CN_PARENT="$(git -C "$_CN_WALK" rev-parse --show-superproject-working-tree 2>/dev/null)"
-      [ -z "$_CN_PARENT" ] && break
-      _CN_WALK="$_CN_PARENT"
-    done
-    _CN_ROOT="$_CN_WALK"
-    # Worktree detection: worktrees are NOT submodules — show-superproject-working-tree
-    # returns empty for them. Detect via git-common-dir != git-dir and re-anchor on
-    # the main project root (parent of the common .git dir).
-    _CN_GIT_DIR="$(git -C "$_CN_ROOT" rev-parse --git-dir 2>/dev/null)"
-    _CN_GIT_COMMON="$(git -C "$_CN_ROOT" rev-parse --git-common-dir 2>/dev/null)"
-    [ -n "$_CN_GIT_DIR" ] && [ "${_CN_GIT_DIR:0:1}" != "/" ]       && _CN_GIT_DIR="$_CN_ROOT/$_CN_GIT_DIR"
-    [ -n "$_CN_GIT_COMMON" ] && [ "${_CN_GIT_COMMON:0:1}" != "/" ] && _CN_GIT_COMMON="$_CN_ROOT/$_CN_GIT_COMMON"
-    if [ -n "$_CN_GIT_DIR" ] && [ -n "$_CN_GIT_COMMON" ] && [ "$_CN_GIT_DIR" != "$_CN_GIT_COMMON" ]; then
-      _CN_MAIN="$(cd "$_CN_GIT_COMMON/.." 2>/dev/null && pwd -P)"
-      [ -n "$_CN_MAIN" ] && _CN_ROOT="$_CN_MAIN"
-    fi
-  fi
-  if [ -z "$_CN_ROOT" ]; then
-    _CN_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
-    _CN_ROOT="${_CN_CWD:-}"
-  fi
-  if [ -n "$_CN_ROOT" ]; then
-    _CN_HASH=$(echo "$_CN_ROOT" | md5 -q 2>/dev/null || echo "$_CN_ROOT" | md5sum 2>/dev/null | awk '{print $1}')
-  fi
-  if [ -z "${_CN_HASH:-}" ]; then
-    exit 0  # fail-open: cannot derive hash
-  fi
-  _CN_SENTINEL="/tmp/cmm-recent-${_CN_HASH}"
-  _CN_MTIME=$(date -r "$_CN_SENTINEL" +%s 2>/dev/null)
-  if [ -n "$_CN_MTIME" ] && [ "$(( $(date +%s) - _CN_MTIME ))" -lt 60 ]; then
-    exit 0
-  fi
-  # Sentinel missing or stale: fall through to normal code-file block.
+# Operator bypass marker (mirrors ctx-exempt in ctx-execute-enforcer.sh).
+if echo "$FILE_PATH" | grep -q '# cmm-exempt'; then
+  exit 0
 fi
 
 # --- Exception: Meta/Config Files (check BEFORE extension match) ---
@@ -100,7 +60,7 @@ case "$FILE_PATH" in
   */.vbw-planning/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
 esac
 
-# --- CMM Availability Check (safety valve — don't block if CMM isn't configured) ---
+# --- CMM Availability Check (safety valve — don't nudge if CMM isn't configured) ---
 REPO_ROOT=$(git -C "$(dirname "$FILE_PATH")" rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$REPO_ROOT" ]; then
   CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
@@ -119,7 +79,7 @@ if [ "$CMM_FOUND" = false ]; then
     CMM_FOUND=true
   fi
 fi
-# If CMM not found anywhere, allow Read (fail open)
+# If CMM not found anywhere, stay silent (fail open)
 [ "$CMM_FOUND" = false ] && exit 0
 
 # --- Code Extension Check (inline list + project extra_extensions) ---
@@ -163,23 +123,38 @@ if [ "$(wc -l < "$FILE_PATH" 2>/dev/null)" -lt 50 ]; then
   exit 0
 fi
 
-# --- Block: Redirect to CMM graph tools (stderr, exit 2) ---
-cat >&2 <<EOF
-BLOCKED: Use CMM graph tools instead of Read for '$BASENAME'.
-  - Find by name:  mcp__codebase-memory-mcp__search_graph
-  - Fetch source:  mcp__codebase-memory-mcp__get_code_snippet
-  - Trace callers: mcp__codebase-memory-mcp__trace_path
-  - Edit workflow: search_graph -> get_code_snippet (line range) -> Read(offset=N, limit=M) -> Edit
-  Full Read is allowed when:
-    - targeted read with offset+limit (up to 100 lines)
-    - editing 6+ functions in same file
-    - need imports/globals/module-level init
-    - file < 50 lines
-    - non-code files (JSON, YAML, Markdown, config)
-See skill \`cmm-rules\` for the full protocol.
-EOF
+# --- Per-file soft budget (session-scoped, advisory, NEVER blocks) ---
+# Count reads of THIS file in THIS session. Under budget: silent allow. Past the
+# budget, nudge with a back-off cadence: EVERY read from (READ_BUDGET+1) through
+# NUDGE_CONSECUTIVE_UNTIL (i.e. 4,5,6,7,8), then only at successive powers of two
+# (16, 32, 64, …). This keeps escalating pressure exactly where waste is happening
+# (repeated reads of one file — the pagination pattern) while the cost stays
+# bounded: a single or a few targeted reads are never taxed, and a runaway loop is
+# reminded with diminishing frequency rather than on every read forever. The counter
+# key is (session_id, file_path) so it never accumulates across sessions and there is
+# no project-root hash to diverge (the old cmm-recent submodule/worktree hash-mismatch
+# bug class cannot occur here).
+_SID="${SESSION_ID:-nosession}"
+_FHASH=$(echo -n "$FILE_PATH" | md5 -q 2>/dev/null || echo -n "$FILE_PATH" | md5sum 2>/dev/null | awk '{print $1}')
+_CFILE="/tmp/cmm-reads-${_SID}-${_FHASH}"
+_CNT=$(cat "$_CFILE" 2>/dev/null || echo 0)
+case "$_CNT" in ''|*[!0-9]*) _CNT=0 ;; esac
+_CNT=$((_CNT + 1))
+echo "$_CNT" > "$_CFILE" 2>/dev/null || true
 
-# --- Block Counter ---
-bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "read" 2>/dev/null || true
+# Back-off cadence: nudge on every read in [READ_BUDGET+1 .. NUDGE_CONSECUTIVE_UNTIL],
+# then only when the count is a power of two (16, 32, 64, …). The power-of-two test is
+# `n & (n-1) == 0` (true only for powers of two); gated on > NUDGE_CONSECUTIVE_UNTIL so
+# 8 is covered by the consecutive range, not double-counted.
+_NUDGE=false
+if [ "$_CNT" -ge "$((READ_BUDGET + 1))" ] && [ "$_CNT" -le "$NUDGE_CONSECUTIVE_UNTIL" ]; then
+  _NUDGE=true
+elif [ "$_CNT" -gt "$NUDGE_CONSECUTIVE_UNTIL" ] && [ "$(( _CNT & (_CNT - 1) ))" -eq 0 ]; then
+  _NUDGE=true
+fi
+if [ "$_NUDGE" = true ]; then
+  _MSG="You've read '${BASENAME}' ${_CNT} times this session. For repeated lookups, mcp__codebase-memory-mcp__get_code_snippet(qualified_name=...) or search_graph is usually cheaper than re-reading the whole file. (advisory — this read is allowed)"
+  python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$_MSG" 2>/dev/null || true
+fi
 
-exit 2
+exit 0
