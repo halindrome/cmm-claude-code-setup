@@ -34,15 +34,20 @@ print(d.get('tool_input',{}).get('command','') or '')
   fi
 
   # Only block when command is a navigation verb against a source path.
-  # Inspect only the command HEAD — the text before the first redirection operator.
-  # A write (output redirection >, >> or a heredoc <<) is NOT code navigation, and
-  # heredoc bodies / redirect targets must never trip the gate. Without this,
-  # `cat > x.gd <<'EOF' ... EOF` false-positived: the verb (cat) matched and a path
-  # token inside the written body matched the source-path regex. Cutting at the
-  # first > or < drops write targets and heredoc bodies while still catching real
-  # navigation whose output is redirected (e.g. `grep -rn foo src/ > out`).
+  # Inspect only the command HEAD, dropping the two constructs whose trailing text
+  # is CONTENT/DESTINATION rather than a navigation argument:
+  #   - output redirection (`>`, `>>`): everything from the first `>` is a write
+  #     target, not a path being searched. `cat > x.gd <<'EOF' ... EOF` false-
+  #     positived because the verb (cat) matched and a path token in the written
+  #     body matched the source-path regex.
+  #   - heredoc (`<<`): the body is written content, not a search target.
+  # We cut at the first `>` and the first `<<` ONLY — NOT a bare single `<`. A bare
+  # `<` is an input redirect or process substitution (`grep foo < src/x`,
+  # `diff <(cat src/a.py)`) whose path IS real navigation and must still block
+  # (QA round 1, F-01). `2>/dev/null` is safe: the source path precedes the `2>`,
+  # so it survives in the head.
   BNAV_HEAD="${BASH_CMD%%>*}"
-  BNAV_HEAD="${BNAV_HEAD%%<*}"
+  BNAV_HEAD="${BNAV_HEAD%%<<*}"
   if echo "$BNAV_HEAD" | grep -qE '(grep|rg|find|cat|head|tail|wc)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)

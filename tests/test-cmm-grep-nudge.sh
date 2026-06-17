@@ -169,6 +169,17 @@ echo "--- Test c9: Bash bare heredoc (no redirect) with lib path in body -> exit
 _assert_exit "c9: bare heredoc allowed" 0 \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat <<'EOF'\nlib/ helpers\nEOF\"},\"cwd\":\"$PROJ_REAL\"}"
 
+# --- QA round 1 (F-01): bare '<' is input-redirect / process-substitution, NOT a
+# heredoc — the path after it is real navigation and must still BLOCK. Only '>' and
+# heredoc '<<' bodies are stripped from the command head.
+echo "--- Test c10: Bash process substitution reading src -> exit 2 (BLOCKED) ---"
+_assert_exit "c10: process substitution src/ blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"diff <(cat src/a.py) /tmp/b\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c11: Bash input redirect from src -> exit 2 (BLOCKED) ---"
+_assert_exit "c11: input redirect src/ blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep foo < src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
