@@ -33,8 +33,17 @@ print(d.get('tool_input',{}).get('command','') or '')
     exit 0
   fi
 
-  # Only block when command is a navigation verb against a source path
-  if echo "$BASH_CMD" | grep -qE '(grep|rg|find|cat|head|tail|wc)' &&      echo "$BASH_CMD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
+  # Only block when command is a navigation verb against a source path.
+  # Inspect only the command HEAD — the text before the first redirection operator.
+  # A write (output redirection >, >> or a heredoc <<) is NOT code navigation, and
+  # heredoc bodies / redirect targets must never trip the gate. Without this,
+  # `cat > x.gd <<'EOF' ... EOF` false-positived: the verb (cat) matched and a path
+  # token inside the written body matched the source-path regex. Cutting at the
+  # first > or < drops write targets and heredoc bodies while still catching real
+  # navigation whose output is redirected (e.g. `grep -rn foo src/ > out`).
+  BNAV_HEAD="${BASH_CMD%%>*}"
+  BNAV_HEAD="${BNAV_HEAD%%<*}"
+  if echo "$BNAV_HEAD" | grep -qE '(grep|rg|find|cat|head|tail|wc)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)
     BASH_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
