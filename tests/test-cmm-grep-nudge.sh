@@ -180,6 +180,15 @@ echo "--- Test c11: Bash input redirect from src -> exit 2 (BLOCKED) ---"
 _assert_exit "c11: input redirect src/ blocked" 2 \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep foo < src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
 
+# --- Nav verb must match in COMMAND position, not as a substring of an argument ---
+echo "--- Test c12: git add of a file whose name contains 'grep' -> exit 0 (ALLOW) ---"
+_assert_exit "c12: verb substring in filename not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git add hooks/global/cmm-grep-nudge.sh tests/test-cmm-grep-nudge.sh\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c13: real 'wc' verb against src/ still -> exit 2 (BLOCKED) ---"
+_assert_exit "c13: real wc verb still blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"wc -l src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

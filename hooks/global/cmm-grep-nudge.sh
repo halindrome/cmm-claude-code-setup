@@ -48,7 +48,14 @@ print(d.get('tool_input',{}).get('command','') or '')
   # so it survives in the head.
   BNAV_HEAD="${BASH_CMD%%>*}"
   BNAV_HEAD="${BNAV_HEAD%%<<*}"
-  if echo "$BNAV_HEAD" | grep -qE '(grep|rg|find|cat|head|tail|wc)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
+  # Match the nav verb only in COMMAND position — at the start of the command or
+  # right after a separator (whitespace, |, ;, &, '(') and followed by whitespace
+  # or end. A bare regex like `(grep|...)` matched the verb as a SUBSTRING of an
+  # argument (e.g. `git add hooks/global/cmm-grep-nudge.sh` matched "grep" inside
+  # the filename, and "headers"/"catalog" would match head/cat), false-positiving
+  # on commands that merely name such a file. The path regex stays substring-based
+  # (path fragments legitimately appear mid-argument).
+  if echo "$BNAV_HEAD" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)
     BASH_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
