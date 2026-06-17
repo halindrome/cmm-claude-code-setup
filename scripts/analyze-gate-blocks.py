@@ -23,6 +23,7 @@ Caveats (printed at the end):
 
 Usage:
   python3 scripts/analyze-gate-blocks.py                 # all projects under $CLAUDE_CONFIG_DIR/projects
+  python3 scripts/analyze-gate-blocks.py --all           # explicit "all projects" (same as no args)
   python3 scripts/analyze-gate-blocks.py --project cmm   # projects whose slug contains 'cmm'
   python3 scripts/analyze-gate-blocks.py --file <path.jsonl>
 """
@@ -35,11 +36,16 @@ PROJECTS = os.path.join(CFG, "projects")
 GATE_HOOKS = {
     "ctx-execute-enforcer", "cmm-grep-nudge", "grep-cmm-gate", "cmm-nudge",
     "agent-cmm-gate", "cwd-guard", "session-gate", "cmm-session-gate",
-    "ctx-execute-cmm-nudge",
+    "ctx-execute-cmm-nudge", "cbm-code-discovery-gate",
 }
-HOOK_RE = re.compile(r"/hooks/(?:project/|global/)?([a-z0-9-]+)\.sh")
+# Hook path in a block message. The `.sh` suffix is OPTIONAL: some global gates
+# (e.g. cbm-code-discovery-gate) emit an extensionless path, and requiring `.sh`
+# silently bucketed them as "unknown".
+HOOK_RE = re.compile(r"/hooks/(?:project/|global/)?([a-z0-9-]+)(?:\.sh)?")
 # A block is a hook error tool_result. Match defensively across gate styles.
-BLOCK_MARKERS = ("BLOCKED", "Use CMM", "ctx_execute", "index not ready", "cwd")
+# (No bare "cwd" marker — cwd-guard blocks already carry "BLOCKED"; a 3-char "cwd"
+# substring would over-match unrelated hook errors that merely mention a directory.)
+BLOCK_MARKERS = ("BLOCKED", "Use CMM", "ctx_execute", "index not ready")
 
 
 def text_of(content):
@@ -203,14 +209,27 @@ def new_agg():
 
 def main():
     args = sys.argv[1:]
+
+    def _opt_value(flag):
+        """Value following `flag`, or None if absent. Exits cleanly (not IndexError)
+        when the flag is given with no following value."""
+        if flag in args:
+            i = args.index(flag)
+            if i + 1 >= len(args):
+                print(f"error: {flag} requires a value", file=sys.stderr)
+                sys.exit(2)
+            return args[i + 1]
+        return None
+
     files = []
-    if "--file" in args:
-        files = [args[args.index("--file") + 1]]
-        project_of = {files[0]: "single"}
+    file_arg = _opt_value("--file")
+    if file_arg:
+        files = [file_arg]
+        project_of = {file_arg: "single"}
     else:
-        proj_filter = None
-        if "--project" in args:
-            proj_filter = args[args.index("--project") + 1]
+        # No --file: scan all projects, optionally filtered by --project <substr>.
+        # `--all` is accepted as the explicit "all projects" form (the default).
+        proj_filter = _opt_value("--project")
         project_of = {}
         for slug_dir in sorted(glob.glob(os.path.join(PROJECTS, "*"))):
             slug = os.path.basename(slug_dir)
