@@ -171,7 +171,7 @@ BLOCKED: Use CMM graph tools instead of Read for '$BASENAME'.
   - Trace callers: mcp__codebase-memory-mcp__trace_path
   - Edit workflow: search_graph -> get_code_snippet (line range) -> Read(offset=N, limit=M) -> Edit
   Full Read is allowed when:
-    - targeted read with offset+limit (up to 100 lines)
+    - targeted read with offset+limit (<=100 lines), right after a CMM call (within 60s)
     - editing 6+ functions in same file
     - need imports/globals/module-level init
     - file < 50 lines
