@@ -26,11 +26,24 @@ Usage:
   python3 scripts/analyze-gate-blocks.py --all           # explicit "all projects" (same as no args)
   python3 scripts/analyze-gate-blocks.py --project cmm   # projects whose slug contains 'cmm'
   python3 scripts/analyze-gate-blocks.py --file <path.jsonl>
+  python3 scripts/analyze-gate-blocks.py --all --share   # anonymized output safe to attach to a problem report
+
+--share emits the same aggregate metrics but redacts project identities: the
+"Top projects by blocks" list shows opaque ordinals (project-01, project-02, …)
+instead of slugs, so no usernames, client names, or paths leave your machine.
+All other rows (per-gate counts, costs, FP rates) are aggregate and non-identifying.
 """
 import json, glob, os, re, sys, collections
 
 CFG = os.environ.get("CLAUDE_CONFIG_DIR", os.path.expanduser("~/.claude"))
 PROJECTS = os.path.join(CFG, "projects")
+
+
+def _deprefix(slug):
+    """Strip a leading -Users-<name>-[Sources-] prefix from a project slug for
+    display. Generic — not tied to any one username (the old code hardcoded
+    '-Users-ahby-Sources-', which de-identified only one user's slugs)."""
+    return re.sub(r'^-?Users-[^-]+-(Sources-)?', '', slug) or slug
 
 # Known gate hooks (basename without .sh). Anything else that blocks is "other".
 GATE_HOOKS = {
@@ -209,6 +222,7 @@ def new_agg():
 
 def main():
     args = sys.argv[1:]
+    share = "--share" in args   # anonymized output for problem-report sharing
 
     def _opt_value(flag):
         """Value following `flag`, or None if absent. Exits cleanly (not IndexError)
@@ -281,10 +295,14 @@ def main():
     print(f"Back-to-back block chains (evasion struggle): {agg['chains']}")
     print()
     print("Top projects by blocks:")
-    for slug, n in agg["per_project_blocks"].most_common(8):
-        short = slug.replace("-Users-ahby-Sources-", "").replace("-Users-ahby-", "")
-        print(f"  {n:>5}  {short}")
+    for rank, (slug, n) in enumerate(agg["per_project_blocks"].most_common(8), 1):
+        # --share: opaque ordinal (no name/path leaves the machine). Otherwise a
+        # human-readable, de-prefixed slug for the operator's own local use.
+        label = f"project-{rank:02d}" if share else _deprefix(slug)
+        print(f"  {n:>5}  {label}")
     print()
+    if share:
+        print("(--share mode: project identities redacted to ordinals — safe to attach to an issue.)")
     print("Caveats: detour=next-assistant-turn output only (lower bound); "
           "msg tokens ~chars/4; cache not modeled; FP flags heuristic. "
           "Local installs are --project mode (hooks in each repo's .claude/hooks/).")

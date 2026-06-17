@@ -43,6 +43,7 @@ INSTALL_GLOBAL=false
 INSTALL_PROJECT=false
 SKIP_MCP_CHECK=false
 SKIP_STATUSLINE=false
+WITH_METRICS=false   # opt-in: install scripts/analyze-gate-blocks.py into <scope>/tools/
 # CMM install-scope globals (set by detect_cmm_install_scope; consumed by install_project)
 # Four-value enum: none | global | project | both
 CMM_INSTALL_SCOPE="none"
@@ -2597,6 +2598,7 @@ parse_args() {
       --skip-context-mode) SKIP_CONTEXT_MODE=true ;;
       --no-migrate)      NO_MIGRATE=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
+      --with-metrics)    WITH_METRICS=true ;;
       --reconfigure-statusline) RECONFIGURE_STATUSLINE=true ;;
       --yes|-y)          YES_FLAG=true ;;
       --verify)          VERIFY=true ;;
@@ -2609,7 +2611,7 @@ Installs hooks, rules, and settings for two complementary MCP servers:
   - Context Mode MCP (optional): execution sandboxing + SQLite session persistence, ~98% context reduction
 
 Usage:
-  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--force-local-cmm] [--skip-context-mode] [--no-migrate] [--skip-statusline] [--verify]
+  ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--force-local-cmm] [--skip-context-mode] [--no-migrate] [--skip-statusline] [--with-metrics] [--verify]
 
 Flags:
   --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
@@ -2630,6 +2632,10 @@ Flags:
                     Non-interactive stdin ([ ! -t 0 ]) implies --no-migrate.
   --skip-statusline Skip the CMM statusline installation offer
   --reconfigure-statusline  Re-prompt for statusline component selection (overwrite existing config)
+  --with-metrics    Also install the gate-metrics tool (scripts/analyze-gate-blocks.py)
+                    into <scope>/tools/. Opt-in; off by default. Run it to produce a
+                    token-cost report of the enforcement gates; add --share for an
+                    anonymized version safe to attach to a problem report.
   --yes, -y         Non-interactive mode: accept all defaults without prompting
   --verify          After installing hooks, verify file integrity against CHECKSUMS.sha256
   --help, -h        Show this help message
@@ -2668,6 +2674,37 @@ HELP
 }
 
 # ---------------------------------------------------------------------------
+# Optional metrics tool install (--with-metrics) — opt-in, OFF by default.
+# Copies the standalone gate-cost miner into <scope>/tools/ so it is runnable
+# outside the cloned repo. It is a plain CLI (NOT a hook or skill): the user runs
+#   python3 <scope>/tools/analyze-gate-blocks.py --all --share
+# and attaches the (anonymized) output to a problem report.
+# ---------------------------------------------------------------------------
+install_metrics_tool() {
+  [ "$WITH_METRICS" = true ] || return 0
+  local src="$SCRIPT_DIR/scripts/analyze-gate-blocks.py"
+  if [ ! -f "$src" ]; then
+    echo "  [warn] metrics tool not found at $src — skipping --with-metrics" >&2
+    return 0
+  fi
+  echo ""
+  echo "Installing gate-metrics tool (--with-metrics)..."
+  if [ "$INSTALL_GLOBAL" = true ]; then
+    local gdir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/tools"
+    [ "$DRY_RUN" = true ] || mkdir -p "$gdir"
+    copy_file "$src" "$gdir/analyze-gate-blocks.py"
+    set_executable "$gdir/analyze-gate-blocks.py"
+    echo "  [info] Run: python3 \"$gdir/analyze-gate-blocks.py\" --all --share"
+  fi
+  if [ "$INSTALL_PROJECT" = true ]; then
+    [ "$DRY_RUN" = true ] || mkdir -p ".claude/tools"
+    copy_file "$src" ".claude/tools/analyze-gate-blocks.py"
+    set_executable ".claude/tools/analyze-gate-blocks.py"
+    echo "  [info] Run: python3 .claude/tools/analyze-gate-blocks.py --all --share"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -2684,6 +2721,8 @@ main() {
   if [ "$INSTALL_PROJECT" = true ]; then
     install_project
   fi
+
+  install_metrics_tool
 
   verify_installation
 

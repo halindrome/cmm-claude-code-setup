@@ -333,6 +333,40 @@ Our own project hooks (`session-gate`, `ctx-execute-enforcer`, `cmm-nudge`, etc.
 > **Matcher-drift heal (overwrites user matcher edits on upstream entries).**
 > On every `setup.sh --project` run, the merge finds each upstream entry by substring match on either `hook claude-code <event>` (legacy/npx form) or `context-mode-hook-dispatch.sh <event>` (current form). It rewrites the `matcher` field back to the upstream default if the two diverge; this keeps all installs on the same tool-coverage contract. **User customizations to the `matcher` field on these five entries are overwritten.** User customizations appended to the dispatcher command (e.g. `bash /path/dispatch.sh posttooluse --verbose`) are preserved — the heal only rewrites the command when `context-mode-hook-dispatch.sh <event>` is absent. Early phase-51 installs using the bare-form or npx-launcher commands are rewritten in-place to the dispatcher form on re-run. Matchers on your other (non-upstream) hook entries — including the CMM enforcement hooks and anything you added by hand — are never touched.
 
+## Diagnostics & problem reports
+
+If the enforcement gates feel like they're misfiring — blocking things they shouldn't, or
+Claude doesn't seem to be using the CMM/Context-Mode tools the way the rules intend — you can
+capture a token-cost report of the gates and attach it to a problem report.
+
+**The tool:** `scripts/analyze-gate-blocks.py` — a standalone, read-only Python CLI (no Claude
+session, no network, no writes). It scans your Claude Code session transcripts and reports, per
+gate, how often each fired and what it cost in tokens (injected block messages + the follow-up
+reasoning), plus high-confidence false-positive blocks.
+
+**Two ways to run it:**
+
+```bash
+# A) Straight from a cloned repo (always present):
+python3 scripts/analyze-gate-blocks.py --all --share
+
+# B) Installed copy, if you ran setup.sh --with-metrics (opt-in; off by default):
+python3 ~/.claude/tools/analyze-gate-blocks.py --all --share     # --global install
+python3 .claude/tools/analyze-gate-blocks.py --all --share       # --project install
+```
+
+> **Always use `--share` when posting publicly.** It redacts project identities — the
+> "Top projects by blocks" list shows opaque ordinals (`project-01`, …) instead of slugs, so no
+> usernames, client/project names, or paths leave your machine. All other rows are aggregate and
+> non-identifying. (Omit `--share` for full, named output for your own local use.)
+
+Attach the `--share` output to an issue at
+<https://github.com/halindrome/cmm-claude-code-setup/issues>.
+
+**Also worth trying first:** just ask Claude directly — *"why aren't you using your CMM /
+context-mode rules and tools?"* It can often explain (e.g. the repo isn't indexed, a gate is
+failing open, or a rule is being misread) and self-correct without a report.
+
 ## Benchmarks
 
 The `benchmarks/` directory contains a reproducible benchmark suite comparing three variants:
