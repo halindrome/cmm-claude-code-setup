@@ -3,10 +3,11 @@
 #
 # NON-BLOCKING: always exits 0. For code files (>=50 lines) in CMM-configured repos it
 # maintains a session-scoped per-file read counter. Under the budget it is completely
-# silent. On the (READ_BUDGET+1)th read of the SAME file in a session it emits ONE
-# advisory nudge (hookSpecificOutput.additionalContext) suggesting get_code_snippet /
-# search_graph for repeated lookups; the read still proceeds. Beyond that it is silent
-# again (already nudged).
+# silent. Past the budget it emits an advisory nudge (hookSpecificOutput.additionalContext)
+# suggesting get_code_snippet / search_graph, on a BACK-OFF cadence — every read from
+# (READ_BUDGET+1) through NUDGE_CONSECUTIVE_UNTIL (4,5,6,7,8), then only at successive
+# powers of two (16, 32, 64, …). The read always proceeds; the cadence applies escalating
+# pressure on a genuine re-read loop while keeping the per-read token cost bounded.
 #
 # Why soft, not a hard block (replaces the former exit-2 gate + 60s cmm-recent recency
 # gate): transcript mining showed the hard Read gate was the costliest gate and that the
@@ -21,7 +22,8 @@
 # Register in ~/.claude/settings.json:
 #   "hooks": { "PreToolUse": [{ "matcher": "Read", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-nudge.sh"}] }] }
 
-READ_BUDGET=3   # silent for the first N reads of a file per session; nudge once on the (N+1)th
+READ_BUDGET=3              # silent for the first N reads of a file per session
+NUDGE_CONSECUTIVE_UNTIL=8  # past the budget, nudge EVERY read up to here, then back off to powers of two
 
 # --- Input Parsing (dual-form: tool_input.file_path + top-level fallback) ---
 INPUT=$(cat)
@@ -122,12 +124,16 @@ if [ "$(wc -l < "$FILE_PATH" 2>/dev/null)" -lt 50 ]; then
 fi
 
 # --- Per-file soft budget (session-scoped, advisory, NEVER blocks) ---
-# Count reads of THIS file in THIS session. Under budget: silent allow. On the
-# (READ_BUDGET+1)th read: emit ONE advisory nudge and allow. Beyond that: silent.
-# The counter key is (session_id, file_path) so it never accumulates across sessions
-# and there is no project-root hash to diverge (the old cmm-recent submodule/worktree
-# hash-mismatch bug class cannot occur here). A single or few targeted reads are never
-# taxed — only genuine repeated access of one file (the pagination pattern) is nudged.
+# Count reads of THIS file in THIS session. Under budget: silent allow. Past the
+# budget, nudge with a back-off cadence: EVERY read from (READ_BUDGET+1) through
+# NUDGE_CONSECUTIVE_UNTIL (i.e. 4,5,6,7,8), then only at successive powers of two
+# (16, 32, 64, …). This keeps escalating pressure exactly where waste is happening
+# (repeated reads of one file — the pagination pattern) while the cost stays
+# bounded: a single or a few targeted reads are never taxed, and a runaway loop is
+# reminded with diminishing frequency rather than on every read forever. The counter
+# key is (session_id, file_path) so it never accumulates across sessions and there is
+# no project-root hash to diverge (the old cmm-recent submodule/worktree hash-mismatch
+# bug class cannot occur here).
 _SID="${SESSION_ID:-nosession}"
 _FHASH=$(echo -n "$FILE_PATH" | md5 -q 2>/dev/null || echo -n "$FILE_PATH" | md5sum 2>/dev/null | awk '{print $1}')
 _CFILE="/tmp/cmm-reads-${_SID}-${_FHASH}"
@@ -136,7 +142,17 @@ case "$_CNT" in ''|*[!0-9]*) _CNT=0 ;; esac
 _CNT=$((_CNT + 1))
 echo "$_CNT" > "$_CFILE" 2>/dev/null || true
 
-if [ "$_CNT" -eq "$((READ_BUDGET + 1))" ]; then
+# Back-off cadence: nudge on every read in [READ_BUDGET+1 .. NUDGE_CONSECUTIVE_UNTIL],
+# then only when the count is a power of two (16, 32, 64, …). The power-of-two test is
+# `n & (n-1) == 0` (true only for powers of two); gated on > NUDGE_CONSECUTIVE_UNTIL so
+# 8 is covered by the consecutive range, not double-counted.
+_NUDGE=false
+if [ "$_CNT" -ge "$((READ_BUDGET + 1))" ] && [ "$_CNT" -le "$NUDGE_CONSECUTIVE_UNTIL" ]; then
+  _NUDGE=true
+elif [ "$_CNT" -gt "$NUDGE_CONSECUTIVE_UNTIL" ] && [ "$(( _CNT & (_CNT - 1) ))" -eq 0 ]; then
+  _NUDGE=true
+fi
+if [ "$_NUDGE" = true ]; then
   _MSG="You've read '${BASENAME}' ${_CNT} times this session. For repeated lookups, mcp__codebase-memory-mcp__get_code_snippet(qualified_name=...) or search_graph is usually cheaper than re-reading the whole file. (advisory — this read is allowed)"
   python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$_MSG" 2>/dev/null || true
 fi

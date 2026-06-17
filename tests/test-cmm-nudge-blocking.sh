@@ -124,23 +124,37 @@ _assert_exit "Test 15: offset-only allowed" 0 "{\"session_id\":\"sb15\",\"tool_i
 echo "--- Test 16: limit-only allowed ---"
 _assert_exit "Test 16: limit-only allowed" 0 "{\"session_id\":\"sb16\",\"tool_input\":{\"file_path\":\"$PROJ/big.py\",\"limit\":20}}"
 
-# --- Per-file soft budget: silent under budget, ONE nudge at BUDGET+1, silent after ---
+# --- Per-file soft budget: silent under budget, then back-off nudge cadence ---
+# Cadence: nudge EVERY read from 4 through NUDGE_CONSECUTIVE_UNTIL (8), then only at
+# powers of two (16, 32, ...). Drive 32 reads of one file in one session and record
+# which read indices emitted a nudge.
 BUDGET_JSON="{\"session_id\":\"sbbudget\",\"tool_input\":{\"file_path\":\"$PROJ/big.py\"}}"
 rm -f /tmp/cmm-reads-sbbudget-* 2>/dev/null || true
-echo "--- Test 17: reads 1..BUDGET stay silent ---"
-silent_ok=yes
-for n in $(seq 1 "$READ_BUDGET"); do
+nudged=""
+for n in $(seq 1 32); do
     out=$(echo "$BUDGET_JSON" | bash "$HOOK" 2>/dev/null) || true
-    case "$out" in *"times this session"*) silent_ok=no ;; esac
+    case "$out" in *"times this session"*) nudged="$nudged $n" ;; esac
 done
-if [ "$silent_ok" = yes ]; then echo "PASS: Test 17: first $READ_BUDGET reads silent"; PASS=$((PASS+1));
-else echo "FAIL: Test 17: a read under budget emitted a nudge"; FAIL=$((FAIL+1)); fi
+nudged="${nudged# }"
 
-echo "--- Test 18: (BUDGET+1)th read emits the nudge ---"
-_assert_nudge "Test 18: nudge at budget boundary" yes "$BUDGET_JSON"
+echo "--- Test 17: nudge cadence is '4 5 6 7 8 16 32' ---"
+if [ "$nudged" = "4 5 6 7 8 16 32" ]; then
+    echo "PASS: Test 17: cadence = [$nudged]"; PASS=$((PASS+1))
+else
+    echo "FAIL: Test 17: cadence = [$nudged], expected [4 5 6 7 8 16 32]"; FAIL=$((FAIL+1))
+fi
 
-echo "--- Test 19: reads beyond BUDGET+1 are silent again ---"
-_assert_nudge "Test 19: silent after nudging once" no "$BUDGET_JSON"
+echo "--- Test 18: reads 1..3 (under budget) never nudge ---"
+case " $nudged " in
+    *" 1 "*|*" 2 "*|*" 3 "*) echo "FAIL: Test 18: a sub-budget read nudged"; FAIL=$((FAIL+1)) ;;
+    *) echo "PASS: Test 18: reads 1-3 silent"; PASS=$((PASS+1)) ;;
+esac
+
+echo "--- Test 19: a read between cadence points (9, 17) is silent ---"
+case " $nudged " in
+    *" 9 "*|*" 17 "*) echo "FAIL: Test 19: a between-points read nudged"; FAIL=$((FAIL+1)) ;;
+    *) echo "PASS: Test 19: reads 9 and 17 silent"; PASS=$((PASS+1)) ;;
+esac
 
 echo "--- Test 20: budget is per-session (fresh session -> silent) ---"
 rm -f /tmp/cmm-reads-sbfresh-* 2>/dev/null || true
