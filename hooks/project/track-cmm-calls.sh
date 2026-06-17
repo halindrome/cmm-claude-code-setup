@@ -71,11 +71,8 @@ with open('$TEMP', 'w') as f:
     f.write('\n')
 " 2>/dev/null && mv "$TEMP" "$COUNTER_FILE" 2>/dev/null || rm -f "$TEMP"
 
-# --- Recent-call sentinel (Phase 47 Finding B) ---
-# Library-sourced branch may not compute PROJECT_HASH; ensure we have one.
-if [ -z "${PROJECT_HASH:-}" ] && [ -n "${PROJECT_ROOT:-}" ]; then
-    PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
-fi
-[ -n "${PROJECT_HASH:-}" ] && touch "/tmp/cmm-recent-${PROJECT_HASH}" 2>/dev/null || true
+# NOTE: the /tmp/cmm-recent-${PROJECT_HASH} sentinel (Phase 47 Finding B) was removed
+# when cmm-nudge.sh moved from a hard-block + 60s recency gate to a soft per-file read
+# budget. There is no longer a recency consumer, so this hook only maintains call counts.
 
 exit 0
