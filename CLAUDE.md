@@ -47,7 +47,7 @@ Before marking any PR ready for review, follow the QA cycle defined in `CONTRIBU
 3. **Repeat** — Fresh QA session each round until findings are clean or only minor/hypothetical.
 4. **Post reports** — Paste each round's QA report as a separate PR comment.
 
-> **Skip condition:** Docs-only PRs (no changes to `hooks/`, `setup.sh`, or `rules/`) skip the QA cycle.
+> **Skip condition:** Docs-only PRs (no changes to `hooks/`, `setup.sh`, `rules/`, or `agents/`) skip the QA cycle.
 
 ## Merge Requirements
 

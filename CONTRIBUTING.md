@@ -57,7 +57,7 @@ feature/my-work
 4. Test your changes against at least one real project.
 5. **Run QA review before marking ready.** Repeat this cycle at least 2–4 times:
 
-   > **Docs-only PRs:** The QA round requirement only applies when the PR touches hook scripts (`hooks/`), the installer (`setup.sh`), or rule templates (`rules/`). PRs that only change docs or repo metadata skip the check automatically.
+   > **Docs-only PRs:** The QA round requirement only applies when the PR touches hook scripts (`hooks/`), the installer (`setup.sh`), rule templates (`rules/`), or agent definitions (`agents/`, including agent frontmatter installed under `.claude/agents/`). PRs that only change docs or repo metadata skip the check automatically.
 
    **Step A — Run the QA prompt.** Open a **new** Claude Code (or other AI) session using a top-tier model — **Claude Opus 4.6** or equivalent. Smaller models don't produce thorough enough reviews. Paste the prompt below (fill in the placeholders):
 
