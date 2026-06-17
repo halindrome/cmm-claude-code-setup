@@ -3,8 +3,8 @@
 **Project:** cmm-claude-code-setup
 
 ## Current Phase
-Phase: 36 of 36 (Sync Context Mode v1.0.122 + Prohibit head/tail in ctx_execute)
-Plans: 3/3
+Phase: 63 of 63 (Refresh ctx/cmm Rule Files for Upstream Tool Versions)
+Plans: 1/1
 Progress: 100%
 Status: all_done
 
