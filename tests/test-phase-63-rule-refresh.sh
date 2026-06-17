@@ -99,9 +99,20 @@ _grep_assert "cmm-rules documents qualified_name fallback" \
   'qualified_name' "rules/cmm-rules.md"
 
 echo ""
-echo "--- (e) cmm-rules: LSP call-graph accuracy note present ---"
+echo "--- (e) cmm-rules: LSP call-graph accuracy note present + correct language set ---"
 _grep_assert "cmm-rules mentions LSP" \
   'LSP' "rules/cmm-rules.md"
+# LSP-resolved set must match upstream v0.8.1 (cbm_pxc_has_cross_lsp switch):
+# CUDA is resolved (must be listed); Rust is NOT (must not be in the resolved list);
+# Perl is NOT upstream (its LSP support is an unlanded PR — must not appear at all).
+_grep_assert "cmm-rules LSP set includes CUDA (resolved upstream)" \
+  'C/C++/CUDA' "rules/cmm-rules.md"
+_grep_absent "cmm-rules does NOT list Rust among LSP-resolved families" \
+  'Kotlin, Rust' "rules/cmm-rules.md"
+_grep_assert "cmm-rules notes unresolved languages fall back to heuristics" \
+  'NOT cross-file LSP-resolved' "rules/cmm-rules.md"
+_grep_absent "cmm-rules does NOT mention Perl LSP (unlanded upstream)" \
+  'Perl' "rules/cmm-rules.md"
 
 echo ""
 echo "--- (f) installed .claude/rules/ctx-rules.md matches source ---"
