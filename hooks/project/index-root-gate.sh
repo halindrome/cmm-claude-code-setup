@@ -7,20 +7,26 @@
 #   "hooks": { "PreToolUse": [{ "matcher": "mcp__codebase-memory-mcp__index_repository", "hooks": [{"type": "command", "command": "bash .claude/hooks/index-root-gate.sh"}] }] }
 # Matcher: PreToolUse:mcp__codebase-memory-mcp__index_repository
 
-# --- CMM availability check (.mcp.json probe) ---
-# Fail open if CMM is not registered — matches grep-cmm-gate.sh / cmm-nudge.sh convention
-_PROBE_DIR="${PWD}"
-CMM_FOUND=false
-if [ -f "${_PROBE_DIR}/.mcp.json" ] && grep -q 'codebase-memory-mcp' "${_PROBE_DIR}/.mcp.json" 2>/dev/null; then
-    CMM_FOUND=true
+# --- Read repo_path from hook JSON payload ---
+# Claude Code passes the tool input as JSON on stdin; CLAUDE_TOOL_INPUT env var is tried first
+INPUT="${CLAUDE_TOOL_INPUT:-}"
+if [ -z "$INPUT" ]; then
+    INPUT=$(cat 2>/dev/null)
 fi
-if [ "$CMM_FOUND" = false ]; then
-    CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-    if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-        CMM_FOUND=true
-    fi
-fi
-[ "$CMM_FOUND" = false ] && exit 0
+[ -z "$INPUT" ] && exit 0
+
+REPO_PATH=$(echo "$INPUT" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+ti = d.get('tool_input', d) or {}
+print(ti.get('repo_path', '') or '')
+" 2>/dev/null)
+
+# Fail open if repo_path is empty or parse failed
+[ -z "$REPO_PATH" ] && exit 0
 
 # --- Project root detection (shared library with /tmp cache) ---
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
@@ -43,26 +49,21 @@ fi
 # Fail open if PROJECT_ROOT is empty or unresolvable
 [ -z "$PROJECT_ROOT" ] && exit 0
 
-# --- Read repo_path from hook JSON payload ---
-# Claude Code passes the tool input as JSON on stdin (CLAUDE_TOOL_INPUT env var preferred)
-INPUT="${CLAUDE_TOOL_INPUT:-}"
-if [ -z "$INPUT" ]; then
-    INPUT=$(cat 2>/dev/null)
+# --- CMM availability check (.mcp.json probe, using resolved PROJECT_ROOT) ---
+# Matches grep-cmm-gate.sh / cmm-nudge.sh convention: probe PROJECT_ROOT/.mcp.json first,
+# then fall back to global Claude Code settings.
+CMM_FOUND=false
+if [ -f "${PROJECT_ROOT}/.mcp.json" ] && grep -q 'codebase-memory-mcp' "${PROJECT_ROOT}/.mcp.json" 2>/dev/null; then
+    CMM_FOUND=true
 fi
-[ -z "$INPUT" ] && exit 0
-
-REPO_PATH=$(echo "$INPUT" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-ti = d.get('tool_input', d) or {}
-print(ti.get('repo_path', '') or '')
-" 2>/dev/null)
-
-# Fail open if repo_path is empty or jq/python parse failed
-[ -z "$REPO_PATH" ] && exit 0
+if [ "$CMM_FOUND" = false ]; then
+    CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+    if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
+        CMM_FOUND=true
+    fi
+fi
+# Fail open if CMM is not registered anywhere
+[ "$CMM_FOUND" = false ] && exit 0
 
 # --- Resolve repo_path to absolute path ---
 # Handle relative paths by resolving against $PWD
@@ -81,11 +82,9 @@ PROJECT_ROOT_CANON="$(cd "$PROJECT_ROOT" 2>/dev/null && pwd -P)" || PROJECT_ROOT
 # Allow: repo_path equals the project root exactly
 [ "$REPO_PATH_CANON" = "$PROJECT_ROOT_CANON" ] && exit 0
 
-# Allow: repo_path is a parent (ancestor) of the project root — not a descendant
-# (e.g. indexing the whole disk root or a parent monorepo)
-# A descendant starts with PROJECT_ROOT_CANON/ (note trailing slash to avoid partial matches)
+# Hard block: repo_path is a strict descendant of PROJECT_ROOT
+# A descendant starts with PROJECT_ROOT_CANON/ (note trailing slash to avoid partial basename matches)
 if [[ "$REPO_PATH_CANON" == "${PROJECT_ROOT_CANON}/"* ]]; then
-    # Hard block: repo_path is a strict descendant of PROJECT_ROOT
     cat >&2 <<EOF
 [index-root-gate] BLOCKED — subtree indexing in monorepo is not allowed.
   Attempted repo_path : $REPO_PATH_CANON
@@ -98,5 +97,5 @@ EOF
     exit 2
 fi
 
-# Allow: any other path (parent, unrelated, equal — all non-descendant cases)
+# Allow: any other path (parent, unrelated — all non-descendant cases)
 exit 0
