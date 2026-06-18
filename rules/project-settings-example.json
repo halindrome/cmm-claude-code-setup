@@ -22,6 +22,16 @@
         ]
       },
       {
+        "matcher": "mcp__codebase-memory-mcp__index_repository",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/index-root-gate.sh",
+            "_comment": "Hard-blocks index_repository when repo_path is a strict descendant of PROJECT_ROOT; prevents stray sub-tree CMM indices in monorepos (no-ops if CMM not installed)"
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {
