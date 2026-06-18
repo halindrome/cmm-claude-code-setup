@@ -26,6 +26,14 @@ Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do n
 
 `Read` is correct for: non-code files (JSON, YAML, config, Markdown), full-file context (imports, globals), files under 50 lines, and files not yet indexed.
 
+### Monorepo indexing
+
+Always index/query the repository root — pass the monorepo root to `index_repository`, never a subdirectory or sub-package path. Indexing a subtree creates a stray CMM project whose name does not match the root index; the sentinel gate clears silently and all subsequent queries run against the wrong scope.
+
+Before calling `index_repository`, call `list_projects` and check whether any existing entry has a path that is an **ancestor** of (or equal to) the target path. If such an entry exists, use that index rather than creating a new one.
+
+CMM project names are path-derived (`…cvx_6004-apps-rest-api` vs `…cvx_6004`), so a subtree entry will **not** match a root-level lookup. Look for ancestor paths, not substring matches — the monorepo root index already covers every file in any subdirectory.
+
 ### CMM vs. context-mode
 
 CMM indexes code symbols across sessions (persistent graph of functions/classes/modules). Context-mode captures tool output within one session (FTS5 search over Bash/Read/Grep results). Use CMM for "where is this function defined"; use `ctx_search` for "what did my last test run print".
