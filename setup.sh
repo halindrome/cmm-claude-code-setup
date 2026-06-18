@@ -1515,13 +1515,22 @@ write_version_stamp() {
     echo "  [DRY RUN] Would write ${target_dir}/.cmm-stack-version (version ${_ver})"
     return 0
   fi
-  mkdir -p "$target_dir"
-  {
+  # Fully fail-safe: a stamp failure must never abort the install under
+  # `set -euo pipefail`, so the mkdir and the write are guarded the same way the
+  # value lookups above are. The marker is a diagnostic convenience, not load-bearing.
+  if ! mkdir -p "$target_dir" 2>/dev/null; then
+    echo "  [warn] version stamp skipped: cannot create ${target_dir}" >&2
+    return 0
+  fi
+  if {
     echo "$_ver"
     echo "commit=${_sha}"
     echo "installed=${_date}"
-  } > "${target_dir}/.cmm-stack-version"
-  echo "  [ok] Stamped version ${_ver} -> ${target_dir}/.cmm-stack-version"
+  } > "${target_dir}/.cmm-stack-version" 2>/dev/null; then
+    echo "  [ok] Stamped version ${_ver} -> ${target_dir}/.cmm-stack-version"
+  else
+    echo "  [warn] version stamp skipped: cannot write ${target_dir}/.cmm-stack-version" >&2
+  fi
 }
 
 install_global() {

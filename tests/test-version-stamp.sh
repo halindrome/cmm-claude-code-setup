@@ -9,6 +9,7 @@
 #      and returns 0 (never aborts the install under set -euo pipefail)
 #   T4 install_global invokes the stamp with the global config dir
 #   T5 install_project invokes the stamp with the project .claude dir
+#   T6 is fail-safe on write — an uncreatable target never aborts the installer
 #
 # The helper is extracted from setup.sh and sourced standalone, so the installer's
 # main() never runs. T4/T5 are static guards against a future refactor dropping
@@ -68,13 +69,17 @@ fi
 rm -rf "$T2_OUT"
 
 # --- T3: fail-safe fallback (no VERSION, not a git repo) ---
-T3_FAKE="$(mktemp -d)" # empty: no VERSION, no .git
+# Point SCRIPT_DIR at a guaranteed-absent path: `cat VERSION` -> unknown and
+# `git -C <absent>` -> rc 128 -> nogit, independent of $TMPDIR placement. (A real
+# mktemp dir could sit inside a git checkout and inherit a SHA, which would make
+# the `nogit` assertion spuriously fail — see QA round 2 F-01.)
 T3_OUT="$(mktemp -d)"
+T3_ABSENT="$T3_OUT/__absent__" # never created
 T3_RC=0
 (
   set -euo pipefail # mirror the installer's strict mode
   DRY_RUN=false
-  SCRIPT_DIR="$T3_FAKE"
+  SCRIPT_DIR="$T3_ABSENT"
   source "$FUNC_FILE"
   write_version_stamp "$T3_OUT" >/dev/null 2>&1
 ) || T3_RC=$?
@@ -85,7 +90,7 @@ if [ "$T3_RC" -eq 0 ] &&
 else
   _fail "T3 fallback failed (rc=$T3_RC, line1='$(head -1 "$T3_OUT/.cmm-stack-version" 2>/dev/null)')"
 fi
-rm -rf "$T3_FAKE" "$T3_OUT"
+rm -rf "$T3_OUT"
 
 # --- T4/T5: both install scopes invoke the stamp ---
 if grep -qE 'write_version_stamp "\$\{config_dir\}"' "$SETUP"; then
@@ -98,6 +103,26 @@ if grep -qE 'write_version_stamp "\.claude"' "$SETUP"; then
 else
   _fail "T5 install_project does not call write_version_stamp"
 fi
+
+# --- T6: fail-safe write — an uncreatable target never aborts the installer ---
+# `blocker` is a regular file, so `mkdir -p "$blocker/sub"` fails. Under
+# set -euo pipefail the helper must still return 0 (warn, don't abort).
+T6_ROOT="$(mktemp -d)"
+: > "$T6_ROOT/blocker"
+T6_RC=0
+(
+  set -euo pipefail
+  DRY_RUN=false
+  SCRIPT_DIR="$REPO_ROOT"
+  source "$FUNC_FILE"
+  write_version_stamp "$T6_ROOT/blocker/sub" >/dev/null 2>&1
+) || T6_RC=$?
+if [ "$T6_RC" -eq 0 ] && [ ! -e "$T6_ROOT/blocker/sub/.cmm-stack-version" ]; then
+  _pass "T6 uncreatable target returns 0 (install not aborted), writes no marker"
+else
+  _fail "T6 fail-safe write aborted or wrote a marker (rc=$T6_RC)"
+fi
+rm -rf "$T6_ROOT"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
