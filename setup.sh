@@ -1498,6 +1498,41 @@ PY
 # install_global
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# write_version_stamp <target_config_dir>
+# ---------------------------------------------------------------------------
+# Drop a .cmm-stack-version marker into an install target so a user can tell
+# which version of the stack they are running with a single `cat`. Line 1 is the
+# bare version (from VERSION); extra lines carry the source commit and install
+# date for diagnosing dev/unreleased installs. Honors $DRY_RUN.
+write_version_stamp() {
+  local target_dir="$1"
+  local _ver _sha _date
+  _ver=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "unknown")
+  _sha=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo "nogit")
+  _date=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would write ${target_dir}/.cmm-stack-version (version ${_ver})"
+    return 0
+  fi
+  # Fully fail-safe: a stamp failure must never abort the install under
+  # `set -euo pipefail`, so the mkdir and the write are guarded the same way the
+  # value lookups above are. The marker is a diagnostic convenience, not load-bearing.
+  if ! mkdir -p "$target_dir" 2>/dev/null; then
+    echo "  [warn] version stamp skipped: cannot create ${target_dir}" >&2
+    return 0
+  fi
+  if {
+    echo "$_ver"
+    echo "commit=${_sha}"
+    echo "installed=${_date}"
+  } > "${target_dir}/.cmm-stack-version" 2>/dev/null; then
+    echo "  [ok] Stamped version ${_ver} -> ${target_dir}/.cmm-stack-version"
+  else
+    echo "  [warn] version stamp skipped: cannot write ${target_dir}/.cmm-stack-version" >&2
+  fi
+}
+
 install_global() {
   echo "[GLOBAL INSTALL]"
 
@@ -1565,6 +1600,8 @@ install_global() {
   purge_deprecated_hooks "${config_dir}/hooks" "${config_dir}/settings.json" "${DEPRECATED_HOOKS[@]}"
 
   merge_settings_json "${config_dir}/settings.json" "global"
+
+  write_version_stamp "${config_dir}"
 
   echo ""
 }
@@ -1894,6 +1931,8 @@ MCPEOF
   if [ "$INSTALL_CONTEXT_MODE" = true ]; then
     merge_context_mode_hooks ".claude/settings.json"
   fi
+
+  write_version_stamp ".claude"
 
   echo ""
 }
