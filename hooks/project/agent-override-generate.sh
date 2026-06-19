@@ -196,3 +196,177 @@ needs_regen() {
   fi
   return 0  # regen needed
 }
+
+# ---------------------------------------------------------------------------
+# MERGE FUNCTION
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# generate_override <agent_name> <base_sha> <delta_sha>
+#   Merges base VBW body + our delta frontmatter + cmm-delta sections.
+#   Writes to PROJECT_ROOT/.claude/agents/vbw-<agent_name>.md.
+#   Returns 0 on success, 1 on failure (caller skips and continues).
+# ---------------------------------------------------------------------------
+generate_override() {
+  local agent_name="$1"
+  local base_sha="$2"
+  local delta_sha="$3"
+
+  local base_file="${VBW_AGENTS_DIR}/vbw-${agent_name}.md"
+  local delta_file="${SCRIPT_DIR}/../../agents/vbw-${agent_name}.md"
+  local out_file="${PROJECT_ROOT}/.claude/agents/vbw-${agent_name}.md"
+
+  if [ ! -f "$base_file" ]; then
+    echo "[agent-override-generate] WARN: base file missing: $base_file — skipping $agent_name" >&2
+    return 1
+  fi
+  if [ ! -f "$delta_file" ]; then
+    echo "[agent-override-generate] WARN: delta file missing: $delta_file — skipping $agent_name" >&2
+    return 1
+  fi
+
+  # Canonicalize delta_file path
+  delta_file="$(cd "$(dirname "$delta_file")" && pwd -P)/$(basename "$delta_file")"
+
+  # Perform the merge via Python (keeps complex YAML/regex logic out of bash)
+  local merged
+  merged=$(python3 - "$base_file" "$delta_file" "$agent_name" "$base_sha" "$delta_sha" <<'PYEOF'
+import sys, re
+
+base_path   = sys.argv[1]
+delta_path  = sys.argv[2]
+agent_name  = sys.argv[3]
+base_sha    = sys.argv[4]
+delta_sha   = sys.argv[5]
+
+base_text  = open(base_path).read()
+delta_text = open(delta_path).read()
+
+# ---------------------------------------------------------------------------
+# 1. Parse base frontmatter and body
+# ---------------------------------------------------------------------------
+base_fm_match = re.match(r'^---\n(.*?\n)---\n?', base_text, re.DOTALL)
+if base_fm_match:
+    base_fm_raw = base_fm_match.group(1)
+    base_body   = base_text[base_fm_match.end():]
+else:
+    base_fm_raw = ''
+    base_body   = base_text
+
+def parse_fm(text):
+    """Return ordered list of (key, raw_block) pairs from YAML frontmatter text."""
+    result = []
+    current_key = None
+    current_lines = []
+    for line in text.splitlines():
+        if re.match(r'^[a-zA-Z_]', line):
+            if current_key is not None:
+                result.append((current_key, '\n'.join(current_lines)))
+            current_key = line.split(':')[0].strip()
+            current_lines = [line]
+        else:
+            if current_key is not None:
+                current_lines.append(line)
+    if current_key is not None:
+        result.append((current_key, '\n'.join(current_lines)))
+    return result
+
+base_fm_pairs = parse_fm(base_fm_raw)
+base_fm = dict(base_fm_pairs)
+
+# ---------------------------------------------------------------------------
+# 2. Parse delta frontmatter
+# ---------------------------------------------------------------------------
+delta_fm_match = re.match(r'^---\n(.*?\n)---\n?', delta_text, re.DOTALL)
+delta_fm_raw = delta_fm_match.group(1) if delta_fm_match else ''
+delta_body_part = delta_text[delta_fm_match.end():] if delta_fm_match else delta_text
+
+delta_fm_pairs = parse_fm(delta_fm_raw)
+delta_fm = dict(delta_fm_pairs)
+
+# ---------------------------------------------------------------------------
+# 3. Build merged frontmatter
+#    - Preserve from base: name, description, model, memory, permissionMode
+#    - Take from delta (our CMM extensions): hooks, skills, tools/disallowedTools,
+#      x-cmm-base-sha, x-cmm-delta-sha, plus any other our-only keys
+#    - Frontmatter tool-grant merge rule:
+#        If delta has disallowedTools → use disallowedTools, drop base tools:
+#        If delta has tools:          → use tools:, drop base disallowedTools:
+#    - Stamp x-cmm-base-sha and x-cmm-delta-sha with computed values
+# ---------------------------------------------------------------------------
+BASE_PRESERVE_KEYS = ['name', 'description', 'model', 'memory', 'permissionMode']
+TOOL_GRANT_KEYS    = {'tools', 'disallowedTools'}
+
+merged_fm_lines = []
+
+# Preserved base keys (in declaration order)
+for key in BASE_PRESERVE_KEYS:
+    if key in base_fm:
+        merged_fm_lines.append(base_fm[key])
+
+# Tool-grant merge rule: delta wins, one key only
+if 'disallowedTools' in delta_fm:
+    merged_fm_lines.append(delta_fm['disallowedTools'])
+elif 'tools' in delta_fm:
+    merged_fm_lines.append(delta_fm['tools'])
+elif 'disallowedTools' in base_fm:
+    merged_fm_lines.append(base_fm['disallowedTools'])
+elif 'tools' in base_fm:
+    merged_fm_lines.append(base_fm['tools'])
+
+# Our CMM-extension keys from delta (hooks, skills, x-cmm-*, and anything else)
+OUR_EXTENSION_KEYS = set(delta_fm.keys()) - {'name', 'description', 'model', 'memory',
+                                               'permissionMode', 'x-cmm-base-sha',
+                                               'x-cmm-delta-sha'} - TOOL_GRANT_KEYS
+# Output in original delta order
+for key, block in delta_fm_pairs:
+    if key in OUR_EXTENSION_KEYS:
+        merged_fm_lines.append(block)
+
+# Stamp SHAs (always regenerated)
+merged_fm_lines.append(f'x-cmm-base-sha: "{base_sha}"')
+merged_fm_lines.append(f'x-cmm-delta-sha: "{delta_sha}"')
+
+merged_fm = '\n'.join(merged_fm_lines)
+
+# ---------------------------------------------------------------------------
+# 4. Extract cmm-delta fenced sections from the delta body
+# ---------------------------------------------------------------------------
+delta_sections = re.findall(
+    r'<!-- cmm-delta:begin[^>]*-->.*?<!-- cmm-delta:end[^>]*-->',
+    delta_body_part, re.DOTALL
+)
+delta_appended = '\n'.join(delta_sections)
+
+# ---------------------------------------------------------------------------
+# 5. Build output
+#    Header comment → frontmatter → generated banner → base body → delta sections
+# ---------------------------------------------------------------------------
+lines = []
+lines.append('---')
+lines.append(merged_fm)
+lines.append('---')
+lines.append('')
+lines.append('<!-- GENERATED by agent-override-generate.sh — do not edit manually.')
+lines.append('     Run setup.sh --project or restart session to regenerate. -->')
+lines.append('')
+# Base body (already stripped of its own frontmatter above)
+base_body_stripped = base_body.lstrip('\n')
+lines.append(base_body_stripped.rstrip('\n'))
+if delta_appended:
+    lines.append('')
+    lines.append(delta_appended)
+lines.append('')
+
+print('\n'.join(lines), end='')
+PYEOF
+) || {
+    echo "[agent-override-generate] ERROR: merge failed for $agent_name" >&2
+    return 1
+  }
+
+  mkdir -p "${PROJECT_ROOT}/.claude/agents"
+  local tmp_out="${out_file}.tmp.$$"
+  printf '%s' "$merged" > "$tmp_out"
+  mv "$tmp_out" "$out_file"
+}
