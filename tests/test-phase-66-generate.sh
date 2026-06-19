@@ -69,10 +69,13 @@ cp "$REPO_ROOT/hooks/lib/vbw-source.sh" "$SCRATCH/.claude/hooks/lib/"
 cp "$HOOK" "$SCRATCH/.claude/hooks/agent-override-generate.sh"
 chmod +x "$SCRATCH/.claude/hooks/agent-override-generate.sh"
 
-# The hook resolves delta files from SCRIPT_DIR/../../agents/ which from
-# .claude/hooks/ resolves to PROJECT_ROOT/agents/. Symlink the repo's agents/
-# dir into the scratch project so the hook can read our delta files.
-ln -s "$REPO_ROOT/agents" "$SCRATCH/agents"
+# Install delta files into .claude/agents-delta/ (the primary installed-path resolution).
+# This mirrors what setup.sh --project does in production and confirms the hook
+# reads from the installed location independent of any repo checkout.
+mkdir -p "$SCRATCH/.claude/agents-delta"
+for _ag in architect debugger dev docs lead qa scout; do
+  cp "$REPO_ROOT/agents/vbw-${_ag}.md" "$SCRATCH/.claude/agents-delta/"
+done
 
 # Create mock installed_plugins.json pointing to our fake VBW tree
 mkdir -p "$FAKE_CONFIG/plugins"

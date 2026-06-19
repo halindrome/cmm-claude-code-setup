@@ -7,6 +7,14 @@
 #   2. install_global body does NOT reference agent-override-generate.sh
 #   3. install_global body does NOT write .claude/agents/ (no mkdir/copy there)
 #   4. The only agents/*.md copy/install loop is in install_project
+#   5. Whole-file sanity: agent-override-generate.sh in setup.sh
+#   6. install_project installs delta files into .claude/agents-delta/
+#   7. install_global does NOT install agents-delta files
+#   8. setup.sh --project in scratch project: .claude/agents-delta/ has all 7 delta files
+#      AND .claude/hooks/lib/{project-root.sh,vbw-source.sh} exist
+#   9. Hook exits 0 (clean no-op) when no VBW source is resolvable
+#  10. Hook exits 0 (clean no-op) when delta files are absent
+#  11. Hook reads delta from .claude/agents-delta/ (installed path) when both locations present
 #
 # Rationale: deterministic guarantee that agent generation is project-mode-only.
 # A project that never ran `setup.sh --project` gets no agent generation, and
@@ -149,6 +157,187 @@ if [ "$total_refs" -ge 1 ]; then
 else
     _fail "setup.sh: agent-override-generate.sh referenced at least once" \
         "zero references — hook may not be registered"
+fi
+
+# -----------------------------------------------------------------------
+# 6. install_project installs delta files into .claude/agents-delta/
+# -----------------------------------------------------------------------
+echo "--- 6: install_project installs .claude/agents-delta/ ---"
+if echo "$ip_body" | grep -q 'agents-delta'; then
+    _pass "install_project: references agents-delta install"
+else
+    _fail "install_project: references agents-delta install" \
+        "agents-delta not found in install_project body"
+fi
+
+# -----------------------------------------------------------------------
+# 7. install_global does NOT install agents-delta
+# -----------------------------------------------------------------------
+echo "--- 7: install_global does NOT reference agents-delta ---"
+if echo "$ig_body" | grep -q 'agents-delta'; then
+    _fail "install_global: no agents-delta reference" \
+        "unexpected agents-delta found in install_global body"
+else
+    _pass "install_global: no agents-delta reference"
+fi
+
+# -----------------------------------------------------------------------
+# 8. setup.sh --project in scratch project: agents-delta + lib files installed
+# -----------------------------------------------------------------------
+echo "--- 8: setup.sh --project installs .claude/agents-delta/ + lib files ---"
+TMPROOT8=$(mktemp -d /tmp/test-phase-66-scope-XXXXXX)
+trap 'rm -rf "$TMPROOT8"' EXIT
+SCRATCH8="$TMPROOT8/proj"
+mkdir -p "$SCRATCH8"
+(cd "$SCRATCH8" && git init -q && git commit --allow-empty -q -m "init") >/dev/null 2>&1
+# Run setup.sh --project in non-interactive mode (DRY_RUN not set; run for real)
+# Use --yes to skip prompts if supported; otherwise pipe yes
+(
+  cd "$SCRATCH8"
+  bash "$REPO_ROOT/setup.sh" --project --yes 2>&1
+) >/dev/null 2>&1 || true
+
+_delta_ok=1
+for _ag in architect debugger dev docs lead qa scout; do
+    if [ ! -f "$SCRATCH8/.claude/agents-delta/vbw-${_ag}.md" ]; then
+        _delta_ok=0
+        break
+    fi
+done
+if [ "$_delta_ok" -eq 1 ]; then
+    _pass "setup.sh --project: all 7 .claude/agents-delta/vbw-*.md installed"
+else
+    _fail "setup.sh --project: all 7 .claude/agents-delta/vbw-*.md installed" \
+        "one or more delta files missing in $SCRATCH8/.claude/agents-delta/"
+fi
+
+if [ -f "$SCRATCH8/.claude/hooks/lib/project-root.sh" ] && [ -f "$SCRATCH8/.claude/hooks/lib/vbw-source.sh" ]; then
+    _pass "setup.sh --project: .claude/hooks/lib/{project-root.sh,vbw-source.sh} installed"
+else
+    _fail "setup.sh --project: .claude/hooks/lib/{project-root.sh,vbw-source.sh} installed" \
+        "lib files missing in $SCRATCH8/.claude/hooks/lib/"
+fi
+
+# -----------------------------------------------------------------------
+# 9. Hook exits 0 when no VBW source resolvable (no plugins installed)
+# -----------------------------------------------------------------------
+echo "--- 9: hook exits 0 (clean no-op) when VBW absent ---"
+TMPROOT9=$(mktemp -d /tmp/test-phase-66-scope-XXXXXX)
+SCRATCH9="$TMPROOT9/proj"
+mkdir -p "$SCRATCH9/.claude/hooks/lib"
+mkdir -p "$SCRATCH9/.claude/agents-delta"
+mkdir -p "$SCRATCH9/.claude/agents"
+(cd "$SCRATCH9" && git init -q && git commit --allow-empty -q -m "init") >/dev/null 2>&1
+cp "$REPO_ROOT/hooks/lib/project-root.sh" "$SCRATCH9/.claude/hooks/lib/"
+cp "$REPO_ROOT/hooks/lib/vbw-source.sh"   "$SCRATCH9/.claude/hooks/lib/"
+# Copy delta files so delta-absent isn't the reason for skip
+for _ag in architect debugger dev docs lead qa scout; do
+    cp "$REPO_ROOT/agents/vbw-${_ag}.md" "$SCRATCH9/.claude/agents-delta/"
+done
+cp "$REPO_ROOT/hooks/project/agent-override-generate.sh" "$SCRATCH9/.claude/hooks/"
+chmod +x "$SCRATCH9/.claude/hooks/agent-override-generate.sh"
+# Point CLAUDE_CONFIG_DIR to a dir with no plugins
+FAKE_CFG9="$TMPROOT9/cfg"
+mkdir -p "$FAKE_CFG9/plugins"
+echo '{"version":2,"plugins":{},"enabledPlugins":{}}' > "$FAKE_CFG9/plugins/installed_plugins.json"
+_exit_code=0
+(cd "$SCRATCH9" && CLAUDE_CONFIG_DIR="$FAKE_CFG9" bash ".claude/hooks/agent-override-generate.sh") >/dev/null 2>&1 || _exit_code=$?
+rm -rf "$TMPROOT9"
+if [ "$_exit_code" -eq 0 ]; then
+    _pass "hook exits 0 when VBW absent (no VBW in plugins)"
+else
+    _fail "hook exits 0 when VBW absent (no VBW in plugins)" \
+        "hook exited $_exit_code — expected 0"
+fi
+
+# -----------------------------------------------------------------------
+# 10. Hook exits 0 when delta files are absent (no agents-delta, no repo agents/)
+# -----------------------------------------------------------------------
+echo "--- 10: hook exits 0 (clean no-op) when delta files absent ---"
+TMPROOT10=$(mktemp -d /tmp/test-phase-66-scope-XXXXXX)
+SCRATCH10="$TMPROOT10/proj"
+FAKE_VBW10="$TMPROOT10/vbw/1.0.0"
+FAKE_CFG10="$TMPROOT10/cfg"
+mkdir -p "$SCRATCH10/.claude/hooks/lib"
+mkdir -p "$SCRATCH10/.claude/agents"
+mkdir -p "$FAKE_VBW10/agents"
+mkdir -p "$FAKE_CFG10/plugins"
+(cd "$SCRATCH10" && git init -q && git commit --allow-empty -q -m "init") >/dev/null 2>&1
+# Create a minimal VBW agent file so VBW resolves
+echo '---
+name: vbw-architect
+description: test
+---
+body' > "$FAKE_VBW10/agents/vbw-architect.md"
+cat >"$FAKE_CFG10/plugins/installed_plugins.json" <<JSON
+{"version":2,"plugins":{"vbw@vbw-marketplace":[{"installPath":"$FAKE_VBW10","version":"1.0.0","scope":"user"}]},"enabledPlugins":{"vbw@vbw-marketplace":true}}
+JSON
+cp "$REPO_ROOT/hooks/lib/project-root.sh" "$SCRATCH10/.claude/hooks/lib/"
+cp "$REPO_ROOT/hooks/lib/vbw-source.sh"   "$SCRATCH10/.claude/hooks/lib/"
+cp "$REPO_ROOT/hooks/project/agent-override-generate.sh" "$SCRATCH10/.claude/hooks/"
+chmod +x "$SCRATCH10/.claude/hooks/agent-override-generate.sh"
+# No .claude/agents-delta/ and hook runs from .claude/hooks/ which has no ../../agents/
+_exit_code=0
+(cd "$SCRATCH10" && CLAUDE_CONFIG_DIR="$FAKE_CFG10" bash ".claude/hooks/agent-override-generate.sh") >/dev/null 2>&1 || _exit_code=$?
+rm -rf "$TMPROOT10"
+if [ "$_exit_code" -eq 0 ]; then
+    _pass "hook exits 0 when delta files absent"
+else
+    _fail "hook exits 0 when delta files absent" \
+        "hook exited $_exit_code — expected 0"
+fi
+
+# -----------------------------------------------------------------------
+# 11. Hook reads delta from .claude/agents-delta/ (installed path) when present
+# -----------------------------------------------------------------------
+echo "--- 11: hook reads delta from .claude/agents-delta/ (installed path) ---"
+TMPROOT11=$(mktemp -d /tmp/test-phase-66-scope-XXXXXX)
+SCRATCH11="$TMPROOT11/proj"
+FAKE_VBW11="$TMPROOT11/vbw/2.0.0"
+FAKE_CFG11="$TMPROOT11/cfg"
+mkdir -p "$SCRATCH11/.claude/hooks/lib"
+mkdir -p "$SCRATCH11/.claude/agents"
+mkdir -p "$SCRATCH11/.claude/agents-delta"
+mkdir -p "$FAKE_VBW11/agents"
+mkdir -p "$FAKE_CFG11/plugins"
+(cd "$SCRATCH11" && git init -q && git commit --allow-empty -q -m "init") >/dev/null 2>&1
+# Create minimal VBW base files for all 7 agents
+for _ag in architect debugger dev docs lead qa scout; do
+    cat > "$FAKE_VBW11/agents/vbw-${_ag}.md" <<VBWEOF
+---
+name: vbw-${_ag}
+description: test base
+model: claude-opus-4-5
+---
+base body
+VBWEOF
+done
+cat >"$FAKE_CFG11/plugins/installed_plugins.json" <<JSON
+{"version":2,"plugins":{"vbw@vbw-marketplace":[{"installPath":"$FAKE_VBW11","version":"2.0.0","scope":"user"}]},"enabledPlugins":{"vbw@vbw-marketplace":true}}
+JSON
+# Install delta files from repo into .claude/agents-delta/
+for _ag in architect debugger dev docs lead qa scout; do
+    cp "$REPO_ROOT/agents/vbw-${_ag}.md" "$SCRATCH11/.claude/agents-delta/"
+done
+cp "$REPO_ROOT/hooks/lib/project-root.sh" "$SCRATCH11/.claude/hooks/lib/"
+cp "$REPO_ROOT/hooks/lib/vbw-source.sh"   "$SCRATCH11/.claude/hooks/lib/"
+cp "$REPO_ROOT/hooks/project/agent-override-generate.sh" "$SCRATCH11/.claude/hooks/"
+chmod +x "$SCRATCH11/.claude/hooks/agent-override-generate.sh"
+# Run from inside the scratch project so project-root.sh detects it as PROJECT_ROOT
+# (project-root.sh resolves from pwd via git rev-parse)
+_exit_code=0
+(cd "$SCRATCH11" && CLAUDE_CONFIG_DIR="$FAKE_CFG11" bash ".claude/hooks/agent-override-generate.sh") >/dev/null 2>&1 || _exit_code=$?
+# Verify: at least one .claude/agents/vbw-*.md was generated using the installed delta
+_generated_count=0
+for _ag in architect debugger dev docs lead qa scout; do
+    [ -f "$SCRATCH11/.claude/agents/vbw-${_ag}.md" ] && _generated_count=$((_generated_count+1))
+done
+rm -rf "$TMPROOT11"
+if [ "$_exit_code" -eq 0 ] && [ "$_generated_count" -gt 0 ]; then
+    _pass "hook reads from .claude/agents-delta/ and generates overrides (exit=0, generated=$_generated_count agents)"
+else
+    _fail "hook reads from .claude/agents-delta/ and generates overrides" \
+        "exit=$_exit_code generated=$_generated_count (expected exit=0, ≥1 agent)"
 fi
 
 echo ""
