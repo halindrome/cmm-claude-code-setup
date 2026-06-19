@@ -370,3 +370,255 @@ PYEOF
   printf '%s' "$merged" > "$tmp_out"
   mv "$tmp_out" "$out_file"
 }
+
+# ---------------------------------------------------------------------------
+# MANUAL-EDIT DETECTION
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# manual_edit_detected <agent_name> <base_sha> <delta_sha>
+#   Returns 0 if the installed file was manually edited (SHA mismatch that
+#   cannot be explained by a VBW/delta update).
+#   Strategy: regenerate expected output in memory, sha256 the whole file,
+#   compare against sha256 of the installed file. If they differ AND neither
+#   base_sha nor delta_sha changed (no upstream update), it is a manual edit.
+#
+#   Simplified conservative check: if the installed file exists and its
+#   x-cmm-base-sha/x-cmm-delta-sha match our expected SHAs (meaning we would
+#   have generated this version), compare the installed file's full sha256
+#   against a freshly generated output. Any difference = manual edit.
+#   Returns 1 (not manually edited) when SHAs are missing/mismatched —
+#   that case is handled by needs_regen() as a normal regeneration.
+# ---------------------------------------------------------------------------
+manual_edit_detected() {
+  local agent_name="$1"
+  local expected_base="$2"
+  local expected_delta="$3"
+
+  local installed="${PROJECT_ROOT}/.claude/agents/vbw-${agent_name}.md"
+  [ -f "$installed" ] || return 1  # Not installed — not a manual edit
+
+  # Read installed SHAs
+  local installed_pair
+  installed_pair=$(read_installed_shas "$agent_name")
+  local installed_base="${installed_pair%% *}"
+  local installed_delta="${installed_pair##* }"
+
+  # If installed SHAs don't match expected, this is a version update not a manual edit
+  if [ "$installed_base" != "$expected_base" ] || [ "$installed_delta" != "$expected_delta" ]; then
+    return 1
+  fi
+
+  # SHAs stamp says this was our generated version — compare full file content
+  # by regenerating expected output in a temp file and diffing
+  local tmp_expected
+  tmp_expected=$(mktemp /tmp/agent-override-expected.XXXXXX)
+  python3 - "${VBW_AGENTS_DIR}/vbw-${agent_name}.md" \
+            "${SCRIPT_DIR}/../../agents/vbw-${agent_name}.md" \
+            "$agent_name" "$expected_base" "$expected_delta" \
+            > "$tmp_expected" 2>/dev/null <<'PYEOF'
+import sys, re
+
+base_path  = sys.argv[1]
+delta_path = sys.argv[2]
+agent_name = sys.argv[3]
+base_sha   = sys.argv[4]
+delta_sha  = sys.argv[5]
+
+base_text  = open(base_path).read()
+delta_text = open(delta_path).read()
+
+base_fm_match = re.match(r'^---\n(.*?\n)---\n?', base_text, re.DOTALL)
+base_fm_raw   = base_fm_match.group(1) if base_fm_match else ''
+base_body     = base_text[base_fm_match.end():] if base_fm_match else base_text
+
+def parse_fm(text):
+    result = []
+    current_key = None
+    current_lines = []
+    for line in text.splitlines():
+        if re.match(r'^[a-zA-Z_]', line):
+            if current_key is not None:
+                result.append((current_key, '\n'.join(current_lines)))
+            current_key = line.split(':')[0].strip()
+            current_lines = [line]
+        else:
+            if current_key is not None:
+                current_lines.append(line)
+    if current_key is not None:
+        result.append((current_key, '\n'.join(current_lines)))
+    return result
+
+base_fm_pairs  = parse_fm(base_fm_raw)
+base_fm        = dict(base_fm_pairs)
+
+delta_fm_match = re.match(r'^---\n(.*?\n)---\n?', delta_text, re.DOTALL)
+delta_fm_raw   = delta_fm_match.group(1) if delta_fm_match else ''
+delta_body_part = delta_text[delta_fm_match.end():] if delta_fm_match else delta_text
+delta_fm_pairs = parse_fm(delta_fm_raw)
+delta_fm       = dict(delta_fm_pairs)
+
+BASE_PRESERVE_KEYS = ['name', 'description', 'model', 'memory', 'permissionMode']
+TOOL_GRANT_KEYS    = {'tools', 'disallowedTools'}
+
+merged_fm_lines = []
+for key in BASE_PRESERVE_KEYS:
+    if key in base_fm:
+        merged_fm_lines.append(base_fm[key])
+
+if 'disallowedTools' in delta_fm:
+    merged_fm_lines.append(delta_fm['disallowedTools'])
+elif 'tools' in delta_fm:
+    merged_fm_lines.append(delta_fm['tools'])
+elif 'disallowedTools' in base_fm:
+    merged_fm_lines.append(base_fm['disallowedTools'])
+elif 'tools' in base_fm:
+    merged_fm_lines.append(base_fm['tools'])
+
+OUR_EXTENSION_KEYS = set(delta_fm.keys()) - {'name','description','model','memory',
+                                               'permissionMode','x-cmm-base-sha',
+                                               'x-cmm-delta-sha'} - TOOL_GRANT_KEYS
+for key, block in delta_fm_pairs:
+    if key in OUR_EXTENSION_KEYS:
+        merged_fm_lines.append(block)
+
+merged_fm_lines.append(f'x-cmm-base-sha: "{base_sha}"')
+merged_fm_lines.append(f'x-cmm-delta-sha: "{delta_sha}"')
+merged_fm = '\n'.join(merged_fm_lines)
+
+delta_sections = re.findall(
+    r'<!-- cmm-delta:begin[^>]*-->.*?<!-- cmm-delta:end[^>]*-->',
+    delta_body_part, re.DOTALL
+)
+delta_appended = '\n'.join(delta_sections)
+
+lines = []
+lines.append('---')
+lines.append(merged_fm)
+lines.append('---')
+lines.append('')
+lines.append('<!-- GENERATED by agent-override-generate.sh — do not edit manually.')
+lines.append('     Run setup.sh --project or restart session to regenerate. -->')
+lines.append('')
+base_body_stripped = base_body.lstrip('\n')
+lines.append(base_body_stripped.rstrip('\n'))
+if delta_appended:
+    lines.append('')
+    lines.append(delta_appended)
+lines.append('')
+print('\n'.join(lines), end='')
+PYEOF
+
+  # Compare sha256 of installed vs expected
+  local installed_sha expected_sha
+  if command -v sha256sum >/dev/null 2>&1; then
+    installed_sha=$(sha256sum < "$installed" | awk '{print $1}')
+    expected_sha=$(sha256sum  < "$tmp_expected" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    installed_sha=$(shasum -a 256 < "$installed" | awk '{print $1}')
+    expected_sha=$(shasum -a 256  < "$tmp_expected" | awk '{print $1}')
+  else
+    rm -f "$tmp_expected"
+    return 1  # Cannot compare — assume not edited
+  fi
+  rm -f "$tmp_expected"
+
+  [ "$installed_sha" != "$expected_sha" ]
+}
+
+# ---------------------------------------------------------------------------
+# MAIN SESSION-START LOOP
+# ---------------------------------------------------------------------------
+
+main() {
+  # --- Resolve PROJECT_ROOT via lib ---
+  # project-root.sh exports PROJECT_ROOT on source
+  if [ -z "${PROJECT_ROOT:-}" ]; then
+    echo "[agent-override-generate] WARN: PROJECT_ROOT not resolved — skipping override generation" >&2
+    exit 0
+  fi
+
+  # --- Resolve VBW source ---
+  if ! resolve_vbw_source; then
+    # VBW absent or disabled — fail-open, no advisory needed
+    echo "[agent-override-generate] VBW not found; skipping agent override generation" >&2
+    exit 0
+  fi
+
+  # Agent names (without vbw- prefix and .md suffix)
+  local agents=(architect debugger dev docs lead qa scout)
+
+  local generated=()
+  local skipped=()
+  local warned=()
+
+  for agent in "${agents[@]}"; do
+    # Compute expected SHAs
+    local base_sha delta_sha
+    base_sha=$(compute_base_sha "$agent" 2>/dev/null) || {
+      echo "[agent-override-generate] WARN: cannot compute base SHA for $agent — skipping" >&2
+      skipped+=("$agent")
+      continue
+    }
+    delta_sha=$(compute_delta_sha "$agent" 2>/dev/null) || {
+      echo "[agent-override-generate] WARN: cannot compute delta SHA for $agent — skipping" >&2
+      skipped+=("$agent")
+      continue
+    }
+
+    # Silent no-op when SHAs match
+    if ! needs_regen "$agent" "$base_sha" "$delta_sha"; then
+      skipped+=("$agent(sha-match)")
+      continue
+    fi
+
+    # Manual-edit guard: warn and skip rather than clobber
+    if manual_edit_detected "$agent" "$base_sha" "$delta_sha"; then
+      local installed_path="${PROJECT_ROOT}/.claude/agents/vbw-${agent}.md"
+      warned+=("$agent")
+      # Emit warning on user-visible channel (stderr + systemMessage)
+      echo "[agent-override-generate] WARN: manually edited — do not edit vbw-${agent}.md. Skipping regeneration." >&2
+      continue
+    fi
+
+    # Generate the merged override
+    if generate_override "$agent" "$base_sha" "$delta_sha"; then
+      generated+=("$agent")
+    else
+      echo "[agent-override-generate] WARN: generation failed for $agent — skipping" >&2
+      skipped+=("$agent")
+    fi
+  done
+
+  # --- Emit advisory if any overrides were generated ---
+  if [ ${#generated[@]} -gt 0 ]; then
+    local agent_list
+    agent_list=$(printf '%s ' "${generated[@]}")
+    local warn_notice=""
+    if [ ${#warned[@]} -gt 0 ]; then
+      local warn_list
+      warn_list=$(printf '%s ' "${warned[@]}")
+      warn_notice=" (manually edited — skipped: ${warn_list})"
+    fi
+
+    # Advisory on stderr (user-visible)
+    echo "[agent-override-generate] Generated VBW agent overrides: ${agent_list}(VBW ${VBW_VERSION} / ${VBW_SOURCE_TYPE})${warn_notice}" >&2
+    echo "[agent-override-generate] RESTART SESSION to apply updated agent overrides." >&2
+
+    # Advisory as JSON systemMessage (preferred user-visible channel per hook docs)
+    local msg="VBW agent overrides updated (${agent_list}— VBW ${VBW_VERSION}/${VBW_SOURCE_TYPE}${warn_notice}). RESTART SESSION to apply."
+    printf '{"type":"systemMessage","message":"%s"}\n' \
+      "$(printf '%s' "$msg" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read())[1:-1])')"
+  fi
+
+  # Warn channel for any manually-edited files (belt-and-suspenders, also above)
+  if [ ${#warned[@]} -gt 0 ]; then
+    local warn_list
+    warn_list=$(printf '%s ' "${warned[@]}")
+    local wmsg="CMM agent override(s) have been manually edited and will NOT be auto-regenerated: ${warn_list}. To reset, delete the file(s) and restart session."
+    printf '{"type":"systemMessage","message":"%s"}\n' \
+      "$(printf '%s' "$wmsg" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read())[1:-1])')"
+  fi
+}
+
+main "$@"
