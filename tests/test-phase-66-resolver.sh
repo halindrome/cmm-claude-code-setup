@@ -232,6 +232,79 @@ else
 fi
 
 # -----------------------------------------------------------------------
+# T6 — local-symlink precedence over an INSTALLED marketplace version
+#   Both a marketplace install AND a local symlink are present; the symlink
+#   (dev --plugin-dir mode) must win. T3 tore down the marketplace fixture
+#   before asserting the symlink, so this is the only test exercising the
+#   precedence with both present.
+# -----------------------------------------------------------------------
+echo "--- T6: local-symlink precedence over installed marketplace (both present) ---"
+PREC_CONFIG="$TMPDIR_ROOT/prec-config"
+PREC_CACHE="$PREC_CONFIG/plugins/cache/$MKT/vbw"
+PREC_MKT_AGENTS="$PREC_CACHE/$VERSION/agents"
+mkdir -p "$PREC_MKT_AGENTS" "$PREC_CONFIG/plugins"
+touch "$PREC_MKT_AGENTS/vbw-dev.md"
+cat >"$PREC_CONFIG/plugins/installed_plugins.json" <<JSON
+{
+  "version": 2,
+  "plugins": { "vbw@vbw-marketplace": [ { "installPath": "$PREC_CACHE/$VERSION", "version": "$VERSION", "scope": "user" } ] },
+  "enabledPlugins": { "vbw@vbw-marketplace": true }
+}
+JSON
+PREC_WORKTREE="$TMPDIR_ROOT/prec-worktree"
+mkdir -p "$PREC_WORKTREE/agents"
+touch "$PREC_WORKTREE/agents/vbw-dev.md"
+ln -s "$PREC_WORKTREE" "$PREC_CACHE/local"
+
+_assert_resolves "T6: local-symlink wins when marketplace also installed" \
+    "local-symlink" "/prec-worktree/agents" \
+    "CLAUDE_CONFIG_DIR=$PREC_CONFIG"
+
+# -----------------------------------------------------------------------
+# T7 — Disabledness branch: enabledPlugins["vbw@vbw-marketplace"] = false
+#   With a marketplace install present but the plugin explicitly disabled and
+#   NO local symlink, the resolver must short-circuit to absent (return 1).
+#   And a local symlink must override the disabled state.
+# -----------------------------------------------------------------------
+echo "--- T7: explicitly-disabled plugin resolves absent (no symlink) ---"
+DIS_CONFIG="$TMPDIR_ROOT/disabled-config"
+DIS_CACHE="$DIS_CONFIG/plugins/cache/$MKT/vbw"
+DIS_MKT_AGENTS="$DIS_CACHE/$VERSION/agents"
+mkdir -p "$DIS_MKT_AGENTS" "$DIS_CONFIG/plugins"
+touch "$DIS_MKT_AGENTS/vbw-dev.md"
+cat >"$DIS_CONFIG/plugins/installed_plugins.json" <<JSON
+{
+  "version": 2,
+  "plugins": { "vbw@vbw-marketplace": [ { "installPath": "$DIS_CACHE/$VERSION", "version": "$VERSION", "scope": "user" } ] },
+  "enabledPlugins": { "vbw@vbw-marketplace": false }
+}
+JSON
+
+_assert_absent "T7: disabled plugin returns 1 despite marketplace install" \
+    CLAUDE_CONFIG_DIR="$DIS_CONFIG" HOME="$ABSENT_HOME"
+
+dis_type=$(env CLAUDE_CONFIG_DIR="$DIS_CONFIG" HOME="$ABSENT_HOME" bash -c "
+    source '$LIB' 2>/dev/null
+    resolve_vbw_source 2>/dev/null || true
+    echo \"\$VBW_SOURCE_TYPE\"
+" 2>/dev/null)
+if [ "$dis_type" = "absent" ]; then
+    _pass "T7: disabled → VBW_SOURCE_TYPE=absent"
+else
+    _fail "T7: disabled → VBW_SOURCE_TYPE=absent" "got '$dis_type'"
+fi
+
+echo "--- T7b: local-symlink overrides a disabled marketplace entry ---"
+DIS_WORKTREE="$TMPDIR_ROOT/disabled-worktree"
+mkdir -p "$DIS_WORKTREE/agents"
+touch "$DIS_WORKTREE/agents/vbw-dev.md"
+ln -s "$DIS_WORKTREE" "$DIS_CACHE/local"
+
+_assert_resolves "T7b: local-symlink wins even when plugin disabled" \
+    "local-symlink" "/disabled-worktree/agents" \
+    "CLAUDE_CONFIG_DIR=$DIS_CONFIG"
+
+# -----------------------------------------------------------------------
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1

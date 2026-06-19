@@ -209,25 +209,24 @@ else
 fi
 
 # -----------------------------------------------------------------------
-# T4 — SHA mismatch triggers regen + produces advisory
+# T4 — Upstream (base) source change triggers regen of an UNEDITED override
+#   A legitimate version update changes the SOURCE, not the installed file.
+#   The content-sha guard must NOT mistake this for a manual edit.
 # -----------------------------------------------------------------------
-echo "--- T4: SHA mismatch triggers regen ---"
-# Corrupt the x-cmm-delta-sha in the installed file to force mismatch
-if [ "$(uname)" = "Darwin" ]; then
-    sed -i '' 's/^x-cmm-delta-sha: ".*"/x-cmm-delta-sha: "deadbeef0000"/' "$GEN"
-else
-    sed -i 's/^x-cmm-delta-sha: ".*"/x-cmm-delta-sha: "deadbeef0000"/' "$GEN"
-fi
+echo "--- T4: Source change triggers regen ---"
+# Clean baseline, then bump the upstream base source so compute_base_sha differs.
+rm -f "$GEN"
+_run_hook >/dev/null 2>&1 || true
+printf '\n## New Upstream Section\n\nAdded by upstream.\n' >> "$FAKE_VBW_AGENTS/vbw-dev.md"
 
 hook_output=$(_run_hook 2>&1 || true)
-mtime_new=$(stat -f '%m' "$GEN" 2>/dev/null || stat -c '%Y' "$GEN" 2>/dev/null)
 
-# File should be regenerated (SHA now matches real values)
-if grep -qE '^x-cmm-delta-sha: "deadbeef0000"' "$GEN" 2>/dev/null; then
-    _fail "T4: Stale SHA replaced after regen" \
-        "file still has deadbeef SHA — not regenerated"
+# The unedited override should be regenerated with the new upstream content.
+if grep -q "New Upstream Section" "$GEN" 2>/dev/null; then
+    _pass "T4: unedited override regenerated after upstream source change"
 else
-    _pass "T4: Stale SHA replaced after regen"
+    _fail "T4: unedited override regenerated after upstream source change" \
+        "new upstream content not present in regenerated file"
 fi
 
 # Advisory or regeneration message should appear in hook output
@@ -255,33 +254,55 @@ else
 fi
 
 # -----------------------------------------------------------------------
-# T6 — Manual-edit detection: SHAs match but content altered → hook warns, skips write
+# T6 — Manual-edit guard: warns AND preserves edits (discriminating, both paths)
+#   Scenario A: hand edit, source unchanged → guard must warn + preserve.
+#   Scenario B: hand edit + upstream source change (a regen is due) → guard must
+#               warn + preserve and NOT clobber. This is the F-01 regression test:
+#               it FAILS if a base/delta bump silently overwrites a hand edit.
 # -----------------------------------------------------------------------
-echo "--- T6: Manual-edit detection warns and skips ---"
-# Restore a cleanly generated file first
-(cd "$SCRATCH" && CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash ".claude/hooks/agent-override-generate.sh" 2>/dev/null) || true
+echo "--- T6a: Manual edit, source unchanged → warn + preserve ---"
+rm -f "$GEN"
+_run_hook >/dev/null 2>&1 || true
+echo "# MANUAL EDIT A" >> "$GEN"
+outA=$(_run_hook 2>&1 || true)
 
-if [ -f "$GEN" ]; then
-    # Inject extra content after the file is cleanly generated (SHAs reflect real values)
-    echo "# MANUALLY INJECTED LINE" >> "$GEN"
-    # Run hook: SHAs in header still match computed values (the injected line is below them)
-    # but the file content doesn't match what the hook would generate → manual-edit guard fires.
-    manual_output=$((cd "$SCRATCH" && CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash ".claude/hooks/agent-override-generate.sh") 2>&1 || true)
-
-    # The file should NOT have the injected line removed (hook skips write on manual-edit detection)
-    if grep -q "MANUALLY INJECTED LINE" "$GEN" 2>/dev/null; then
-        _pass "T6: Manual-edit guard: hook skipped write, injected line preserved"
-    else
-        # Hook regenerated — which is also acceptable behavior (regen replaces manual content)
-        # The important guarantee is it exits 0 and doesn't silently discard content without warning
-        if echo "$manual_output" | grep -qiE 'manual|edit|skip|warn'; then
-            _pass "T6: Manual-edit guard: hook warned before overwriting"
-        else
-            _pass "T6: Manual-edit guard: hook handled gracefully (regen path)"
-        fi
-    fi
+if grep -q "MANUAL EDIT A" "$GEN" 2>/dev/null; then
+    _pass "T6a: hand edit preserved (not clobbered)"
 else
-    _pass "T6: Manual-edit detection (skipped — no generated file to test)"
+    _fail "T6a: hand edit preserved (not clobbered)" "injected line was removed"
+fi
+if echo "$outA" | grep -qiE 'manual|edited'; then
+    _pass "T6a: manual-edit warning emitted"
+else
+    _fail "T6a: manual-edit warning emitted" "no manual-edit warning in hook output"
+fi
+
+echo "--- T6b: Manual edit + upstream source change → warn + preserve, no clobber [F-01] ---"
+rm -f "$GEN"
+_run_hook >/dev/null 2>&1 || true
+echo "# MANUAL EDIT B" >> "$GEN"
+# Bump the upstream base so a regen would normally fire for this agent.
+printf '\n## Another Upstream Section\n\nForces a regen.\n' >> "$FAKE_VBW_AGENTS/vbw-dev.md"
+outB=$(_run_hook 2>&1 || true)
+
+# CRITICAL: the guard must run BEFORE regen and preserve the edit.
+if grep -q "MANUAL EDIT B" "$GEN" 2>/dev/null; then
+    _pass "T6b: hand edit preserved despite pending regen (no silent clobber)"
+else
+    _fail "T6b: hand edit preserved despite pending regen (no silent clobber)" \
+        "edit was clobbered by regen — F-01 regression"
+fi
+# Regen must have been skipped, so the new upstream content must NOT appear.
+if grep -q "Another Upstream Section" "$GEN" 2>/dev/null; then
+    _fail "T6b: regen skipped while edit present" \
+        "regen ran and overwrote the edited file"
+else
+    _pass "T6b: regen skipped while edit present"
+fi
+if echo "$outB" | grep -qiE 'manual|edited'; then
+    _pass "T6b: manual-edit warning emitted"
+else
+    _fail "T6b: manual-edit warning emitted" "no manual-edit warning in hook output"
 fi
 
 # -----------------------------------------------------------------------

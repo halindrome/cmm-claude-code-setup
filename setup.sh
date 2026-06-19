@@ -1663,9 +1663,12 @@ install_project() {
   #   index-root-gate.sh — PreToolUse:mcp__codebase-memory-mcp__index_repository hard-block for subtree indexing in monorepos (phase 65)
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
-  # NOTE: VBW agent override files (agents/*.md) ARE copied by setup.sh --project to
-  # .claude/agents/. These shadow VBW plugin agents to inject CMM enforcement hooks
-  # via frontmatter (the only mechanism that fires inside subagents).
+  # NOTE: VBW agent overrides are NOT copied verbatim. setup.sh --project installs
+  # the delta files (agents/vbw-*.md) into .claude/agents-delta/, and the SessionStart
+  # hook agent-override-generate.sh merges each delta with its VBW base agent into
+  # .claude/agents/vbw-*.md at runtime (injecting CMM enforcement hooks via frontmatter,
+  # the only mechanism that fires inside subagents). The delta-install + generation is
+  # handled below in this function; the loop here copies the project hooks themselves.
   # The existing .claude/agents/dev.md is project-specific and NOT managed by setup.sh.
   # Users installing this hook layer into their own project should create their own
   # .claude/agents/ overrides if they want agent-level hook behavior.

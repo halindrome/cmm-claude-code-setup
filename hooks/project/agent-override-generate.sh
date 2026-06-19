@@ -242,7 +242,13 @@ needs_regen() {
   installed_delta="${installed_pair##* }"
 
   if [ "$installed_base" = "$expected_base" ] && [ "$installed_delta" = "$expected_delta" ]; then
-    return 1  # SHAs match — no regen needed
+    # SHAs match. Re-stamp legacy installs that predate content-sha provenance so
+    # the manual-edit guard becomes active on the next run.
+    local installed="${PROJECT_ROOT}/.claude/agents/vbw-${agent_name}.md"
+    if [ -f "$installed" ] && ! grep -q '^x-cmm-content-sha:' "$installed" 2>/dev/null; then
+      return 0  # regen once to add the provenance stamp
+    fi
+    return 1  # SHAs match and stamped — no regen needed
   fi
   return 0  # regen needed
 }
@@ -280,7 +286,7 @@ generate_override() {
   # Perform the merge via Python (keeps complex YAML/regex logic out of bash)
   local merged
   merged=$(python3 - "$base_file" "$delta_file" "$agent_name" "$base_sha" "$delta_sha" <<'PYEOF'
-import sys, re
+import sys, re, hashlib
 
 base_path   = sys.argv[1]
 delta_path  = sys.argv[2]
@@ -407,6 +413,16 @@ if delta_appended:
     lines.append(delta_appended)
 lines.append('')
 
+# Content-provenance stamp: sha256 of the full output EXCLUDING the content-sha
+# line itself, so manual_edit_detected can recompute it identically by stripping
+# that one line. Independent of base/delta version — detects any hand edit.
+out_no_csha = '\n'.join(lines)
+# rstrip trailing newlines: the shell stores $(...) output with trailing
+# newlines removed, so the stamp must hash the same normalized form the
+# verifier will recompute from the stored file.
+content_sha = hashlib.sha256(out_no_csha.rstrip('\n').encode('utf-8')).hexdigest()
+lines[1] = merged_fm + f'\nx-cmm-content-sha: "{content_sha}"'
+
 print('\n'.join(lines), end='')
 PYEOF
 ) || {
@@ -425,157 +441,45 @@ PYEOF
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# manual_edit_detected <agent_name> <base_sha> <delta_sha>
-#   Returns 0 if the installed file was manually edited (SHA mismatch that
-#   cannot be explained by a VBW/delta update).
-#   Strategy: regenerate expected output in memory, sha256 the whole file,
-#   compare against sha256 of the installed file. If they differ AND neither
-#   base_sha nor delta_sha changed (no upstream update), it is a manual edit.
-#
-#   Simplified conservative check: if the installed file exists and its
-#   x-cmm-base-sha/x-cmm-delta-sha match our expected SHAs (meaning we would
-#   have generated this version), compare the installed file's full sha256
-#   against a freshly generated output. Any difference = manual edit.
-#   Returns 1 (not manually edited) when SHAs are missing/mismatched —
-#   that case is handled by needs_regen() as a normal regeneration.
+# manual_edit_detected <agent_name>
+#   Returns 0 if the installed override was hand-edited since generation.
+#   Strategy: generate_override stamps x-cmm-content-sha = sha256 of the output
+#   with that line removed. This recomputes the same hash over the installed file
+#   and returns 0 (edited) when it diverges from the stamped value. The check is
+#   independent of base/delta version drift — so the main loop runs it BEFORE
+#   needs_regen, ensuring a base/delta bump cannot clobber a hand edit.
+#   Fails open (returns 1, "not edited") when the file is absent, carries no
+#   provenance stamp (legacy file), or python3 is unavailable.
 # ---------------------------------------------------------------------------
 manual_edit_detected() {
   local agent_name="$1"
-  local expected_base="$2"
-  local expected_delta="$3"
 
   local installed="${PROJECT_ROOT}/.claude/agents/vbw-${agent_name}.md"
   [ -f "$installed" ] || return 1  # Not installed — not a manual edit
 
-  # Read installed SHAs
-  local installed_pair
-  installed_pair=$(read_installed_shas "$agent_name")
-  local installed_base="${installed_pair%% *}"
-  local installed_delta="${installed_pair##* }"
-
-  # If installed SHAs don't match expected, this is a version update not a manual edit
-  if [ "$installed_base" != "$expected_base" ] || [ "$installed_delta" != "$expected_delta" ]; then
-    return 1
-  fi
-
-  # SHAs stamp says this was our generated version — compare full file content
-  # by regenerating expected output in a temp file and diffing
-  local delta_file_med
-  delta_file_med=$(resolve_delta_path "$agent_name") || return 1  # no delta → not a manual edit
-
-  local tmp_expected
-  tmp_expected=$(mktemp /tmp/agent-override-expected.XXXXXX)
-  python3 - "${VBW_AGENTS_DIR}/vbw-${agent_name}.md" \
-            "$delta_file_med" \
-            "$agent_name" "$expected_base" "$expected_delta" \
-            > "$tmp_expected" 2>/dev/null <<'PYEOF'
-import sys, re
-
-base_path  = sys.argv[1]
-delta_path = sys.argv[2]
-agent_name = sys.argv[3]
-base_sha   = sys.argv[4]
-delta_sha  = sys.argv[5]
-
-base_text  = open(base_path).read()
-delta_text = open(delta_path).read()
-
-base_fm_match = re.match(r'^---\n(.*?\n)---\n?', base_text, re.DOTALL)
-base_fm_raw   = base_fm_match.group(1) if base_fm_match else ''
-base_body     = base_text[base_fm_match.end():] if base_fm_match else base_text
-
-def parse_fm(text):
-    result = []
-    current_key = None
-    current_lines = []
-    for line in text.splitlines():
-        if re.match(r'^[a-zA-Z_]', line):
-            if current_key is not None:
-                result.append((current_key, '\n'.join(current_lines)))
-            current_key = line.split(':')[0].strip()
-            current_lines = [line]
-        else:
-            if current_key is not None:
-                current_lines.append(line)
-    if current_key is not None:
-        result.append((current_key, '\n'.join(current_lines)))
-    return result
-
-base_fm_pairs  = parse_fm(base_fm_raw)
-base_fm        = dict(base_fm_pairs)
-
-delta_fm_match = re.match(r'^---\n(.*?\n)---\n?', delta_text, re.DOTALL)
-delta_fm_raw   = delta_fm_match.group(1) if delta_fm_match else ''
-delta_body_part = delta_text[delta_fm_match.end():] if delta_fm_match else delta_text
-delta_fm_pairs = parse_fm(delta_fm_raw)
-delta_fm       = dict(delta_fm_pairs)
-
-BASE_PRESERVE_KEYS = ['name', 'description', 'model', 'memory', 'permissionMode']
-TOOL_GRANT_KEYS    = {'tools', 'disallowedTools'}
-
-merged_fm_lines = []
-for key in BASE_PRESERVE_KEYS:
-    if key in base_fm:
-        merged_fm_lines.append(base_fm[key])
-
-if 'disallowedTools' in delta_fm:
-    merged_fm_lines.append(delta_fm['disallowedTools'])
-elif 'tools' in delta_fm:
-    merged_fm_lines.append(delta_fm['tools'])
-elif 'disallowedTools' in base_fm:
-    merged_fm_lines.append(base_fm['disallowedTools'])
-elif 'tools' in base_fm:
-    merged_fm_lines.append(base_fm['tools'])
-
-OUR_EXTENSION_KEYS = set(delta_fm.keys()) - {'name','description','model','memory',
-                                               'permissionMode','x-cmm-base-sha',
-                                               'x-cmm-delta-sha'} - TOOL_GRANT_KEYS
-for key, block in delta_fm_pairs:
-    if key in OUR_EXTENSION_KEYS:
-        merged_fm_lines.append(block)
-
-merged_fm_lines.append(f'x-cmm-base-sha: "{base_sha}"')
-merged_fm_lines.append(f'x-cmm-delta-sha: "{delta_sha}"')
-merged_fm = '\n'.join(merged_fm_lines)
-
-delta_sections = re.findall(
-    r'<!-- cmm-delta:begin[^>]*-->.*?<!-- cmm-delta:end[^>]*-->',
-    delta_body_part, re.DOTALL
-)
-delta_appended = '\n'.join(delta_sections)
-
-lines = []
-lines.append('---')
-lines.append(merged_fm)
-lines.append('---')
-lines.append('')
-lines.append('<!-- GENERATED by agent-override-generate.sh — do not edit manually.')
-lines.append('     Run setup.sh --project or restart session to regenerate. -->')
-lines.append('')
-base_body_stripped = base_body.lstrip('\n')
-lines.append(base_body_stripped.rstrip('\n'))
-if delta_appended:
-    lines.append('')
-    lines.append(delta_appended)
-lines.append('')
-print('\n'.join(lines), end='')
+  # Recompute the content-provenance sha the same way generate_override stamped
+  # it (sha256 of the file with the x-cmm-content-sha line removed) and compare
+  # to the stamped value. Any divergence = the installed file was hand-edited
+  # since generation, independent of base/delta version drift. Run inside an `if`
+  # so a non-zero python exit does not trip the ERR trap.
+  #   exit 0 = content diverged (manual edit); 1 = unchanged;
+  #   2 = no provenance stamp (legacy file); 127 = no python3.
+  # Only exit 0 means "manually edited"; everything else fails open.
+  if python3 - "$installed" 2>/dev/null <<'PYEOF'
+import sys, re, hashlib
+text = open(sys.argv[1]).read()
+m = re.search(r'^x-cmm-content-sha:\s*"([0-9a-f]+)"\s*$', text, re.MULTILINE)
+if not m:
+    sys.exit(2)  # no provenance stamp (legacy) — cannot verify; not a manual edit
+stamped = m.group(1)
+stripped = re.sub(r'^x-cmm-content-sha:.*\n?', '', text, flags=re.MULTILINE)
+actual = hashlib.sha256(stripped.rstrip('\n').encode('utf-8')).hexdigest()
+sys.exit(0 if actual != stamped else 1)
 PYEOF
-
-  # Compare sha256 of installed vs expected
-  local installed_sha expected_sha
-  if command -v sha256sum >/dev/null 2>&1; then
-    installed_sha=$(sha256sum < "$installed" | awk '{print $1}')
-    expected_sha=$(sha256sum  < "$tmp_expected" | awk '{print $1}')
-  elif command -v shasum >/dev/null 2>&1; then
-    installed_sha=$(shasum -a 256 < "$installed" | awk '{print $1}')
-    expected_sha=$(shasum -a 256  < "$tmp_expected" | awk '{print $1}')
-  else
-    rm -f "$tmp_expected"
-    return 1  # Cannot compare — assume not edited
+  then
+    return 0  # manually edited
   fi
-  rm -f "$tmp_expected"
-
-  [ "$installed_sha" != "$expected_sha" ]
+  return 1  # unchanged, no stamp, or python unavailable — fail open
 }
 
 # ---------------------------------------------------------------------------
@@ -636,18 +540,19 @@ main() {
       continue
     }
 
-    # Silent no-op when SHAs match
-    if ! needs_regen "$agent" "$base_sha" "$delta_sha"; then
-      skipped+=("$agent(sha-match)")
+    # Manual-edit guard FIRST: protect hand edits regardless of base/delta drift.
+    # Must precede needs_regen so a base/delta change cannot silently clobber an
+    # edited override.
+    if manual_edit_detected "$agent"; then
+      warned+=("$agent")
+      # Emit warning on user-visible channel (stderr + systemMessage below)
+      echo "[agent-override-generate] WARN: vbw-${agent}.md was manually edited — skipping regeneration to preserve your changes. Delete the file and restart to reset." >&2
       continue
     fi
 
-    # Manual-edit guard: warn and skip rather than clobber
-    if manual_edit_detected "$agent" "$base_sha" "$delta_sha"; then
-      local installed_path="${PROJECT_ROOT}/.claude/agents/vbw-${agent}.md"
-      warned+=("$agent")
-      # Emit warning on user-visible channel (stderr + systemMessage)
-      echo "[agent-override-generate] WARN: manually edited — do not edit vbw-${agent}.md. Skipping regeneration." >&2
+    # Silent no-op when SHAs match (and provenance stamp present)
+    if ! needs_regen "$agent" "$base_sha" "$delta_sha"; then
+      skipped+=("$agent(sha-match)")
       continue
     fi
 
