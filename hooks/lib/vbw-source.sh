@@ -163,7 +163,24 @@ except Exception:
     fi
   fi
 
-  return 1  # not found yet; caller continues to Cases 3-4
+  # --- Case 3: dev checkout fallback ---
+  # Bare git clone at the known dev checkout path (no plugin-dir or marketplace install).
+  local dev_checkout_agents="$HOME/Sources/vibe-better-with-claude-code-vbw/agents"
+  if [ -d "$dev_checkout_agents" ]; then
+    VBW_AGENTS_DIR="$dev_checkout_agents"
+    VBW_SOURCE_TYPE="dev-checkout"
+    VBW_VERSION="dev"
+    export VBW_AGENTS_DIR VBW_SOURCE_TYPE VBW_VERSION
+    return 0
+  fi
+
+  # --- Case 4: absent — all cases exhausted ---
+  echo "[vbw-source] VBW plugin not found (no local-symlink, marketplace install, or dev checkout)" >&2
+  VBW_SOURCE_TYPE="absent"
+  VBW_VERSION="absent"
+  VBW_AGENTS_DIR=""
+  export VBW_AGENTS_DIR VBW_SOURCE_TYPE VBW_VERSION
+  return 1
 }
 
 _VBW_SOURCE_LOADED=1
