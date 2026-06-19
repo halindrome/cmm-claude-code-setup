@@ -59,7 +59,8 @@
 # Mirrors the sourceable-lib pattern of hooks/lib/project-root.sh.
 
 # --- Idempotent guard ---
-[ -n "$_VBW_SOURCE_LOADED" ] && return 0
+# Use ${var:-} to tolerate callers that set -u before sourcing this lib.
+[ -n "${_VBW_SOURCE_LOADED:-}" ] && return 0
 
 # ---------------------------------------------------------------------------
 # _vbw_config_dir — resolve the active Claude Code config directory

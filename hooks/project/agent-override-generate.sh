@@ -29,8 +29,20 @@ set -euo pipefail
 
 # --- Project root detection (shared library with /tmp cache) ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-source "${SCRIPT_DIR}/../lib/project-root.sh"
-source "${SCRIPT_DIR}/../lib/vbw-source.sh"
+# Lib resolution: installed at .claude/hooks/lib/ (sibling lib/ subdir), same
+# pattern as session-gate.sh / cmm-sentinel-writer.sh.
+_LIB_DIR="${SCRIPT_DIR}/lib"
+if [ -f "${_LIB_DIR}/project-root.sh" ]; then
+  source "${_LIB_DIR}/project-root.sh"
+else
+  # Fallback for running from repo source (hooks/project/ → hooks/lib/)
+  source "${SCRIPT_DIR}/../lib/project-root.sh"
+fi
+if [ -f "${_LIB_DIR}/vbw-source.sh" ]; then
+  source "${_LIB_DIR}/vbw-source.sh"
+else
+  source "${SCRIPT_DIR}/../lib/vbw-source.sh"
+fi
 
 # ---------------------------------------------------------------------------
 # SHA COMPUTATION UTILITIES
