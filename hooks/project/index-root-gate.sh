@@ -87,6 +87,11 @@ _canon_path() {
     # Lexically collapse '.' and '..' across base_canon + tail (no FS access).
     local full="${base_canon}${tail}" out="" seg
     local IFS=/
+    # Disable globbing for the unquoted `$full` split so a '*' (or other glob
+    # metacharacter) in a path segment cannot expand against the cwd; IFS=/
+    # word-splitting is retained. Restore the caller's prior noglob state.
+    local _noglob; case $- in *f*) _noglob=1 ;; *) _noglob=0 ;; esac
+    set -f
     for seg in $full; do
         case "$seg" in
             ""|.) ;;
@@ -94,6 +99,7 @@ _canon_path() {
             *) out="${out}/${seg}" ;;
         esac
     done
+    [ "$_noglob" -eq 0 ] && set +f
     printf '%s\n' "${out:-/}"
 }
 
