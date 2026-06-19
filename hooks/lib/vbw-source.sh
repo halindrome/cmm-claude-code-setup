@@ -125,6 +125,36 @@ resolve_vbw_source() {
     fi
   fi
 
+  # --- Disabledness check (between Case 1 and Case 2) ---
+  # If enabledPlugins["vbw@vbw-marketplace"] is explicitly false AND no local symlink
+  # exists, the plugin was uninstalled; treat as absent immediately.
+  # Key absent from enabledPlugins = --plugin-dir mode (not the same as disabled).
+  if [ -f "$plugins_json" ] && command -v python3 >/dev/null 2>&1; then
+    local enabled_state
+    enabled_state=$(python3 -c "
+import json
+try:
+    with open('$plugins_json') as f:
+        d = json.load(f)
+    ep = d.get('enabledPlugins', {})
+    if '$plugin_key' in ep:
+        print('false' if ep['$plugin_key'] is False else 'true')
+    else:
+        print('absent')
+except Exception:
+    print('absent')
+" 2>/dev/null)
+    if [ "$enabled_state" = "false" ]; then
+      # Explicitly disabled and no local-symlink override (already checked above).
+      echo "[vbw-source] VBW plugin is explicitly disabled (enabledPlugins[\"$plugin_key\"] = false)" >&2
+      VBW_SOURCE_TYPE="absent"
+      VBW_VERSION="absent"
+      VBW_AGENTS_DIR=""
+      export VBW_AGENTS_DIR VBW_SOURCE_TYPE VBW_VERSION
+      return 1
+    fi
+  fi
+
   # --- Case 2: marketplace published version ---
   # Read installPath from installed_plugins.json
   if [ -f "$plugins_json" ] && command -v python3 >/dev/null 2>&1; then
