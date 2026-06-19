@@ -32,7 +32,7 @@ Always index/query the repository root — pass the monorepo root to `index_repo
 
 Before calling `index_repository`, call `list_projects` and check whether any existing entry has a path that is an **ancestor** of (or equal to) the target path. If such an entry exists, use that index rather than creating a new one.
 
-CMM project names are path-derived (`…cvx_6004-apps-rest-api` vs `…cvx_6004`), so a subtree entry will **not** match a root-level lookup. Look for ancestor paths, not substring matches — the monorepo root index already covers every file in any subdirectory.
+CMM project names are path-derived (`…myrepo-apps-api` vs `…myrepo`), so a subtree entry will **not** match a root-level lookup. Look for ancestor paths, not substring matches — the monorepo root index already covers every file in any subdirectory.
 
 ### CMM vs. context-mode
 
