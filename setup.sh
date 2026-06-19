@@ -1731,17 +1731,47 @@ install_project() {
   fi
 
 
-  # --- Agent override files (frontmatter hooks for VBW subagents) ---
-  # Project-level .claude/agents/ overrides shadow VBW plugin agent definitions
-  # to inject CMM enforcement hooks (cmm-nudge.sh, ctx-execute-enforcer.sh,
-  # track-cmm-calls.sh) into subagent execution contexts. Plugin agents ignore
-  # hooks: fields, so this override is the only enforcement path.
-  if [ -d "$SCRIPT_DIR/agents" ]; then
-    mkdir -p ".claude/agents"
-    for agent_file in "$SCRIPT_DIR"/agents/*.md; do
-      [ -f "$agent_file" ] || continue
-      copy_file "$agent_file" ".claude/agents/$(basename "$agent_file")"
-    done
+  # --- Agent override files (delta-install + runtime generation) ---
+  # VBW agent overrides are NO LONGER copied verbatim. Instead:
+  #   - agents/vbw-*.md in this repo are delta files (frontmatter patch +
+  #     cmm-delta fenced sections). They stay in the repo as source.
+  #   - hooks/project/agent-override-generate.sh (installed above via the
+  #     hooks/project/*.sh wildcard loop) runs at each SessionStart to merge
+  #     the VBW base body with our delta, writing .claude/agents/vbw-*.md.
+  #   - hooks/lib/vbw-source.sh (installed above via the hooks/lib/*.sh loop)
+  #     resolves the active VBW plugin tree at runtime.
+  #   - The SessionStart registration is in project-settings-example.json,
+  #     applied by merge_settings_json above.
+  #
+  # Open Q-A: VBW base does NOT grant CMM/ctx-mode MCP tools — delta must
+  #   include the full extended tools: line (Phase 62). Plan 03 merge is correct.
+  # Open Q-B: skills: MUST remain in delta frontmatter. SubagentStart injectors
+  #   (subagent-cmm-startup.sh, subagent-ctx-startup.sh) deliver advisory context
+  #   only; skills: triggers the Skill() tool-loading mechanism, which is separate.
+  # Open Q-C: No double-fire. Frontmatter hooks fire in subagent context only;
+  #   settings.json hooks fire in main session only. track-cmm-calls.sh does not
+  #   double-count. No dedup guard needed at this time.
+  #
+  # Best-effort synchronous generation: run the generator now so the first
+  # session has up-to-date override files immediately (no session-restart needed
+  # after a fresh install). Fail-open: if VBW is absent or generation fails,
+  # setup.sh succeeds anyway — SessionStart will regenerate when VBW is found.
+  mkdir -p ".claude/agents"
+  local _gen_script
+  _gen_script="$(pwd -P)/.claude/hooks/agent-override-generate.sh"
+  if [ -f "$_gen_script" ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would run agent-override-generate.sh for initial override generation"
+    else
+      echo "  [ok] Running agent-override-generate.sh for initial VBW override generation..."
+      if bash "$_gen_script" 2>&1 | sed 's/^/    /'; then
+        echo "  [ok] VBW agent overrides generated (or already current)"
+      else
+        echo "  [warn] agent-override-generate.sh exited non-zero — overrides will be generated at next session start"
+      fi
+    fi
+  else
+    echo "  [warn] agent-override-generate.sh not found at expected path — overrides will be generated at first session start"
   fi
 
   # Purge deprecated hook files and their settings.json entries (unconditional).
