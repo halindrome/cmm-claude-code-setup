@@ -9,6 +9,15 @@
             "command": "bash .claude/hooks/cmm-session-start.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/agent-override-generate.sh",
+            "_comment": "Generates/refreshes .claude/agents/vbw-*.md by merging VBW base body with CMM delta (hooks, skills, tool grants). SHA-idempotent: no-op when overrides are current. Fail-open when VBW absent. Advisory instructs user to restart session to apply (V2 resolution)."
+          }
+        ]
       }
     ],
     "PreToolUse": [
