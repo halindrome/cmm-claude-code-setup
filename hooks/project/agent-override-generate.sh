@@ -25,7 +25,13 @@
 #   "hooks": { "SessionStart": [{ "hooks": [{"type": "command",
 #     "command": "bash .claude/hooks/agent-override-generate.sh"}] }] }
 
-set -euo pipefail
+set -uo pipefail
+# NOTE: -e (errexit) is intentionally omitted. This hook runs at SessionStart;
+# a non-zero exit would abort the session. All paths must fail-open (exit 0).
+# Per-command failures are handled explicitly with || { ...; } guards.
+
+# Safety net: ensure the script always exits 0 even on unexpected errors.
+trap 'exit 0' ERR
 
 # --- Project root detection (shared library with /tmp cache) ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -36,12 +42,12 @@ if [ -f "${_LIB_DIR}/project-root.sh" ]; then
   source "${_LIB_DIR}/project-root.sh"
 else
   # Fallback for running from repo source (hooks/project/ → hooks/lib/)
-  source "${SCRIPT_DIR}/../lib/project-root.sh"
+  source "${SCRIPT_DIR}/../lib/project-root.sh" 2>/dev/null || true
 fi
 if [ -f "${_LIB_DIR}/vbw-source.sh" ]; then
   source "${_LIB_DIR}/vbw-source.sh"
 else
-  source "${SCRIPT_DIR}/../lib/vbw-source.sh"
+  source "${SCRIPT_DIR}/../lib/vbw-source.sh" 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------
@@ -59,6 +65,39 @@ _sha256() {
     echo "[agent-override-generate] WARN: no sha256 tool found; SHA stamping disabled" >&2
     echo "unavailable"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# resolve_delta_path <agent_name>
+#   Locate the delta file for the given agent using a two-level resolution order:
+#     1. INSTALLED: ${SCRIPT_DIR}/../agents-delta/vbw-<agent>.md
+#        The hook lives at .claude/hooks/; agents-delta/ is always the sibling dir.
+#        This path is SCRIPT_DIR-relative so it works regardless of pwd/PROJECT_ROOT
+#        resolution, and does NOT require the cmm-claude-code-setup repo checked out
+#        (curl|bash-ready install).
+#     2. DEV FALLBACK: ${SCRIPT_DIR}/../../agents/vbw-<agent>.md
+#        In-repo source; only works when cmm-claude-code-setup is the repo hosting
+#        these hooks (i.e., the hook runs from the repo's hooks/project/ dir).
+#   Prints the resolved absolute path and returns 0, or returns 1 if neither exists.
+# ---------------------------------------------------------------------------
+resolve_delta_path() {
+  local agent_name="$1"
+  # 1. Installed path (preferred — SCRIPT_DIR-relative, curl|bash-ready)
+  #    SCRIPT_DIR = .claude/hooks/  →  ../agents-delta/ = .claude/agents-delta/
+  local installed_delta="${SCRIPT_DIR}/../agents-delta/vbw-${agent_name}.md"
+  if [ -f "$installed_delta" ]; then
+    echo "$installed_delta"
+    return 0
+  fi
+  # 2. Dev fallback (in-repo source when hook runs from hooks/project/)
+  local repo_delta="${SCRIPT_DIR}/../../agents/vbw-${agent_name}.md"
+  local canon_repo_delta
+  canon_repo_delta="$(cd "$(dirname "$repo_delta")" 2>/dev/null && pwd -P)/$(basename "$repo_delta")" 2>/dev/null || true
+  if [ -f "${canon_repo_delta:-}" ]; then
+    echo "$canon_repo_delta"
+    return 0
+  fi
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -95,13 +134,12 @@ PYEOF
 # ---------------------------------------------------------------------------
 compute_delta_sha() {
   local agent_name="$1"
-  # Delta file is at SCRIPT_DIR (hooks/project/) → ../../agents/ (repo root agents/)
-  local delta_file="${SCRIPT_DIR}/../../agents/vbw-${agent_name}.md"
-  delta_file="$(cd "$(dirname "$delta_file")" && pwd -P)/$(basename "$delta_file")" 2>/dev/null || true
-  if [ ! -f "$delta_file" ]; then
-    echo "[agent-override-generate] delta file not found: $delta_file" >&2
+  # Delta resolution order: installed (.claude/agents-delta/) → dev fallback (repo agents/)
+  local delta_file
+  delta_file=$(resolve_delta_path "$agent_name") || {
+    echo "[agent-override-generate] delta file not found for $agent_name (checked .claude/agents-delta/ and repo agents/)" >&2
     return 1
-  fi
+  }
   local content
   content=$(python3 - "$delta_file" <<'PYEOF'
 import sys, re
@@ -225,20 +263,19 @@ generate_override() {
   local delta_sha="$3"
 
   local base_file="${VBW_AGENTS_DIR}/vbw-${agent_name}.md"
-  local delta_file="${SCRIPT_DIR}/../../agents/vbw-${agent_name}.md"
   local out_file="${PROJECT_ROOT}/.claude/agents/vbw-${agent_name}.md"
 
   if [ ! -f "$base_file" ]; then
     echo "[agent-override-generate] WARN: base file missing: $base_file — skipping $agent_name" >&2
     return 1
   fi
-  if [ ! -f "$delta_file" ]; then
-    echo "[agent-override-generate] WARN: delta file missing: $delta_file — skipping $agent_name" >&2
-    return 1
-  fi
 
-  # Canonicalize delta_file path
-  delta_file="$(cd "$(dirname "$delta_file")" && pwd -P)/$(basename "$delta_file")"
+  # Delta resolution order: installed (.claude/agents-delta/) → dev fallback (repo agents/)
+  local delta_file
+  delta_file=$(resolve_delta_path "$agent_name") || {
+    echo "[agent-override-generate] WARN: delta file missing for $agent_name — skipping" >&2
+    return 1
+  }
 
   # Perform the merge via Python (keeps complex YAML/regex logic out of bash)
   local merged
@@ -423,10 +460,13 @@ manual_edit_detected() {
 
   # SHAs stamp says this was our generated version — compare full file content
   # by regenerating expected output in a temp file and diffing
+  local delta_file_med
+  delta_file_med=$(resolve_delta_path "$agent_name") || return 1  # no delta → not a manual edit
+
   local tmp_expected
   tmp_expected=$(mktemp /tmp/agent-override-expected.XXXXXX)
   python3 - "${VBW_AGENTS_DIR}/vbw-${agent_name}.md" \
-            "${SCRIPT_DIR}/../../agents/vbw-${agent_name}.md" \
+            "$delta_file_med" \
             "$agent_name" "$expected_base" "$expected_delta" \
             > "$tmp_expected" 2>/dev/null <<'PYEOF'
 import sys, re
@@ -551,9 +591,27 @@ main() {
   fi
 
   # --- Resolve VBW source ---
-  if ! resolve_vbw_source; then
-    # VBW absent or disabled — fail-open, no advisory needed
-    echo "[agent-override-generate] VBW not found; skipping agent override generation" >&2
+  # resolve_vbw_source returns 1 when VBW is absent/disabled. Fail-open: clean no-op.
+  if ! resolve_vbw_source 2>/dev/null; then
+    # VBW absent or disabled — advisory via systemMessage, then clean no-op
+    printf '{"type":"systemMessage","message":"%s"}\n' \
+      "CMM agent-override-generate: VBW plugin not found — agent overrides skipped. Install VBW and restart session to generate."
+    exit 0
+  fi
+
+  # --- Check delta files availability ---
+  # If no delta files are found in either location, clean no-op.
+  local _any_delta=0
+  local _test_agent
+  for _test_agent in architect debugger dev docs lead qa scout; do
+    if resolve_delta_path "$_test_agent" >/dev/null 2>&1; then
+      _any_delta=1
+      break
+    fi
+  done
+  if [ "$_any_delta" -eq 0 ]; then
+    printf '{"type":"systemMessage","message":"%s"}\n' \
+      "CMM agent-override-generate: no delta files found in .claude/agents-delta/ — agent overrides skipped. Run setup.sh --project to install delta files."
     exit 0
   fi
 
