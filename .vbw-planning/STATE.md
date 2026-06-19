@@ -3,10 +3,10 @@
 **Project:** cmm-claude-code-setup
 
 ## Current Phase
-Phase: 63 of 63 (Refresh ctx/cmm Rule Files for Upstream Tool Versions)
-Plans: 1/1
-Progress: 100%
-Status: all_done
+Phase: 66 (Runtime VBW Agent Override Generation)
+Plans: 5 planned / 0 executed
+Progress: 5 plans written (waves 1-4); design keeps documented frontmatter hooks, cuts fork maintenance burden. Phase 65 now UAT-complete (1 remediation round: D01 example genericized, commit 0f28fe2).
+Status: Planned
 
 ## Key Decisions
 
@@ -38,6 +38,8 @@ Status: all_done
 - [KNOWN-ISSUE] fixture A/B merge_settings_json basename-dedup (setup.sh): _last_token_basename was introduced in commit b8f8be0 (Phase 51 fix round 1),... (phase 57, seen 1x) (see 57-VERIFICATION.md) (added 2026-05-17) (ref:62cd2bef)
 - CLAUDE.md MAINTENANCE: setup.sh / cmm-session-start should be able to inject (or refresh) a "## Code Intelligence" section in the host project's CLAUDE.md that documents the actual semantic-nav workflow the hooks enforce — CMM tools, context-mode for large output, the exemption matrix (non-code files, <50 lines, .vbw-planning/.planning/.claude/node_modules/.git paths, # cmm-exempt marker). Today VBW (and likely GSD) inject their own LSP-first guidance via `check-claude-md-staleness.sh --fix`, which is misleading in repos where no LSP is installed and CMM is doing the real work; an agent following that guidance (e.g. "use Grep for literal strings") hits hook blocks. Need a CMM-owned section that coexists with VBW/GSD injections (each plugin owns its own heading) so the host CLAUDE.md describes the real toolchain. Open questions: (a) define a `<!-- CMM:BEGIN -->`/`<!-- CMM:END -->` fence convention, (b) detect when the project has CMM hooks installed (presence of `.claude/hooks/cmm-nudge.sh`?) to decide whether to inject, (c) decide whether to refresh only on `setup.sh` runs or also via a periodic check like VBW's `check-claude-md-staleness.sh --fix`. Observed in corvex-build 2026-05-19. (added 2026-05-19)
 ## Recent Activity
+- 2026-06-18: Phase 65 (Monorepo CMM Index Discipline) executed on branch feature/phase-65-monorepo-cmm-index-discipline — 5 atomic commits (4c1aff6, caf03a3, d922c28, b331d68, b996899). QA PASS 26/26, deterministic gate PROCEED_TO_UAT. UAT pending (auto_uat=false). Pre-merge: version bump + post-merge runbook (delete stray cvx_6004-apps-rest-api index; re-run setup.sh on cvx_6004 & cvx-4894).
+- 2026-06-18: Phase 65 added, discussed, and planned (65-01, wave 1, 5 tasks). Hard-block PreToolUse gate on descendant index_repository + cmm-rules monorepo rule + PROJECT_ROOT surfacing.
 - 2026-05-14: Phase 58 (Prohibit head/tail truncation inside ctx_execute sandbox) added — Planned.
 - 2026-03-31: Picked up todo via /vbw:debug: Context Mode: investigate forcing Bash calls through ctx_execute via a PreToolUse hook
 - 2026-04-18: Phase 47 (Enforcement Audit + Context-Mode PostToolUse Annotation) closed. Shipped Finding A (ctx-execute-enforcer exemption tightening: removed bare `git log|diff|show` catch-all + `echo|printf`; added per-group track-hook-blocks counters), Finding B (cmm-nudge targeted-Read exemption now requires `/tmp/cmm-recent-<PROJECT_HASH>` touched within 60s), Finding C (rules/cmm-rules.md rewrite + cmm-session-start prompt + new one-shot `cmm-orient-nudge.sh`), Finding D (new `ctx-annotate-nudge.sh` PostToolUse additionalContext hook replacing `ctx-search-nudge.sh`). Merge date placeholder: <fill-on-merge>. **Follow-up debug pass scheduled two weeks after merge** to quantify impact on the three debug-session signals that motivated the phase: 61 raw Bash calls in session 358f31be, 43 Reads vs 2 search_graph in session 9f16fc98, and 0 calls to get_architecture / query_graph / trace_call_path across 1,274 tool-uses. Expected deltas: raw-Bash count down (Finding A), Read:search_graph ratio improved (Finding B), at least a non-zero count of the three under-promoted CMM tools (Findings C + D).
