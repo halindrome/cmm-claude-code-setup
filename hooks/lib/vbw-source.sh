@@ -82,4 +82,88 @@ _vbw_config_dir() {
   return 1
 }
 
+# ---------------------------------------------------------------------------
+# resolve_vbw_source — locate the active VBW plugin tree and export vars
+#
+# Resolution order: local-symlink > marketplace > dev-checkout > absent
+# Returns 0 on success (VBW found), 1 on absent/disabled (caller must fail-open).
+# ---------------------------------------------------------------------------
+resolve_vbw_source() {
+  local config_dir marketplace plugin_key install_path version
+  local agents_dir symlink_target
+
+  # Reset exported vars in case of re-source
+  VBW_AGENTS_DIR=""
+  VBW_SOURCE_TYPE=""
+  VBW_VERSION=""
+
+  # --- Resolve CONFIG_DIR ---
+  config_dir=$(_vbw_config_dir) || {
+    echo "[vbw-source] Cannot locate Claude Code config directory" >&2
+    VBW_SOURCE_TYPE="absent"
+    VBW_VERSION="absent"
+    export VBW_AGENTS_DIR VBW_SOURCE_TYPE VBW_VERSION
+    return 1
+  }
+
+  marketplace="vbw-marketplace"
+  plugin_key="vbw@${marketplace}"
+  local plugins_json="${config_dir}/plugins/installed_plugins.json"
+  local vbw_cache_base="${config_dir}/plugins/cache/${marketplace}/vbw"
+
+  # --- Case 1: local-symlink (--plugin-dir dev mode, takes priority) ---
+  # plugins/cache/vbw-marketplace/vbw/local is a symlink → dev worktree
+  local local_link="${vbw_cache_base}/local"
+  if [ -L "$local_link" ]; then
+    symlink_target=$(readlink -f "$local_link" 2>/dev/null)
+    if [ -n "$symlink_target" ] && [ -d "${symlink_target}/agents" ]; then
+      VBW_AGENTS_DIR="${symlink_target}/agents"
+      VBW_SOURCE_TYPE="local-symlink"
+      VBW_VERSION="local"
+      export VBW_AGENTS_DIR VBW_SOURCE_TYPE VBW_VERSION
+      return 0
+    fi
+  fi
+
+  # --- Case 2: marketplace published version ---
+  # Read installPath from installed_plugins.json
+  if [ -f "$plugins_json" ] && command -v python3 >/dev/null 2>&1; then
+    install_path=$(python3 -c "
+import json, sys
+try:
+    with open('$plugins_json') as f:
+        d = json.load(f)
+    entries = d.get('plugins', {}).get('$plugin_key', [])
+    if entries and isinstance(entries, list):
+        print(entries[0].get('installPath', ''))
+except Exception:
+    pass
+" 2>/dev/null)
+    version=$(python3 -c "
+import json, sys
+try:
+    with open('$plugins_json') as f:
+        d = json.load(f)
+    entries = d.get('plugins', {}).get('$plugin_key', [])
+    if entries and isinstance(entries, list):
+        print(entries[0].get('version', ''))
+except Exception:
+    pass
+" 2>/dev/null)
+
+    if [ -n "$install_path" ] && [ -n "$version" ]; then
+      agents_dir="${install_path}/agents"
+      if [ -d "$agents_dir" ]; then
+        VBW_AGENTS_DIR="$agents_dir"
+        VBW_SOURCE_TYPE="marketplace"
+        VBW_VERSION="$version"
+        export VBW_AGENTS_DIR VBW_SOURCE_TYPE VBW_VERSION
+        return 0
+      fi
+    fi
+  fi
+
+  return 1  # not found yet; caller continues to Cases 3-4
+}
+
 _VBW_SOURCE_LOADED=1
