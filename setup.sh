@@ -1790,7 +1790,10 @@ install_project() {
       echo "  [DRY RUN] Would run agent-override-generate.sh for initial override generation"
     else
       echo "  [ok] Running agent-override-generate.sh for initial VBW override generation..."
-      if bash "$_gen_script" 2>&1 | sed 's/^/    /'; then
+      # Discard the script's stdout (the hook-only systemMessage JSON, meant for
+      # SessionStart hook consumption — not for a direct shell run); keep only the
+      # human-readable stderr advisories in the install transcript.
+      if bash "$_gen_script" 2>&1 1>/dev/null | sed 's/^/    /'; then
         echo "  [ok] VBW agent overrides generated (or already current)"
       else
         echo "  [warn] agent-override-generate.sh exited non-zero — overrides will be generated at next session start"

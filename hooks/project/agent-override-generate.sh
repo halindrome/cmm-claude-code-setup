@@ -678,7 +678,7 @@ main() {
     # Advisory as JSON systemMessage (preferred user-visible channel per hook docs)
     local msg="VBW agent overrides updated (${agent_list}— VBW ${VBW_VERSION}/${VBW_SOURCE_TYPE}${warn_notice}). RESTART SESSION to apply."
     printf '{"type":"systemMessage","message":"%s"}\n' \
-      "$(printf '%s' "$msg" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read())[1:-1])')"
+      "$(printf '%s' "$msg" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read(), ensure_ascii=False)[1:-1])')"
   fi
 
   # Warn channel for any manually-edited files (belt-and-suspenders, also above)
@@ -687,7 +687,7 @@ main() {
     warn_list=$(printf '%s ' "${warned[@]}")
     local wmsg="CMM agent override(s) have been manually edited and will NOT be auto-regenerated: ${warn_list}. To reset, delete the file(s) and restart session."
     printf '{"type":"systemMessage","message":"%s"}\n' \
-      "$(printf '%s' "$wmsg" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read())[1:-1])')"
+      "$(printf '%s' "$wmsg" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read(), ensure_ascii=False)[1:-1])')"
   fi
 }
 
