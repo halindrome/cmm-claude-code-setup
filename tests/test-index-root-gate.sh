@@ -199,6 +199,54 @@ else
     FAIL=$((FAIL+1))
 fi
 
+# --- Path-robustness fixtures (sibling-prefix + symlinked root) ---
+PROJ_SIBLING="${PROJ_CANON}-other"   # shares basename PREFIX with PROJ_CANON
+mkdir -p "$PROJ_SIBLING"
+LINK_ROOT="$TMPDIR_ROOT/monorepo-link"
+ln -s "$PROJ_CANON" "$LINK_ROOT"     # symlink pointing at the real project root
+
+echo "--- 13: sibling sharing basename prefix allowed (/monorepo-other vs /monorepo) ---"
+_assert_exit "sibling-prefix path allowed" 0 \
+    "{\"tool_input\":{\"repo_path\":\"${PROJ_SIBLING}\"}}" \
+    "$PROJ_CANON" \
+    "$ENV_NO_GLOBAL"
+
+echo "--- 14: descendant with trailing slash still blocked (exit 2) ---"
+_assert_exit "trailing-slash descendant blocked" 2 \
+    "{\"tool_input\":{\"repo_path\":\"${PROJ_CANON}/apps/rest-api/\"}}" \
+    "$PROJ_CANON" \
+    "$ENV_NO_GLOBAL"
+
+echo "--- 15: relative descendant path blocked (exit 2) ---"
+_assert_exit "relative descendant blocked" 2 \
+    '{"tool_input":{"repo_path":"apps/rest-api"}}' \
+    "$PROJ_CANON" \
+    "$ENV_NO_GLOBAL"
+
+echo "--- 16: '..'-segment path that resolves to a descendant still blocked (exit 2) ---"
+_assert_exit "dotdot-to-descendant blocked" 2 \
+    "{\"tool_input\":{\"repo_path\":\"${PROJ_CANON}/apps/../apps/rest-api\"}}" \
+    "$PROJ_CANON" \
+    "$ENV_NO_GLOBAL"
+
+echo "--- 17: '..'-segment path that escapes to an ancestor allowed (exit 0) ---"
+_assert_exit "dotdot-to-ancestor allowed" 0 \
+    "{\"tool_input\":{\"repo_path\":\"${PROJ_CANON}/..\"}}" \
+    "$PROJ_CANON" \
+    "$ENV_NO_GLOBAL"
+
+echo "--- 18: symlinked root + non-existent descendant leaf blocked (exit 2) [regression: fail-open evasion] ---"
+_assert_exit "symlink-root non-existent leaf blocked" 2 \
+    "{\"tool_input\":{\"repo_path\":\"${LINK_ROOT}/services/ghost\"}}" \
+    "$LINK_ROOT" \
+    "$ENV_NO_GLOBAL"
+
+echo "--- 19: symlinked root itself allowed (exit 0) ---"
+_assert_exit "symlink-root equals root allowed" 0 \
+    "{\"tool_input\":{\"repo_path\":\"${LINK_ROOT}\"}}" \
+    "$LINK_ROOT" \
+    "$ENV_NO_GLOBAL"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

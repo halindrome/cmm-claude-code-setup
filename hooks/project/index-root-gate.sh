@@ -65,14 +65,47 @@ fi
 # Fail open if CMM is not registered anywhere
 [ "$CMM_FOUND" = false ] && exit 0
 
+# Canonicalize a possibly-not-yet-existing path: resolve symlinks on the deepest
+# existing ancestor (via cd/pwd -P), then re-append and lexically collapse the
+# trailing non-existent segments. Without this, a repo_path whose leaf does not
+# exist yet (under a symlinked root) would keep its raw symlink form and slip past
+# the strict-descendant prefix test below — a fail-open hole in the block.
+_canon_path() {
+    local p="$1" resolved
+    resolved="$(cd "$p" 2>/dev/null && pwd -P)"
+    if [ -n "$resolved" ]; then
+        printf '%s\n' "$resolved"
+        return 0
+    fi
+    local tail="" base="$p"
+    while [ "$base" != "/" ] && [ -n "$base" ] && [ ! -d "$base" ]; do
+        tail="/$(basename "$base")${tail}"
+        base="$(dirname "$base")"
+    done
+    local base_canon
+    base_canon="$(cd "$base" 2>/dev/null && pwd -P)" || base_canon="$base"
+    # Lexically collapse '.' and '..' across base_canon + tail (no FS access).
+    local full="${base_canon}${tail}" out="" seg
+    local IFS=/
+    for seg in $full; do
+        case "$seg" in
+            ""|.) ;;
+            ..) out="${out%/*}" ;;
+            *) out="${out}/${seg}" ;;
+        esac
+    done
+    printf '%s\n' "${out:-/}"
+}
+
 # --- Resolve repo_path to absolute path ---
 # Handle relative paths by resolving against $PWD
 if [ "${REPO_PATH:0:1}" != "/" ]; then
     REPO_PATH="${PWD}/${REPO_PATH}"
 fi
-# Canonicalize (collapse .., symlinks) so string comparison is reliable
-REPO_PATH_CANON="$(cd "$REPO_PATH" 2>/dev/null && pwd -P)" || REPO_PATH_CANON="$REPO_PATH"
-PROJECT_ROOT_CANON="$(cd "$PROJECT_ROOT" 2>/dev/null && pwd -P)" || PROJECT_ROOT_CANON="$PROJECT_ROOT"
+# Canonicalize (resolve symlinks, collapse .., handle not-yet-existing leaves) so
+# string comparison is reliable.
+REPO_PATH_CANON="$(_canon_path "$REPO_PATH")"
+PROJECT_ROOT_CANON="$(_canon_path "$PROJECT_ROOT")"
 
 # Fail open if canonicalization failed for either path
 [ -z "$REPO_PATH_CANON" ] && exit 0
