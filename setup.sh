@@ -1752,6 +1752,32 @@ install_project() {
   #   settings.json hooks fire in main session only. track-cmm-calls.sh does not
   #   double-count. No dedup guard needed at this time.
   #
+  # Install delta files into .claude/agents-delta/ — these are the per-agent
+  # frontmatter patch + cmm-delta fenced sections that agent-override-generate.sh
+  # reads at runtime to build the merged .claude/agents/vbw-*.md overrides.
+  #
+  # Installed path (.claude/agents-delta/) is the primary resolution location for
+  # agent-override-generate.sh — it works without the cmm-claude-code-setup repo
+  # checked out (curl|bash-ready install). The repo agents/ dir is a dev fallback.
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would create .claude/agents-delta/"
+    shopt -s nullglob
+    for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
+      echo "  [DRY RUN] Would copy $(basename "$file") -> .claude/agents-delta/"
+    done
+    shopt -u nullglob
+  else
+    mkdir -p ".claude/agents-delta"
+    # Pre-scan: report drift before per-file prompts
+    # shellcheck disable=SC2046
+    scan_drift_summary ".claude/agents-delta" $( ls "$SCRIPT_DIR/agents/vbw-"*.md 2>/dev/null )
+    shopt -s nullglob
+    for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
+      copy_file "$file" ".claude/agents-delta/$(basename "$file")"
+    done
+    shopt -u nullglob
+  fi
+
   # Best-effort synchronous generation: run the generator now so the first
   # session has up-to-date override files immediately (no session-restart needed
   # after a fresh install). Fail-open: if VBW is absent or generation fails,
