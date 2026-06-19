@@ -166,18 +166,24 @@ Orient first: `get_architecture` -> `search_graph` -> `get_code_snippet`.
 PROMPT
 else
   # --- Minimal prompt for human sessions ---
-  cat <<'PROMPT'
+  # Build the index_repository instruction: include the resolved PROJECT_ROOT path when available,
+  # fall back to the path-agnostic form so no regression occurs when PROJECT_ROOT is empty.
+  if [ -n "$PROJECT_ROOT" ]; then
+    _INDEX_INSTRUCTION="1. Say one short line AND call \`index_repository(repo_path=\"${PROJECT_ROOT}\")\` in the same turn — the index is incremental and fast when already indexed. Always pass repo_path=\"${PROJECT_ROOT}\" (the resolved monorepo root); never a subdirectory."
+  else
+    _INDEX_INSTRUCTION="1. Say one short line AND call \`index_repository\` in the same turn — the index is incremental and fast when already indexed."
+  fi
+  cat <<PROMPT
 **MANDATORY FIRST ACTION — Do this alongside your first reply:**
 
 In your very first assistant turn, output exactly one short acknowledgment line
-(e.g. "Refreshing CMM index…") **in the same turn** as the `index_repository` tool call.
+(e.g. "Refreshing CMM index…") **in the same turn** as the \`index_repository\` tool call.
 NEVER emit an empty text block before the tool call — the Anthropic API rejects turns
 whose text content is empty, and that 400 error poisons the rest of the session.
 
-1. Say one short line AND call `index_repository` in the same turn — the index is incremental
-   and fast when already indexed.
+${_INDEX_INSTRUCTION}
 2. Only after the index is confirmed current, proceed with the user's request.
-3. Invoke `Skill('cmm-rules')` and `Skill('ctx-rules')` via the Skill tool so their protocols
+3. Invoke \`Skill('cmm-rules')\` and \`Skill('ctx-rules')\` via the Skill tool so their protocols
    load into context: CMM orient-first navigation (get_architecture → search_graph → get_code_snippet)
    for source code; ctx_stats / ctx_search before re-running commands.
 

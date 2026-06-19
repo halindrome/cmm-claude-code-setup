@@ -1660,6 +1660,7 @@ install_project() {
   #     (vbw-debugger / vbw-lead / vbw-dev / vbw-qa / vbw-docs) as
   #     "bash .claude/hooks/ctx-execute-enforcer.sh"; the wildcard loop below copies it
   #     and set_executable runs against it — no dedicated copy_file branch needed.
+  #   index-root-gate.sh — PreToolUse:mcp__codebase-memory-mcp__index_repository hard-block for subtree indexing in monorepos (phase 65)
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
   # NOTE: VBW agent override files (agents/*.md) ARE copied by setup.sh --project to
