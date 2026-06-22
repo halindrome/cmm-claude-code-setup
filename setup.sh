@@ -2148,9 +2148,10 @@ except Exception:
     mkdir -p "$(dirname "$sl_config_path")"
 
     # Read existing values (if any) so we can offer them as defaults.
+    # this resolution MUST match the generated statusline-cmm.sh reader
     local return_from_phase2=false
-    local cur_cmm_total=true cur_cmm_details=true cur_blocks_total=true
-    local cur_block_details=true cur_ctx_total=true cur_ctx_details=true
+    local cur_ctx_savings=true cur_cmm_health=true cur_cmm_nodes_edges=false
+    local cur_cmm_calls=false cur_blocks_total=false cur_block_details=false
     if [ -f "$sl_config_path" ]; then
       local _sl_read
       _sl_read=$(python3 -c "
@@ -2158,15 +2159,23 @@ import json, sys
 try:
     with open(sys.argv[1]) as f:
         d = json.load(f)
-    keys = ['cmm_total','cmm_details','blocks_total','block_details','ctx_total','ctx_details']
-    print(' '.join('true' if d.get(k, True) else 'false' for k in keys))
+    # New flags (with defaults); old flags ignored/retired
+    vals = [
+        'true' if d.get('ctx_savings', True)     else 'false',
+        'true' if d.get('cmm_health', True)      else 'false',
+        'true' if d.get('cmm_nodes_edges', False) else 'false',
+        'true' if d.get('cmm_calls', False)       else 'false',
+        'true' if d.get('blocks_total', False)    else 'false',
+        'true' if d.get('block_details', False)   else 'false',
+    ]
+    print(' '.join(vals))
 except Exception:
-    print('true true true true true true')
-" "$sl_config_path" 2>/dev/null || echo "true true true true true true")
-      read -r cur_cmm_total cur_cmm_details cur_blocks_total cur_block_details cur_ctx_total cur_ctx_details <<<"$_sl_read"
+    print('true true false false false false')
+" "$sl_config_path" 2>/dev/null || echo "true true false false false false")
+      read -r cur_ctx_savings cur_cmm_health cur_cmm_nodes_edges cur_cmm_calls cur_blocks_total cur_block_details <<<"$_sl_read"
     fi
 
-    local sl_cmm_total sl_cmm_details sl_blocks_total sl_block_details sl_ctx_total sl_ctx_details
+    local sl_ctx_savings sl_cmm_health sl_cmm_nodes_edges sl_cmm_calls sl_blocks_total sl_block_details
 
     if [ "$YES_FLAG" = true ] || [ "$FORCE" = true ] || [ ! -t 0 ]; then
       # Branch 1: non-interactive. Preserve existing config file if present; else write defaults.
@@ -2174,12 +2183,12 @@ except Exception:
         echo "  [info] Statusline config preserved: ${sl_config_path}"
         return_from_phase2=true
       else
-        sl_cmm_total=$cur_cmm_total
-        sl_cmm_details=$cur_cmm_details
+        sl_ctx_savings=$cur_ctx_savings
+        sl_cmm_health=$cur_cmm_health
+        sl_cmm_nodes_edges=$cur_cmm_nodes_edges
+        sl_cmm_calls=$cur_cmm_calls
         sl_blocks_total=$cur_blocks_total
         sl_block_details=$cur_block_details
-        sl_ctx_total=$cur_ctx_total
-        sl_ctx_details=$cur_ctx_details
         return_from_phase2=false
       fi
     else
@@ -2190,12 +2199,12 @@ except Exception:
       else
         echo "  Statusline component selection (press Enter for default):"
       fi
-      sl_cmm_total=$(_prompt_with_default "    Show CMM total (CMM:N)?" "$cur_cmm_total")
-      sl_cmm_details=$(_prompt_with_default "    Show CMM details (sg:X cs:Y tr:Z)?" "$cur_cmm_details")
-      sl_blocks_total=$(_prompt_with_default "    Show Blocks total (Blk:N)?" "$cur_blocks_total")
-      sl_block_details=$(_prompt_with_default "    Show Block details (R:X/B:Y)?" "$cur_block_details")
-      sl_ctx_total=$(_prompt_with_default "    Show Context Mode total (CTX:N)?" "$cur_ctx_total")
-      sl_ctx_details=$(_prompt_with_default "    Show Context Mode details (ex:X bex:Y sr:Z)?" "$cur_ctx_details")
+      sl_ctx_savings=$(_prompt_with_default "    Show context-mode savings (e.g. '170 KB kept out')?" "$cur_ctx_savings")
+      sl_cmm_health=$(_prompt_with_default "    Show CMM health glyph (✓/⟳)?" "$cur_cmm_health")
+      sl_cmm_nodes_edges=$(_prompt_with_default "    Show CMM node/edge counts (Nn/Me, opt-in)?" "$cur_cmm_nodes_edges")
+      sl_cmm_calls=$(_prompt_with_default "    Show CMM call count (CMM:N, opt-in)?" "$cur_cmm_calls")
+      sl_blocks_total=$(_prompt_with_default "    Show block count (Blk:N, opt-in)?" "$cur_blocks_total")
+      sl_block_details=$(_prompt_with_default "    Show block details (Blk:RN/BN, opt-in)?" "$cur_block_details")
       return_from_phase2=false
     fi
 
@@ -2203,12 +2212,12 @@ except Exception:
       # Atomic write: tmp + mv.
       cat > "${sl_config_path}.tmp" <<SLCFG
 {
-  "cmm_total": ${sl_cmm_total},
-  "cmm_details": ${sl_cmm_details},
+  "ctx_savings": ${sl_ctx_savings},
+  "cmm_health": ${sl_cmm_health},
+  "cmm_nodes_edges": ${sl_cmm_nodes_edges},
+  "cmm_calls": ${sl_cmm_calls},
   "blocks_total": ${sl_blocks_total},
-  "block_details": ${sl_block_details},
-  "ctx_total": ${sl_ctx_total},
-  "ctx_details": ${sl_ctx_details}
+  "block_details": ${sl_block_details}
 }
 SLCFG
       mv "${sl_config_path}.tmp" "$sl_config_path"
@@ -2224,7 +2233,21 @@ SLCFG
       # GLOBAL MODE — Generate standalone statusline-cmm.sh
       cat > "$script_path" <<'STATUSLINE_SCRIPT'
 #!/bin/bash
-# statusline-cmm.sh — Display CMM call stats in Claude Code statusline
+# statusline-cmm.sh — Display context-mode savings + CMM health in Claude Code statusline
+# Style C (default): …upstream… | <savings> | CMM <glyph>
+# Example: … | 170 KB kept out | CMM ✓
+#
+# Toggle flags in _statusline-config-<hash>.json:
+#   ctx_savings      true   — show context-mode savings (first · field)
+#   cmm_health       true   — show CMM sentinel glyph (✓/⟳)
+#   cmm_nodes_edges  false  — append node/edge counts from sqlite3 (opt-in)
+#   cmm_calls        false  — show CMM:N call count (opt-in)
+#   blocks_total     false  — show Blk: block count (opt-in)
+#   block_details    false  — show Blk:RN/BN detail (opt-in, needs blocks_total)
+#   ctx_total        ignored (retired — use ctx_savings)
+#   ctx_details      ignored (retired)
+#   cmm_total        ignored (retired — use cmm_calls)
+#   cmm_details      ignored (retired)
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 if [ -n "$PROJECT_ROOT" ]; then
     _WALK="$PROJECT_ROOT"
@@ -2246,68 +2269,104 @@ if [ -n "$PROJECT_ROOT" ]; then
     fi
 fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+# Derive CMM DB slug: same algorithm as cbm_project_name_from_path (pipeline/fqn.c):
+#   replace non-[A-Za-z0-9._-] with '-', collapse consecutive dashes/dots,
+#   trim leading dashes/dots and trailing dashes (cbm_project_name_from_path,
+#   fqn.c:350-373). Empty result falls back to "root". Matches DB filenames in cache.
+CMM_SLUG=$(printf '%s' "$PROJECT_ROOT" \
+  | sed 's/[^A-Za-z0-9._-]/-/g' \
+  | sed 's/--*/-/g; s/\.\.*/./g' \
+  | sed 's/^[-.]*//; s/-*$//')
+[ -n "$CMM_SLUG" ] || CMM_SLUG="root"
 # --- Config reading ---
 SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
 [ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
-SHOW_CMM_TOTAL=$(jq -r 'if has("cmm_total") then .cmm_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CMM_DETAILS=$(jq -r 'if has("cmm_details") then .cmm_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_BLOCKS_TOTAL=$(jq -r 'if has("blocks_total") then .blocks_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_BLOCK_DETAILS=$(jq -r 'if has("block_details") then .block_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CTX_TOTAL=$(jq -r 'if has("ctx_total") then .ctx_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CTX_DETAILS=$(jq -r 'if has("ctx_details") then .ctx_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-# --- CMM counts ---
-CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
-CMM_OUTPUT=""
-if [ -f "$CACHE" ]; then
-  TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
-  SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  if [ "$SHOW_CMM_TOTAL" = "true" ]; then
-    CMM_OUTPUT="CMM:${TOTAL}"
-    if [ "$SHOW_CMM_DETAILS" = "true" ]; then
-      CMM_OUTPUT="${CMM_OUTPUT} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+SHOW_CTX_SAVINGS=$(jq -r 'if has("ctx_savings") then .ctx_savings else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_HEALTH=$(jq -r 'if has("cmm_health") then .cmm_health else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_NODES_EDGES=$(jq -r 'if has("cmm_nodes_edges") then .cmm_nodes_edges else false end' "$SL_CONFIG" 2>/dev/null || echo false)
+SHOW_CMM_CALLS=$(jq -r 'if has("cmm_calls") then .cmm_calls else false end' "$SL_CONFIG" 2>/dev/null || echo false)
+SHOW_BLOCKS_TOTAL=$(jq -r 'if has("blocks_total") then .blocks_total else false end' "$SL_CONFIG" 2>/dev/null || echo false)
+SHOW_BLOCK_DETAILS=$(jq -r 'if has("block_details") then .block_details else false end' "$SL_CONFIG" 2>/dev/null || echo false)
+# --- Context-mode savings segment ---
+CTX_SAVINGS_OUTPUT=""
+if [ "$SHOW_CTX_SAVINGS" = "true" ]; then
+  # F4: NO_COLOR=1 suppresses ANSI/color variants at source
+  _CTX_RAW=$(NO_COLOR=1 context-mode statusline 2>/dev/null || true)
+  if [ -n "$_CTX_RAW" ]; then
+    # Strip brand prefix: only strip "context-mode ●" when ● is present;
+    # otherwise defensively strip leading "context-mode " brand or ANSI escape
+    if printf '%s' "$_CTX_RAW" | grep -qF '●'; then
+      _CTX_STRIPPED="${_CTX_RAW#*●}"
+    else
+      _ESC=$(printf '\033')
+      _CTX_STRIPPED=$(printf '%s' "$_CTX_RAW" \
+        | sed 's/^context-mode //' \
+        | sed "s/^${_ESC}\\[[0-9;]*m//")
     fi
-  fi
-else
-  if [ "$SHOW_CMM_TOTAL" = "true" ]; then
-    CMM_OUTPUT="CMM:0"
+    # F2: Take first bullet-delimited field; trim all leading/trailing whitespace robustly
+    _CTX_FIRST=$(printf '%s' "$_CTX_STRIPPED" \
+      | sed 's/[[:space:]]*[·•][[:space:]]*.*//' \
+      | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    [ -n "$_CTX_FIRST" ] && CTX_SAVINGS_OUTPUT="$_CTX_FIRST"
   fi
 fi
-# --- CTX counts ---
-CTX_CACHE="$HOME/.cache/codebase-memory-mcp/_ctx-call-counts-${PROJECT_HASH}.json"
-if [ -f "$CTX_CACHE" ]; then
-  CTX_TOTAL=$(jq -r '.total_calls // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
-  CTX_EXEC=$(jq -r '.by_tool["mcp__context-mode__ctx_execute"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
-  CTX_BATCH=$(jq -r '.by_tool["mcp__context-mode__ctx_batch_execute"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
-  CTX_SEARCH=$(jq -r '.by_tool["mcp__context-mode__ctx_search"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
-  if [ "$CTX_TOTAL" -gt 0 ] 2>/dev/null; then
-    if [ "$SHOW_CTX_TOTAL" = "true" ]; then
-      CTX_OUTPUT="CTX:${CTX_TOTAL}"
-      if [ "$SHOW_CTX_DETAILS" = "true" ]; then
-        CTX_OUTPUT="${CTX_OUTPUT} (ex:${CTX_EXEC} bex:${CTX_BATCH} sr:${CTX_SEARCH})"
+# --- CMM health segment ---
+CMM_HEALTH_OUTPUT=""
+if [ "$SHOW_CMM_HEALTH" = "true" ]; then
+  SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
+  if [ -f "$SENTINEL" ]; then
+    CMM_HEALTH_OUTPUT="CMM ✓"
+  else
+    CMM_HEALTH_OUTPUT="CMM ⟳"
+  fi
+  # Optional node/edge counts via sqlite3 (opt-in; fail-open if sqlite3 absent)
+  # F1: CMM names DBs by path-slug (cbm_project_name_from_path), not md5 hash
+  if [ "$SHOW_CMM_NODES_EDGES" = "true" ] && command -v sqlite3 >/dev/null 2>&1; then
+    CMM_DB="$HOME/.cache/codebase-memory-mcp/${CMM_SLUG}.db"
+    if [ -f "$CMM_DB" ]; then
+      # F5: nodes/edges table names are CMM internals (store schema) — fail-open if schema changes
+      _N=$(sqlite3 "$CMM_DB" "SELECT count(*) FROM nodes" 2>/dev/null || true)
+      _E=$(sqlite3 "$CMM_DB" "SELECT count(*) FROM edges" 2>/dev/null || true)
+      if [ -n "$_N" ] && [ -n "$_E" ]; then
+        CMM_HEALTH_OUTPUT="${CMM_HEALTH_OUTPUT} ${_N}n/${_E}e"
       fi
-      CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }${CTX_OUTPUT}"
     fi
   fi
 fi
-# --- Block counts ---
+# --- CMM call count (opt-in) ---
+CMM_CALLS_OUTPUT=""
+if [ "$SHOW_CMM_CALLS" = "true" ]; then
+  CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
+  if [ -f "$CACHE" ]; then
+    CMM_TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
+    CMM_CALLS_OUTPUT="CMM:${CMM_TOTAL}"
+  fi
+fi
+# --- Block counts (opt-in) ---
+BLOCK_OUTPUT=""
 BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
-if [ -f "$BLOCK_CACHE" ]; then
+if [ -f "$BLOCK_CACHE" ] && [ "$SHOW_BLOCKS_TOTAL" = "true" ]; then
   READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
   BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
-  if [ "$SHOW_BLOCKS_TOTAL" = "true" ]; then
-    if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
-      if [ "$SHOW_BLOCK_DETAILS" = "true" ]; then
-        CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
-      else
-        BLOCK_SUM=$((READ_BLOCKS + BASH_BLOCKS))
-        CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }Blk:${BLOCK_SUM}"
-      fi
+  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+    if [ "$SHOW_BLOCK_DETAILS" = "true" ]; then
+      BLOCK_OUTPUT="Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+    else
+      BLOCK_SUM=$((READ_BLOCKS + BASH_BLOCKS))
+      BLOCK_OUTPUT="Blk:${BLOCK_SUM}"
     fi
   fi
 fi
-[ -n "$CMM_OUTPUT" ] && echo "$CMM_OUTPUT" || echo "CMM:0"
+# --- Assemble Style-C output ---
+# Default: <savings> | CMM <glyph>   (pipe-separated segments)
+RESULT=""
+[ -n "$CTX_SAVINGS_OUTPUT" ] && RESULT="${CTX_SAVINGS_OUTPUT}"
+if [ -n "$CMM_HEALTH_OUTPUT" ]; then
+  RESULT="${RESULT:+${RESULT} | }${CMM_HEALTH_OUTPUT}"
+fi
+[ -n "$CMM_CALLS_OUTPUT" ] && RESULT="${RESULT:+${RESULT} }${CMM_CALLS_OUTPUT}"
+[ -n "$BLOCK_OUTPUT" ]     && RESULT="${RESULT:+${RESULT} }${BLOCK_OUTPUT}"
+[ -n "$RESULT" ] && echo "$RESULT" || echo "CMM ⟳"
 STATUSLINE_SCRIPT
     else
       # PROJECT MODE — Generate wrapper statusline-cmm.sh
@@ -2315,9 +2374,23 @@ STATUSLINE_SCRIPT
       cat > "$script_path" <<'WRAPPER_SCRIPT'
 #!/bin/bash
 # statusline-cmm.sh — Wrapper: runs user's global statusline, appends CMM stats
+# Style C (default): …upstream… | <savings> | CMM <glyph>
+# Example: … | 170 KB kept out | CMM ✓
+#
+# Toggle flags in _statusline-config-<hash>.json:
+#   ctx_savings      true   — show context-mode savings (first · field)
+#   cmm_health       true   — show CMM sentinel glyph (✓/⟳)
+#   cmm_nodes_edges  false  — append node/edge counts from sqlite3 (opt-in)
+#   cmm_calls        false  — show CMM:N call count (opt-in)
+#   blocks_total     false  — show Blk: block count (opt-in)
+#   block_details    false  — show Blk:RN/BN detail (opt-in, needs blocks_total)
+#   ctx_total        ignored (retired — use ctx_savings)
+#   ctx_details      ignored (retired)
+#   cmm_total        ignored (retired — use cmm_calls)
+#   cmm_details      ignored (retired)
 #
 # Reads the user's global statusLine.command from global settings.json,
-# runs it, and appends CMM call stats with a pipe separator.
+# runs it, and appends CMM/ctx stats with a pipe separator.
 # Falls back to CMM-only output when no global statusline is configured.
 
 # --- Discover user's existing global statusline command ---
@@ -2340,8 +2413,7 @@ except Exception:
   done
 done
 
-# --- CMM stats ---
-CMM_OUTPUT=""
+# --- Project root + hash ---
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 if [ -n "$PROJECT_ROOT" ]; then
     _WALK="$PROJECT_ROOT"
@@ -2363,68 +2435,106 @@ if [ -n "$PROJECT_ROOT" ]; then
     fi
 fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+# Derive CMM DB slug: same algorithm as cbm_project_name_from_path (pipeline/fqn.c):
+#   replace non-[A-Za-z0-9._-] with '-', collapse consecutive dashes/dots,
+#   trim leading dashes/dots and trailing dashes (cbm_project_name_from_path,
+#   fqn.c:350-373). Empty result falls back to "root". Matches DB filenames in cache.
+CMM_SLUG=$(printf '%s' "$PROJECT_ROOT" \
+  | sed 's/[^A-Za-z0-9._-]/-/g' \
+  | sed 's/--*/-/g; s/\.\.*/./g' \
+  | sed 's/^[-.]*//; s/-*$//')
+[ -n "$CMM_SLUG" ] || CMM_SLUG="root"
 # --- Config reading ---
 SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
 [ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
-SHOW_CMM_TOTAL=$(jq -r 'if has("cmm_total") then .cmm_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CMM_DETAILS=$(jq -r 'if has("cmm_details") then .cmm_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_BLOCKS_TOTAL=$(jq -r 'if has("blocks_total") then .blocks_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_BLOCK_DETAILS=$(jq -r 'if has("block_details") then .block_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CTX_TOTAL=$(jq -r 'if has("ctx_total") then .ctx_total else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-SHOW_CTX_DETAILS=$(jq -r 'if has("ctx_details") then .ctx_details else true end' "$SL_CONFIG" 2>/dev/null || echo true)
-# --- CMM counts ---
-CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
-if [ -f "$CACHE" ]; then
-  TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
-  SEARCH=$(jq -r '.by_tool["mcp__codebase-memory-mcp__search_graph"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  SNIPPET=$(jq -r '.by_tool["mcp__codebase-memory-mcp__get_code_snippet"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  TRACE=$(jq -r '.by_tool["mcp__codebase-memory-mcp__trace_path"] // 0' "$CACHE" 2>/dev/null || echo 0)
-  if [ "$SHOW_CMM_TOTAL" = "true" ]; then
-    CMM_OUTPUT="CMM:${TOTAL}"
-    if [ "$SHOW_CMM_DETAILS" = "true" ]; then
-      CMM_OUTPUT="${CMM_OUTPUT} (sg:${SEARCH} cs:${SNIPPET} tr:${TRACE})"
+SHOW_CTX_SAVINGS=$(jq -r 'if has("ctx_savings") then .ctx_savings else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_HEALTH=$(jq -r 'if has("cmm_health") then .cmm_health else true end' "$SL_CONFIG" 2>/dev/null || echo true)
+SHOW_CMM_NODES_EDGES=$(jq -r 'if has("cmm_nodes_edges") then .cmm_nodes_edges else false end' "$SL_CONFIG" 2>/dev/null || echo false)
+SHOW_CMM_CALLS=$(jq -r 'if has("cmm_calls") then .cmm_calls else false end' "$SL_CONFIG" 2>/dev/null || echo false)
+SHOW_BLOCKS_TOTAL=$(jq -r 'if has("blocks_total") then .blocks_total else false end' "$SL_CONFIG" 2>/dev/null || echo false)
+SHOW_BLOCK_DETAILS=$(jq -r 'if has("block_details") then .block_details else false end' "$SL_CONFIG" 2>/dev/null || echo false)
+# --- Context-mode savings segment ---
+CTX_SAVINGS_OUTPUT=""
+if [ "$SHOW_CTX_SAVINGS" = "true" ]; then
+  # F4: NO_COLOR=1 suppresses ANSI/color variants at source
+  _CTX_RAW=$(NO_COLOR=1 context-mode statusline 2>/dev/null || true)
+  if [ -n "$_CTX_RAW" ]; then
+    # Strip brand prefix: only strip "context-mode ●" when ● is present;
+    # otherwise defensively strip leading "context-mode " brand or ANSI escape
+    if printf '%s' "$_CTX_RAW" | grep -qF '●'; then
+      _CTX_STRIPPED="${_CTX_RAW#*●}"
+    else
+      _ESC=$(printf '\033')
+      _CTX_STRIPPED=$(printf '%s' "$_CTX_RAW" \
+        | sed 's/^context-mode //' \
+        | sed "s/^${_ESC}\\[[0-9;]*m//")
     fi
-  fi
-else
-  if [ "$SHOW_CMM_TOTAL" = "true" ]; then
-    CMM_OUTPUT="CMM:0"
+    # F2: Take first bullet-delimited field; trim all leading/trailing whitespace robustly
+    _CTX_FIRST=$(printf '%s' "$_CTX_STRIPPED" \
+      | sed 's/[[:space:]]*[·•][[:space:]]*.*//' \
+      | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    [ -n "$_CTX_FIRST" ] && CTX_SAVINGS_OUTPUT="$_CTX_FIRST"
   fi
 fi
-# --- CTX counts ---
-CTX_CACHE="$HOME/.cache/codebase-memory-mcp/_ctx-call-counts-${PROJECT_HASH}.json"
-if [ -f "$CTX_CACHE" ]; then
-  CTX_TOTAL=$(jq -r '.total_calls // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
-  CTX_EXEC=$(jq -r '.by_tool["mcp__context-mode__ctx_execute"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
-  CTX_BATCH=$(jq -r '.by_tool["mcp__context-mode__ctx_batch_execute"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
-  CTX_SEARCH=$(jq -r '.by_tool["mcp__context-mode__ctx_search"] // 0' "$CTX_CACHE" 2>/dev/null || echo 0)
-  if [ "$CTX_TOTAL" -gt 0 ] 2>/dev/null; then
-    if [ "$SHOW_CTX_TOTAL" = "true" ]; then
-      CTX_OUTPUT="CTX:${CTX_TOTAL}"
-      if [ "$SHOW_CTX_DETAILS" = "true" ]; then
-        CTX_OUTPUT="${CTX_OUTPUT} (ex:${CTX_EXEC} bex:${CTX_BATCH} sr:${CTX_SEARCH})"
+# --- CMM health segment ---
+CMM_HEALTH_OUTPUT=""
+if [ "$SHOW_CMM_HEALTH" = "true" ]; then
+  SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
+  if [ -f "$SENTINEL" ]; then
+    CMM_HEALTH_OUTPUT="CMM ✓"
+  else
+    CMM_HEALTH_OUTPUT="CMM ⟳"
+  fi
+  # Optional node/edge counts via sqlite3 (opt-in; fail-open if sqlite3 absent)
+  # F1: CMM names DBs by path-slug (cbm_project_name_from_path), not md5 hash
+  if [ "$SHOW_CMM_NODES_EDGES" = "true" ] && command -v sqlite3 >/dev/null 2>&1; then
+    CMM_DB="$HOME/.cache/codebase-memory-mcp/${CMM_SLUG}.db"
+    if [ -f "$CMM_DB" ]; then
+      # F5: nodes/edges table names are CMM internals (store schema) — fail-open if schema changes
+      _N=$(sqlite3 "$CMM_DB" "SELECT count(*) FROM nodes" 2>/dev/null || true)
+      _E=$(sqlite3 "$CMM_DB" "SELECT count(*) FROM edges" 2>/dev/null || true)
+      if [ -n "$_N" ] && [ -n "$_E" ]; then
+        CMM_HEALTH_OUTPUT="${CMM_HEALTH_OUTPUT} ${_N}n/${_E}e"
       fi
-      CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }${CTX_OUTPUT}"
     fi
   fi
 fi
-# --- Block counts ---
+# --- CMM call count (opt-in) ---
+CMM_CALLS_OUTPUT=""
+if [ "$SHOW_CMM_CALLS" = "true" ]; then
+  CACHE="$HOME/.cache/codebase-memory-mcp/_call-counts-${PROJECT_HASH}.json"
+  if [ -f "$CACHE" ]; then
+    CMM_TOTAL=$(jq -r '.total_calls // 0' "$CACHE" 2>/dev/null || echo 0)
+    CMM_CALLS_OUTPUT="CMM:${CMM_TOTAL}"
+  fi
+fi
+# --- Block counts (opt-in) ---
+BLOCK_OUTPUT=""
 BLOCK_CACHE="$HOME/.cache/codebase-memory-mcp/_block-counts-${PROJECT_HASH}.json"
-if [ -f "$BLOCK_CACHE" ]; then
+if [ -f "$BLOCK_CACHE" ] && [ "$SHOW_BLOCKS_TOTAL" = "true" ]; then
   READ_BLOCKS=$(jq -r '.read_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
   BASH_BLOCKS=$(jq -r '.bash_blocks // 0' "$BLOCK_CACHE" 2>/dev/null || echo 0)
-  if [ "$SHOW_BLOCKS_TOTAL" = "true" ]; then
-    if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
-      if [ "$SHOW_BLOCK_DETAILS" = "true" ]; then
-        CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
-      else
-        BLOCK_SUM=$((READ_BLOCKS + BASH_BLOCKS))
-        CMM_OUTPUT="${CMM_OUTPUT:+${CMM_OUTPUT} }Blk:${BLOCK_SUM}"
-      fi
+  if [ "$READ_BLOCKS" -gt 0 ] 2>/dev/null || [ "$BASH_BLOCKS" -gt 0 ] 2>/dev/null; then
+    if [ "$SHOW_BLOCK_DETAILS" = "true" ]; then
+      BLOCK_OUTPUT="Blk:R${READ_BLOCKS}/B${BASH_BLOCKS}"
+    else
+      BLOCK_SUM=$((READ_BLOCKS + BASH_BLOCKS))
+      BLOCK_OUTPUT="Blk:${BLOCK_SUM}"
     fi
   fi
 fi
+# --- Assemble Style-C segment ---
+# Default: <savings> | CMM <glyph>   (pipe-separated segments)
+CMM_SEGMENT=""
+[ -n "$CTX_SAVINGS_OUTPUT" ] && CMM_SEGMENT="${CTX_SAVINGS_OUTPUT}"
+if [ -n "$CMM_HEALTH_OUTPUT" ]; then
+  CMM_SEGMENT="${CMM_SEGMENT:+${CMM_SEGMENT} | }${CMM_HEALTH_OUTPUT}"
+fi
+[ -n "$CMM_CALLS_OUTPUT" ] && CMM_SEGMENT="${CMM_SEGMENT:+${CMM_SEGMENT} }${CMM_CALLS_OUTPUT}"
+[ -n "$BLOCK_OUTPUT" ]     && CMM_SEGMENT="${CMM_SEGMENT:+${CMM_SEGMENT} }${BLOCK_OUTPUT}"
+[ -z "$CMM_SEGMENT" ]      && CMM_SEGMENT="CMM ⟳"
 
-# --- Combine: run global statusline, append CMM stats ---
+# --- Combine: run global statusline, append CMM segment ---
 # Skip if the global command is itself a CMM statusline (avoids double output with --all)
 case "$GLOBAL_CMD" in
   *statusline-cmm.sh*) GLOBAL_CMD="" ;;
@@ -2432,12 +2542,12 @@ esac
 if [ -n "$GLOBAL_CMD" ]; then
   EXISTING=$(bash -c "$GLOBAL_CMD" 2>/dev/null)
   if [ -n "$EXISTING" ]; then
-    echo "${EXISTING} | ${CMM_OUTPUT}"
+    echo "${EXISTING} | ${CMM_SEGMENT}"
   else
-    echo "$CMM_OUTPUT"
+    echo "$CMM_SEGMENT"
   fi
 else
-  echo "$CMM_OUTPUT"
+  echo "$CMM_SEGMENT"
 fi
 WRAPPER_SCRIPT
     fi
