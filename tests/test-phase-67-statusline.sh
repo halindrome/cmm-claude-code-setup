@@ -85,8 +85,8 @@ PROJECT_HASH=$(echo "$SCRATCH" | md5 -q 2>/dev/null || echo "$SCRATCH" | md5sum 
 #   trim leading/trailing dashes and dots.
 CMM_SLUG=$(printf '%s' "$SCRATCH" \
   | sed 's/[^A-Za-z0-9._-]/-/g' \
-  | sed 's/--*/-/g; s/\.\.*/-/g' \
-  | sed 's/^[-.]//; s/[-.]$//')
+  | sed 's/--*/-/g; s/\.\.*/./g' \
+  | sed 's/^[-.]*//; s/-*$//')
 [ -n "$CMM_SLUG" ] || CMM_SLUG="root"
 
 # Config and cache dir

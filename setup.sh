@@ -2271,11 +2271,12 @@ fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 # Derive CMM DB slug: same algorithm as cbm_project_name_from_path (pipeline/fqn.c):
 #   replace non-[A-Za-z0-9._-] with '-', collapse consecutive dashes/dots,
-#   trim leading/trailing dashes and dots. Matches actual DB filenames in cache.
+#   trim leading dashes/dots and trailing dashes (cbm_project_name_from_path,
+#   fqn.c:350-373). Empty result falls back to "root". Matches DB filenames in cache.
 CMM_SLUG=$(printf '%s' "$PROJECT_ROOT" \
   | sed 's/[^A-Za-z0-9._-]/-/g' \
-  | sed 's/--*/-/g; s/\.\.*/-/g' \
-  | sed 's/^[-.]//; s/[-.]$//')
+  | sed 's/--*/-/g; s/\.\.*/./g' \
+  | sed 's/^[-.]*//; s/-*$//')
 [ -n "$CMM_SLUG" ] || CMM_SLUG="root"
 # --- Config reading ---
 SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
@@ -2436,11 +2437,12 @@ fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
 # Derive CMM DB slug: same algorithm as cbm_project_name_from_path (pipeline/fqn.c):
 #   replace non-[A-Za-z0-9._-] with '-', collapse consecutive dashes/dots,
-#   trim leading/trailing dashes and dots. Matches actual DB filenames in cache.
+#   trim leading dashes/dots and trailing dashes (cbm_project_name_from_path,
+#   fqn.c:350-373). Empty result falls back to "root". Matches DB filenames in cache.
 CMM_SLUG=$(printf '%s' "$PROJECT_ROOT" \
   | sed 's/[^A-Za-z0-9._-]/-/g' \
-  | sed 's/--*/-/g; s/\.\.*/-/g' \
-  | sed 's/^[-.]//; s/[-.]$//')
+  | sed 's/--*/-/g; s/\.\.*/./g' \
+  | sed 's/^[-.]*//; s/-*$//')
 [ -n "$CMM_SLUG" ] || CMM_SLUG="root"
 # --- Config reading ---
 SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
