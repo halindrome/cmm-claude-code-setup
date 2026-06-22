@@ -1663,9 +1663,12 @@ install_project() {
   #   index-root-gate.sh — PreToolUse:mcp__codebase-memory-mcp__index_repository hard-block for subtree indexing in monorepos (phase 65)
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
-  # NOTE: VBW agent override files (agents/*.md) ARE copied by setup.sh --project to
-  # .claude/agents/. These shadow VBW plugin agents to inject CMM enforcement hooks
-  # via frontmatter (the only mechanism that fires inside subagents).
+  # NOTE: VBW agent overrides are NOT copied verbatim. setup.sh --project installs
+  # the delta files (agents/vbw-*.md) into .claude/agents-delta/, and the SessionStart
+  # hook agent-override-generate.sh merges each delta with its VBW base agent into
+  # .claude/agents/vbw-*.md at runtime (injecting CMM enforcement hooks via frontmatter,
+  # the only mechanism that fires inside subagents). The delta-install + generation is
+  # handled below in this function; the loop here copies the project hooks themselves.
   # The existing .claude/agents/dev.md is project-specific and NOT managed by setup.sh.
   # Users installing this hook layer into their own project should create their own
   # .claude/agents/ overrides if they want agent-level hook behavior.
@@ -1731,17 +1734,76 @@ install_project() {
   fi
 
 
-  # --- Agent override files (frontmatter hooks for VBW subagents) ---
-  # Project-level .claude/agents/ overrides shadow VBW plugin agent definitions
-  # to inject CMM enforcement hooks (cmm-nudge.sh, ctx-execute-enforcer.sh,
-  # track-cmm-calls.sh) into subagent execution contexts. Plugin agents ignore
-  # hooks: fields, so this override is the only enforcement path.
-  if [ -d "$SCRIPT_DIR/agents" ]; then
-    mkdir -p ".claude/agents"
-    for agent_file in "$SCRIPT_DIR"/agents/*.md; do
-      [ -f "$agent_file" ] || continue
-      copy_file "$agent_file" ".claude/agents/$(basename "$agent_file")"
+  # --- Agent override files (delta-install + runtime generation) ---
+  # VBW agent overrides are NO LONGER copied verbatim. Instead:
+  #   - agents/vbw-*.md in this repo are delta files (frontmatter patch +
+  #     cmm-delta fenced sections). They stay in the repo as source.
+  #   - hooks/project/agent-override-generate.sh (installed above via the
+  #     hooks/project/*.sh wildcard loop) runs at each SessionStart to merge
+  #     the VBW base body with our delta, writing .claude/agents/vbw-*.md.
+  #   - hooks/lib/vbw-source.sh (installed above via the hooks/lib/*.sh loop)
+  #     resolves the active VBW plugin tree at runtime.
+  #   - The SessionStart registration is in project-settings-example.json,
+  #     applied by merge_settings_json above.
+  #
+  # Open Q-A: VBW base does NOT grant CMM/ctx-mode MCP tools — delta must
+  #   include the full extended tools: line (Phase 62). Plan 03 merge is correct.
+  # Open Q-B: skills: MUST remain in delta frontmatter. SubagentStart injectors
+  #   (subagent-cmm-startup.sh, subagent-ctx-startup.sh) deliver advisory context
+  #   only; skills: triggers the Skill() tool-loading mechanism, which is separate.
+  # Open Q-C: No double-fire. Frontmatter hooks fire in subagent context only;
+  #   settings.json hooks fire in main session only. track-cmm-calls.sh does not
+  #   double-count. No dedup guard needed at this time.
+  #
+  # Install delta files into .claude/agents-delta/ — these are the per-agent
+  # frontmatter patch + cmm-delta fenced sections that agent-override-generate.sh
+  # reads at runtime to build the merged .claude/agents/vbw-*.md overrides.
+  #
+  # Installed path (.claude/agents-delta/) is the primary resolution location for
+  # agent-override-generate.sh — it works without the cmm-claude-code-setup repo
+  # checked out (curl|bash-ready install). The repo agents/ dir is a dev fallback.
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would create .claude/agents-delta/"
+    shopt -s nullglob
+    for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
+      echo "  [DRY RUN] Would copy $(basename "$file") -> .claude/agents-delta/"
     done
+    shopt -u nullglob
+  else
+    mkdir -p ".claude/agents-delta"
+    # Pre-scan: report drift before per-file prompts
+    # shellcheck disable=SC2046
+    scan_drift_summary ".claude/agents-delta" $( ls "$SCRIPT_DIR/agents/vbw-"*.md 2>/dev/null )
+    shopt -s nullglob
+    for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
+      copy_file "$file" ".claude/agents-delta/$(basename "$file")"
+    done
+    shopt -u nullglob
+  fi
+
+  # Best-effort synchronous generation: run the generator now so the first
+  # session has up-to-date override files immediately (no session-restart needed
+  # after a fresh install). Fail-open: if VBW is absent or generation fails,
+  # setup.sh succeeds anyway — SessionStart will regenerate when VBW is found.
+  mkdir -p ".claude/agents"
+  local _gen_script
+  _gen_script="$(pwd -P)/.claude/hooks/agent-override-generate.sh"
+  if [ -f "$_gen_script" ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would run agent-override-generate.sh for initial override generation"
+    else
+      echo "  [ok] Running agent-override-generate.sh for initial VBW override generation..."
+      # Discard the script's stdout (the hook-only systemMessage JSON, meant for
+      # SessionStart hook consumption — not for a direct shell run); keep only the
+      # human-readable stderr advisories in the install transcript.
+      if bash "$_gen_script" 2>&1 1>/dev/null | sed 's/^/    /'; then
+        echo "  [ok] VBW agent overrides generated (or already current)"
+      else
+        echo "  [warn] agent-override-generate.sh exited non-zero — overrides will be generated at next session start"
+      fi
+    fi
+  else
+    echo "  [warn] agent-override-generate.sh not found at expected path — overrides will be generated at first session start"
   fi
 
   # Purge deprecated hook files and their settings.json entries (unconditional).
