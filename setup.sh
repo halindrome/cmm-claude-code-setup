@@ -2269,6 +2269,13 @@ if [ -n "$PROJECT_ROOT" ]; then
     fi
 fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+# Derive CMM DB slug: same algorithm as cbm_project_name_from_path (pipeline/fqn.c):
+#   replace non-[A-Za-z0-9._-] with '-', collapse consecutive dashes/dots,
+#   trim leading/trailing dashes and dots. Matches actual DB filenames in cache.
+CMM_SLUG=$(printf '%s' "$PROJECT_ROOT" \
+  | sed 's/[^A-Za-z0-9._-]/-/g' \
+  | sed 's/--*/-/g; s/\.\.\*/./g' \
+  | sed 's/^[-.]//; s/[-.]$//')
 # --- Config reading ---
 SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
 [ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
@@ -2281,13 +2288,22 @@ SHOW_BLOCK_DETAILS=$(jq -r 'if has("block_details") then .block_details else fal
 # --- Context-mode savings segment ---
 CTX_SAVINGS_OUTPUT=""
 if [ "$SHOW_CTX_SAVINGS" = "true" ]; then
-  _CTX_RAW=$(context-mode statusline 2>/dev/null || true)
+  # F4: NO_COLOR=1 suppresses ANSI/color variants at source
+  _CTX_RAW=$(NO_COLOR=1 context-mode statusline 2>/dev/null || true)
   if [ -n "$_CTX_RAW" ]; then
-    # Strip brand prefix "context-mode ●" (with any surrounding spaces/dots)
-    _CTX_STRIPPED="${_CTX_RAW#*●}"
-    _CTX_STRIPPED="${_CTX_STRIPPED# }"
-    # Take only the first " · " field (e.g. "170 KB kept out")
-    _CTX_FIRST="${_CTX_STRIPPED%% · *}"
+    # Strip brand prefix: only strip "context-mode ●" when ● is present;
+    # otherwise defensively strip leading "context-mode " brand or ANSI escape
+    if printf '%s' "$_CTX_RAW" | grep -qF '●'; then
+      _CTX_STRIPPED="${_CTX_RAW#*●}"
+    else
+      _CTX_STRIPPED=$(printf '%s' "$_CTX_RAW" \
+        | sed 's/^context-mode //' \
+        | sed 's/^\x1b\[[0-9;]*m//')
+    fi
+    # F2: Take first bullet-delimited field; trim all leading/trailing whitespace robustly
+    _CTX_FIRST=$(printf '%s' "$_CTX_STRIPPED" \
+      | sed 's/[[:space:]]*[·•][[:space:]]*.*//' \
+      | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     [ -n "$_CTX_FIRST" ] && CTX_SAVINGS_OUTPUT="$_CTX_FIRST"
   fi
 fi
@@ -2301,9 +2317,11 @@ if [ "$SHOW_CMM_HEALTH" = "true" ]; then
     CMM_HEALTH_OUTPUT="CMM ⟳"
   fi
   # Optional node/edge counts via sqlite3 (opt-in; fail-open if sqlite3 absent)
+  # F1: CMM names DBs by path-slug (cbm_project_name_from_path), not md5 hash
   if [ "$SHOW_CMM_NODES_EDGES" = "true" ] && command -v sqlite3 >/dev/null 2>&1; then
-    CMM_DB="$HOME/.cache/codebase-memory-mcp/${PROJECT_HASH}.db"
+    CMM_DB="$HOME/.cache/codebase-memory-mcp/${CMM_SLUG}.db"
     if [ -f "$CMM_DB" ]; then
+      # F5: nodes/edges table names are CMM internals (store schema) — fail-open if schema changes
       _N=$(sqlite3 "$CMM_DB" "SELECT count(*) FROM nodes" 2>/dev/null || true)
       _E=$(sqlite3 "$CMM_DB" "SELECT count(*) FROM edges" 2>/dev/null || true)
       if [ -n "$_N" ] && [ -n "$_E" ]; then
@@ -2414,6 +2432,13 @@ if [ -n "$PROJECT_ROOT" ]; then
     fi
 fi
 PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')
+# Derive CMM DB slug: same algorithm as cbm_project_name_from_path (pipeline/fqn.c):
+#   replace non-[A-Za-z0-9._-] with '-', collapse consecutive dashes/dots,
+#   trim leading/trailing dashes and dots. Matches actual DB filenames in cache.
+CMM_SLUG=$(printf '%s' "$PROJECT_ROOT" \
+  | sed 's/[^A-Za-z0-9._-]/-/g' \
+  | sed 's/--*/-/g; s/\.\.\*/./g' \
+  | sed 's/^[-.]//; s/[-.]$//')
 # --- Config reading ---
 SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
 [ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
@@ -2426,13 +2451,22 @@ SHOW_BLOCK_DETAILS=$(jq -r 'if has("block_details") then .block_details else fal
 # --- Context-mode savings segment ---
 CTX_SAVINGS_OUTPUT=""
 if [ "$SHOW_CTX_SAVINGS" = "true" ]; then
-  _CTX_RAW=$(context-mode statusline 2>/dev/null || true)
+  # F4: NO_COLOR=1 suppresses ANSI/color variants at source
+  _CTX_RAW=$(NO_COLOR=1 context-mode statusline 2>/dev/null || true)
   if [ -n "$_CTX_RAW" ]; then
-    # Strip brand prefix "context-mode ●" (with any surrounding spaces/dots)
-    _CTX_STRIPPED="${_CTX_RAW#*●}"
-    _CTX_STRIPPED="${_CTX_STRIPPED# }"
-    # Take only the first " · " field (e.g. "170 KB kept out")
-    _CTX_FIRST="${_CTX_STRIPPED%% · *}"
+    # Strip brand prefix: only strip "context-mode ●" when ● is present;
+    # otherwise defensively strip leading "context-mode " brand or ANSI escape
+    if printf '%s' "$_CTX_RAW" | grep -qF '●'; then
+      _CTX_STRIPPED="${_CTX_RAW#*●}"
+    else
+      _CTX_STRIPPED=$(printf '%s' "$_CTX_RAW" \
+        | sed 's/^context-mode //' \
+        | sed 's/^\x1b\[[0-9;]*m//')
+    fi
+    # F2: Take first bullet-delimited field; trim all leading/trailing whitespace robustly
+    _CTX_FIRST=$(printf '%s' "$_CTX_STRIPPED" \
+      | sed 's/[[:space:]]*[·•][[:space:]]*.*//' \
+      | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     [ -n "$_CTX_FIRST" ] && CTX_SAVINGS_OUTPUT="$_CTX_FIRST"
   fi
 fi
@@ -2446,9 +2480,11 @@ if [ "$SHOW_CMM_HEALTH" = "true" ]; then
     CMM_HEALTH_OUTPUT="CMM ⟳"
   fi
   # Optional node/edge counts via sqlite3 (opt-in; fail-open if sqlite3 absent)
+  # F1: CMM names DBs by path-slug (cbm_project_name_from_path), not md5 hash
   if [ "$SHOW_CMM_NODES_EDGES" = "true" ] && command -v sqlite3 >/dev/null 2>&1; then
-    CMM_DB="$HOME/.cache/codebase-memory-mcp/${PROJECT_HASH}.db"
+    CMM_DB="$HOME/.cache/codebase-memory-mcp/${CMM_SLUG}.db"
     if [ -f "$CMM_DB" ]; then
+      # F5: nodes/edges table names are CMM internals (store schema) — fail-open if schema changes
       _N=$(sqlite3 "$CMM_DB" "SELECT count(*) FROM nodes" 2>/dev/null || true)
       _E=$(sqlite3 "$CMM_DB" "SELECT count(*) FROM edges" 2>/dev/null || true)
       if [ -n "$_N" ] && [ -n "$_E" ]; then

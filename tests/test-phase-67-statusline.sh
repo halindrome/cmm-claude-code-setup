@@ -80,13 +80,21 @@ fi
 # SCRATCH is already pwd -P resolved, so this matches what the script computes.
 PROJECT_HASH=$(echo "$SCRATCH" | md5 -q 2>/dev/null || echo "$SCRATCH" | md5sum | awk '{print $1}')
 
+# F3: Compute CMM_SLUG using the same algorithm as cbm_project_name_from_path (pipeline/fqn.c):
+#   replace non-[A-Za-z0-9._-] with '-', collapse consecutive dashes/dots,
+#   trim leading/trailing dashes and dots.
+CMM_SLUG=$(printf '%s' "$SCRATCH" \
+  | sed 's/[^A-Za-z0-9._-]/-/g' \
+  | sed 's/--*/-/g; s/\.\.\*/./g' \
+  | sed 's/^[-.]//; s/[-.]$//')
+
 # Config and cache dir
 SL_CONFIG_DIR="$HOME/.cache/codebase-memory-mcp"
 SL_CONFIG="$SL_CONFIG_DIR/_statusline-config-${PROJECT_HASH}.json"
 mkdir -p "$SL_CONFIG_DIR"
 
 # Cleanup on exit
-trap 'rm -rf "$TMPROOT"; rm -f "$SL_CONFIG" 2>/dev/null; rm -f "/tmp/cmm-session-ready-${PROJECT_HASH}" 2>/dev/null; rm -f "${SL_CONFIG_DIR}/_call-counts-${PROJECT_HASH}.json" 2>/dev/null; rm -f "${SL_CONFIG_DIR}/${PROJECT_HASH}.db" 2>/dev/null' EXIT
+trap 'rm -rf "$TMPROOT"; rm -f "$SL_CONFIG" 2>/dev/null; rm -f "/tmp/cmm-session-ready-${PROJECT_HASH}" 2>/dev/null; rm -f "${SL_CONFIG_DIR}/_call-counts-${PROJECT_HASH}.json" 2>/dev/null; rm -f "${SL_CONFIG_DIR}/${CMM_SLUG}.db" 2>/dev/null' EXIT
 
 # Helper: write a config JSON to the project-specific config path
 _write_config() {
@@ -118,11 +126,12 @@ echo "=== Phase 67: statusline Style-C rendering tests ==="
 echo ""
 
 # Build a reusable context-mode stub that echoes a savings line
+# F3: use REAL double-space format (two spaces around ● and around each ·)
 STUB_BASE="$TMPROOT/stub-base"
 mkdir -p "$STUB_BASE"
 cat > "$STUB_BASE/context-mode" <<'SH'
 #!/bin/bash
-echo "context-mode ● 170 KB kept out · 170 KB/day · preserved across compact"
+echo "context-mode  ●  170 KB kept out  ·  170 KB/day  ·  preserved across compact, restart & upgrade"
 SH
 chmod +x "$STUB_BASE/context-mode"
 
@@ -135,7 +144,12 @@ _write_default_config
 touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
 
 OUT1=$(_run_statusline "$STUB_BASE")
-_assert_contains "T1: output contains '170 KB kept out'" "170 KB kept out" "$OUT1"
+# F3: assert exact trimmed savings field — leading segment so no pipe before it,
+# but must contain exactly "170 KB kept out" with no extra leading/trailing spaces.
+# Check by asserting the field appears followed by " | " (single-space pipe separator)
+_assert_contains "T1: output contains '170 KB kept out |'" "170 KB kept out |" "$OUT1"
+_assert_not_contains "T1: output does NOT contain doubled spaces around savings" "170 KB kept out  |" "$OUT1"
+_assert_not_contains "T1: savings has no leading space" " 170 KB kept out" "$OUT1"
 _assert_contains "T1: output contains 'CMM ✓'" "CMM ✓" "$OUT1"
 _assert_not_contains "T1: output does NOT contain 'CTX:'" "CTX:" "$OUT1"
 if echo "$OUT1" | grep -qE 'CMM:[0-9]'; then
@@ -176,8 +190,8 @@ echo "42"
 SH
 chmod +x "$STUB4/sqlite3"
 
-# Create a fake CMM DB so the script finds it (path: ~/.cache/codebase-memory-mcp/<hash>.db)
-CMM_DB="$SL_CONFIG_DIR/${PROJECT_HASH}.db"
+# F3: Create a fake CMM DB at the REAL slug path (not md5 hash) so F1 fix is exercised
+CMM_DB="$SL_CONFIG_DIR/${CMM_SLUG}.db"
 touch "$CMM_DB"
 
 _write_config '{"ctx_savings":true,"cmm_health":true,"cmm_nodes_edges":true,"cmm_calls":false,"blocks_total":false,"block_details":false}'
@@ -246,7 +260,7 @@ exit 127
 SH
 chmod +x "$STUB7/sqlite3"
 
-CMM_DB7="$SL_CONFIG_DIR/${PROJECT_HASH}.db"
+CMM_DB7="$SL_CONFIG_DIR/${CMM_SLUG}.db"
 touch "$CMM_DB7"
 
 _write_config '{"ctx_savings":true,"cmm_health":true,"cmm_nodes_edges":true,"cmm_calls":false,"blocks_total":false,"block_details":false}'
@@ -297,6 +311,24 @@ else
 fi
 
 # -----------------------------------------------------------------------
+# T9b — F4: no-● brand-strip: context-mode output without ● must not leak brand text
+# -----------------------------------------------------------------------
+echo "--- T9b: F4 no-● brand-strip (no brand text in output) ---"
+STUB9B="$TMPROOT/stub9b"
+mkdir -p "$STUB9B"
+cat > "$STUB9B/context-mode" <<'SH'
+#!/bin/bash
+# Emits savings line without ● (older/different context-mode variant)
+echo "context-mode 170 KB kept out · 170 KB/day · preserved"
+SH
+chmod +x "$STUB9B/context-mode"
+
+_write_default_config
+touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
+OUT9B=$(_run_statusline "$STUB9B")
+_assert_not_contains "T9b: no 'context-mode' brand in output" "context-mode" "$OUT9B"
+
+# -----------------------------------------------------------------------
 # T10 — cmm_calls=true opt-in
 # -----------------------------------------------------------------------
 echo "--- T10: cmm_calls=true opt-in ---"
@@ -318,7 +350,10 @@ echo "--- T11: Full Style-C assembly integration ---"
 _write_default_config
 touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
 OUT11=$(_run_statusline "$STUB_BASE")
-_assert_contains "T11: contains '170 KB kept out'" "170 KB kept out" "$OUT11"
+# F3: assert exact trimmed savings field — leading segment, pipe after it, no extra spaces
+_assert_contains "T11: contains '170 KB kept out |'" "170 KB kept out |" "$OUT11"
+_assert_not_contains "T11: no doubled spaces around savings" "170 KB kept out  |" "$OUT11"
+_assert_not_contains "T11: savings has no leading space" " 170 KB kept out" "$OUT11"
 _assert_contains "T11: contains 'CMM ✓'" "CMM ✓" "$OUT11"
 _assert_contains "T11: contains ' | ' separator" " | " "$OUT11"
 _assert_not_contains "T11: no CTX: label" "CTX:" "$OUT11"
