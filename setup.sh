@@ -2274,8 +2274,9 @@ PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT"
 #   trim leading/trailing dashes and dots. Matches actual DB filenames in cache.
 CMM_SLUG=$(printf '%s' "$PROJECT_ROOT" \
   | sed 's/[^A-Za-z0-9._-]/-/g' \
-  | sed 's/--*/-/g; s/\.\.\*/./g' \
+  | sed 's/--*/-/g; s/\.\.*/-/g' \
   | sed 's/^[-.]//; s/[-.]$//')
+[ -n "$CMM_SLUG" ] || CMM_SLUG="root"
 # --- Config reading ---
 SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
 [ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
@@ -2296,9 +2297,10 @@ if [ "$SHOW_CTX_SAVINGS" = "true" ]; then
     if printf '%s' "$_CTX_RAW" | grep -qF '●'; then
       _CTX_STRIPPED="${_CTX_RAW#*●}"
     else
+      _ESC=$(printf '\033')
       _CTX_STRIPPED=$(printf '%s' "$_CTX_RAW" \
         | sed 's/^context-mode //' \
-        | sed 's/^\x1b\[[0-9;]*m//')
+        | sed "s/^${_ESC}\\[[0-9;]*m//")
     fi
     # F2: Take first bullet-delimited field; trim all leading/trailing whitespace robustly
     _CTX_FIRST=$(printf '%s' "$_CTX_STRIPPED" \
@@ -2437,8 +2439,9 @@ PROJECT_HASH=$(echo "$PROJECT_ROOT" | md5 -q 2>/dev/null || echo "$PROJECT_ROOT"
 #   trim leading/trailing dashes and dots. Matches actual DB filenames in cache.
 CMM_SLUG=$(printf '%s' "$PROJECT_ROOT" \
   | sed 's/[^A-Za-z0-9._-]/-/g' \
-  | sed 's/--*/-/g; s/\.\.\*/./g' \
+  | sed 's/--*/-/g; s/\.\.*/-/g' \
   | sed 's/^[-.]//; s/[-.]$//')
+[ -n "$CMM_SLUG" ] || CMM_SLUG="root"
 # --- Config reading ---
 SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-${PROJECT_HASH}.json"
 [ -f "$SL_CONFIG" ] || SL_CONFIG="$HOME/.cache/codebase-memory-mcp/_statusline-config-default.json"
@@ -2459,9 +2462,10 @@ if [ "$SHOW_CTX_SAVINGS" = "true" ]; then
     if printf '%s' "$_CTX_RAW" | grep -qF '●'; then
       _CTX_STRIPPED="${_CTX_RAW#*●}"
     else
+      _ESC=$(printf '\033')
       _CTX_STRIPPED=$(printf '%s' "$_CTX_RAW" \
         | sed 's/^context-mode //' \
-        | sed 's/^\x1b\[[0-9;]*m//')
+        | sed "s/^${_ESC}\\[[0-9;]*m//")
     fi
     # F2: Take first bullet-delimited field; trim all leading/trailing whitespace robustly
     _CTX_FIRST=$(printf '%s' "$_CTX_STRIPPED" \

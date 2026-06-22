@@ -85,8 +85,9 @@ PROJECT_HASH=$(echo "$SCRATCH" | md5 -q 2>/dev/null || echo "$SCRATCH" | md5sum 
 #   trim leading/trailing dashes and dots.
 CMM_SLUG=$(printf '%s' "$SCRATCH" \
   | sed 's/[^A-Za-z0-9._-]/-/g' \
-  | sed 's/--*/-/g; s/\.\.\*/./g' \
+  | sed 's/--*/-/g; s/\.\.*/-/g' \
   | sed 's/^[-.]//; s/[-.]$//')
+[ -n "$CMM_SLUG" ] || CMM_SLUG="root"
 
 # Config and cache dir
 SL_CONFIG_DIR="$HOME/.cache/codebase-memory-mcp"
@@ -361,6 +362,59 @@ if echo "$OUT11" | grep -qE 'CMM:[0-9]'; then
     _fail "T11: no CMM:N call-count in default output" "got: $OUT11"
 else
     _pass "T11: no CMM:N call-count in default output"
+fi
+
+# -----------------------------------------------------------------------
+# T12 — PROJECT wrapper: Style-C render + fail-open when context-mode absent
+# Generate the PROJECT wrapper via setup.sh --project into a temp .claude dir,
+# then test it with the same PATH-stub pattern used for the global standalone.
+# -----------------------------------------------------------------------
+echo "--- T12: PROJECT wrapper Style-C render ---"
+
+# Create a fake project directory with a git repo and .claude/hooks dir
+PROJ_DIR="$TMPROOT/projrepo"
+mkdir -p "$PROJ_DIR/.claude/hooks"
+(cd "$PROJ_DIR" \
+  && git init -q \
+  && git config user.email "t@t.com" \
+  && git config user.name "T" \
+  && git commit --allow-empty -q -m "init")
+PROJ_DIR=$(cd "$PROJ_DIR" && pwd -P)
+
+# Generate the PROJECT wrapper statusline-cmm.sh
+(cd "$PROJ_DIR" && CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash "$SETUP_SH" --project --force --skip-mcp-check 2>/dev/null) || true
+
+WRAPPER="$PROJ_DIR/.claude/hooks/statusline-cmm.sh"
+if [ ! -f "$WRAPPER" ]; then
+  _fail "T12-setup: setup.sh --project did not generate wrapper statusline-cmm.sh at $WRAPPER" "file missing"
+else
+  _pass "T12-setup: wrapper statusline-cmm.sh generated"
+
+  # Compute hash for wrapper's project root (used by config lookup)
+  PROJ_HASH=$(echo "$PROJ_DIR" | md5 -q 2>/dev/null || echo "$PROJ_DIR" | md5sum | awk '{print $1}')
+  PROJ_CONFIG="$SL_CONFIG_DIR/_statusline-config-${PROJ_HASH}.json"
+  echo '{"ctx_savings":true,"cmm_health":true,"cmm_nodes_edges":false,"cmm_calls":false,"blocks_total":false,"block_details":false}' > "$PROJ_CONFIG"
+  touch "/tmp/cmm-session-ready-${PROJ_HASH}"
+
+  # T12a — Style-C render with context-mode stub: expect "<savings> | CMM <glyph>"
+  OUT12A=$(cd "$PROJ_DIR" && env PATH="${STUB_BASE}:${PATH}" CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash "$WRAPPER" 2>/dev/null || true)
+  _assert_contains "T12a: wrapper contains savings '170 KB kept out |'" "170 KB kept out |" "$OUT12A"
+  _assert_not_contains "T12a: wrapper no doubled spaces around savings" "170 KB kept out  |" "$OUT12A"
+  _assert_contains "T12a: wrapper contains 'CMM ✓' or 'CMM ⟳'" "CMM" "$OUT12A"
+  _assert_not_contains "T12a: wrapper no CTX: label" "CTX:" "$OUT12A"
+
+  # T12b — fail-open: context-mode absent → exit 0, no savings in output
+  # Use a minimal PATH containing only essential tools (no context-mode) so the
+  # wrapper fails to find context-mode and must exit 0 without savings.
+  NO_CTX_STUB="$TMPROOT/stub-noctx"
+  mkdir -p "$NO_CTX_STUB"
+  # Provide jq, sqlite3, md5/md5sum, git but NOT context-mode via a stripped PATH
+  MINIMAL_PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+  OUT12B=$(cd "$PROJ_DIR" && env PATH="${NO_CTX_STUB}:${MINIMAL_PATH}" CLAUDE_CONFIG_DIR="$FAKE_CONFIG" bash "$WRAPPER" 2>/dev/null || true)
+  _assert_not_contains "T12b: wrapper no savings when context-mode absent" "kept out" "$OUT12B"
+
+  # Cleanup proj config
+  rm -f "$PROJ_CONFIG" "/tmp/cmm-session-ready-${PROJ_HASH}" 2>/dev/null
 fi
 
 # -----------------------------------------------------------------------
