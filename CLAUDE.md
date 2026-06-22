@@ -31,6 +31,7 @@ _(Run /vbw:skills to list)_
 
 ## Project Conventions
 
+- **Never modify `.claude/` in this repo.** `.claude/` is this repo's own local working config — the install target of `setup.sh` plus a few deliberately git-tracked QA helpers (`.claude/agents/pr-qa-reviewer.md`, `.claude/skills/pr-qa/**`). It is maintained by whoever checks out the repo and runs the tools, **not** by our development. This project's job is generating plugins for *other* repos; the local `.claude/` is just our own install. All development changes go in the **source**: `hooks/` (incl. `hooks/project/`, `hooks/lib/`), `agents/`, `rules/`, and `setup.sh` (which emits much of `.claude/`). A plan or QA finding that lists a `.claude/` path as an *edit target* is a defect — point it at the source. Treat installed/generated `.claude/` copies as output only; do not read them for source-of-truth either (use the source dirs).
 - Bash hooks: shebang `#!/bin/bash`, one-line purpose comment, install/register instructions at top
 - Exit codes: `exit 2` = block tool call with message, `exit 0` = allow
 - Sentinel pattern: `/tmp/cmm-session-ready-<project-root-md5hash>` for session gate
