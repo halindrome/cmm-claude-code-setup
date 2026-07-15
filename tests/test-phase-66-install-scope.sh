@@ -255,6 +255,29 @@ else
     _fail "VBW absent: stale override moved aside to .cmm-setup/vbw-agents.bak/" \
         "stale vbw-dev.md not moved as expected in $SCRATCH8B"
 fi
+# Zero-VBW footprint: the two VBW-only files are NOT installed, and the generator
+# is NOT registered in settings.json.
+if [ ! -e "$SCRATCH8B/.claude/hooks/lib/vbw-source.sh" ]; then
+    _pass "VBW absent: vbw-source.sh not installed (zero footprint)"
+else
+    _fail "VBW absent: vbw-source.sh not installed (zero footprint)" "vbw-source.sh present in $SCRATCH8B"
+fi
+if [ ! -e "$SCRATCH8B/.claude/hooks/agent-override-generate.sh" ]; then
+    _pass "VBW absent: agent-override-generate.sh not installed (zero footprint)"
+else
+    _fail "VBW absent: agent-override-generate.sh not installed (zero footprint)" "generate hook present in $SCRATCH8B"
+fi
+if [ -f "$SCRATCH8B/.claude/settings.json" ] && grep -q 'agent-override-generate' "$SCRATCH8B/.claude/settings.json"; then
+    _fail "VBW absent: no agent-override-generate SessionStart registration" "registration present in settings.json"
+else
+    _pass "VBW absent: no agent-override-generate SessionStart registration"
+fi
+# Non-VBW libs/hooks are still installed (proves we gate ONLY the VBW files).
+if [ -e "$SCRATCH8B/.claude/hooks/lib/project-root.sh" ]; then
+    _pass "VBW absent: non-VBW lib project-root.sh still installed"
+else
+    _fail "VBW absent: non-VBW lib project-root.sh still installed" "project-root.sh missing"
+fi
 rm -rf "$TMPROOT8B"
 
 # -----------------------------------------------------------------------

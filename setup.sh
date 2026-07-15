@@ -1994,6 +1994,16 @@ install_project() {
     mkdir -p .claude/rules
   fi
 
+  # Determine VBW availability up front (only an installed plugin counts —
+  # marketplace or --plugin-dir symlink; a bare dev-checkout needs --with-vbw).
+  # When VBW is NOT available we install a zero-VBW footprint: the two VBW-only
+  # files — hooks/lib/vbw-source.sh (detection lib) and
+  # hooks/project/agent-override-generate.sh (SessionStart generator) — are not
+  # copied, and the generator's SessionStart registration is stripped after the
+  # settings merge below. Re-run setup.sh after installing VBW to enable it.
+  local _vbw_present=false
+  if vbw_is_available; then _vbw_present=true; fi
+
   # Pre-scan: report drift summary before per-file prompts
   # shellcheck disable=SC2046
   scan_drift_summary ".claude/hooks/lib" $( ls "$SCRIPT_DIR/hooks/lib/"*.sh 2>/dev/null )
@@ -2002,9 +2012,14 @@ install_project() {
   # shellcheck disable=SC2046
   scan_drift_summary ".claude/rules" $( ls "$SCRIPT_DIR/rules/"* 2>/dev/null )
 
-  # Install shared libraries first (sourced by hooks at runtime)
+  # Install shared libraries first (sourced by hooks at runtime).
+  # vbw-source.sh is VBW-only (sourced solely by agent-override-generate.sh) — skip
+  # it when VBW is not available for a zero-VBW footprint.
   shopt -s nullglob
   for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
+    if [ "$(basename "$file")" = "vbw-source.sh" ] && [ "$_vbw_present" != true ]; then
+      continue
+    fi
     copy_file "$file" ".claude/hooks/lib/$(basename "$file")"
   done
   shopt -u nullglob
@@ -2044,6 +2059,11 @@ install_project() {
   # Users installing this hook layer into their own project should create their own
   # .claude/agents/ overrides if they want agent-level hook behavior.
   for file in "$SCRIPT_DIR/hooks/project/"*.sh; do
+    # agent-override-generate.sh is VBW-only — skip it (and its SessionStart
+    # registration, stripped after the settings merge) when VBW is unavailable.
+    if [ "$(basename "$file")" = "agent-override-generate.sh" ] && [ "$_vbw_present" != true ]; then
+      continue
+    fi
     copy_file "$file" ".claude/hooks/$(basename "$file")"
     set_executable ".claude/hooks/$(basename "$file")"
   done
@@ -2140,8 +2160,7 @@ install_project() {
   #   - VBW unavailable → do NOT inject deltas; move any VBW artifacts from a prior
   #                       install aside so Claude Code stops loading them. Re-run
   #                       setup.sh after installing VBW to enable it.
-  local _vbw_present=false
-  if vbw_is_available; then _vbw_present=true; fi
+  # _vbw_present + VBW_DETECTED_TYPE were resolved at the top of install_project.
 
   # .claude/agents/ is the standard user-agents location; create it regardless of
   # VBW so the project layout is consistent (VBW overrides land here only when
@@ -2392,6 +2411,63 @@ MCPEOF
   fi
 
   merge_settings_json ".claude/settings.json" "project"
+
+  # Zero-VBW footprint: when VBW is not installed, strip the agent-override-generate.sh
+  # SessionStart registration that merge_settings_json just merged from the example,
+  # and move aside any VBW-only files left by a prior VBW-enabled install (reversible).
+  if [ "$_vbw_present" != true ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] VBW not installed — would strip agent-override-generate.sh SessionStart registration and skip VBW-only files"
+    else
+      python3 - ".claude/settings.json" <<'PYEOF'
+import json, os, sys
+p = sys.argv[1]
+try:
+    with open(p) as f:
+        d = json.load(f)
+except Exception:
+    sys.exit(0)
+hooks = d.get("hooks")
+changed = False
+if isinstance(hooks, dict):
+    for ev, groups in list(hooks.items()):
+        if not isinstance(groups, list):
+            continue
+        ng = []
+        for g in groups:
+            inner = g.get("hooks") if isinstance(g, dict) else None
+            if isinstance(inner, list):
+                kept = [hk for hk in inner if not (isinstance(hk, dict) and "agent-override-generate.sh" in str(hk.get("command", "")))]
+                if len(kept) != len(inner):
+                    changed = True
+                if kept:
+                    g["hooks"] = kept
+                    ng.append(g)
+            else:
+                ng.append(g)
+        if ng:
+            hooks[ev] = ng
+        else:
+            del hooks[ev]; changed = True
+    if not hooks:
+        d.pop("hooks", None)
+if changed:
+    tmp = p + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=2); f.write("\n")
+    os.replace(tmp, p)
+    print("  [ok] Removed agent-override-generate.sh SessionStart registration (VBW not installed)")
+PYEOF
+      # Move aside VBW-only files from a prior install (reversible backup).
+      for _vf in ".claude/hooks/agent-override-generate.sh" ".claude/hooks/lib/vbw-source.sh"; do
+        if [ -e "$_vf" ]; then
+          mkdir -p ".claude/.cmm-setup/vbw-agents.bak/$(dirname "${_vf#.claude/}")"
+          mv "$_vf" ".claude/.cmm-setup/vbw-agents.bak/${_vf#.claude/}" 2>/dev/null && \
+            echo "  [ok] Moved ${_vf} aside (VBW not installed)"
+        fi
+      done
+    fi
+  fi
 
   # Register upstream context-mode hooks via the CLI dispatcher form.
   # Guarded by INSTALL_CONTEXT_MODE=true (flipped false by --skip-context-mode).
