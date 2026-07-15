@@ -68,7 +68,14 @@ cd /path/to/your-project
 bash /path/to/cmm-claude-code-setup/setup.sh --all
 ```
 
-Setup handles the rest automatically: it installs global hooks and rules (to `$CLAUDE_CONFIG_DIR/` or `~/.claude/`), project hooks and rules (to `.claude/`), detects whether CMM is registered with Claude Code and creates `.mcp.json` if needed, adds all 14 CMM tool names to `.claude/settings.json` (the tool allowlist), and optionally sets up Context Mode — all interactively with prompts at each step.
+Setup handles the rest automatically: it installs global hooks and rules (to `$CLAUDE_CONFIG_DIR/` or `~/.claude/`), project hooks and rules (to `.claude/`), detects whether CMM is registered with Claude Code and creates `.mcp.json` if needed, writes the CMM (+ Context Mode) tool allowlist to `settings.json`, and optionally sets up Context Mode — all interactively with prompts at each step.
+
+**Tool allowlist (and where it lives):**
+
+The allowlist pre-approves the MCP tool calls so Claude Code doesn't prompt on each use (important for the hooks and subagents that auto-call CMM). It is **not** required for the tools to function — without it they still work, just with a permission prompt.
+
+- **Policy — "complete minus destructive":** every CMM + Context Mode tool is pre-approved **except** the irreversible/system-mutating ones, which must always prompt: CMM `delete_project`, Context Mode `ctx_purge` and `ctx_upgrade`. That's **13** CMM tools and **9** Context Mode tools (written in both the plugin and legacy registration forms). `--skip-context-mode` omits the Context Mode entries.
+- **Scope:** Claude Code unions `permissions.allow` across scopes, so `--global` writes the allowlist **once to the global `settings.json`** and every project inherits it — you never need to re-allowlist per project. `--project` writes to `.claude/settings.json`, and is **skipped automatically when the global allowlist already covers every tool** (no duplication). Detection is likewise merged (project + global), so a global allowlist suppresses the per-project "not allowlisted" warning.
 
 **Core vs. optional at install time:**
 

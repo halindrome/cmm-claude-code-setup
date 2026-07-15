@@ -87,6 +87,82 @@ DEPRECATED_HOOKS=(
 )
 
 # ---------------------------------------------------------------------------
+# Tool allowlist — single source of truth (used by detect_cmm_tools_allowed and
+# install_allowlist for both writing and merged-scope detection).
+# ---------------------------------------------------------------------------
+# Policy: "complete minus destructive" — pre-approve every CMM + context-mode
+# tool EXCEPT the irreversible / system-mutating ones, which must always prompt:
+#   - CMM   delete_project  (drops a project's index)
+#   - ctx   ctx_purge       (wipes indexed session content — rm -rf caution)
+#   - ctx   ctx_upgrade     (mutates the installed context-mode version)
+# CMM: all 13 non-destructive tools (of 14 the server exposes).
+CMM_ALLOW_TOOLS=(
+  "mcp__codebase-memory-mcp__index_repository"
+  "mcp__codebase-memory-mcp__index_status"
+  "mcp__codebase-memory-mcp__list_projects"
+  "mcp__codebase-memory-mcp__get_architecture"
+  "mcp__codebase-memory-mcp__get_graph_schema"
+  "mcp__codebase-memory-mcp__search_graph"
+  "mcp__codebase-memory-mcp__search_code"
+  "mcp__codebase-memory-mcp__query_graph"
+  "mcp__codebase-memory-mcp__get_code_snippet"
+  "mcp__codebase-memory-mcp__trace_path"
+  "mcp__codebase-memory-mcp__detect_changes"
+  "mcp__codebase-memory-mcp__manage_adr"
+  "mcp__codebase-memory-mcp__ingest_traces"
+)
+# context-mode: 9 non-destructive tools × both registration forms (plugin form
+# canonical first, legacy MCP-server form second) = 18 entries. Excludes
+# ctx_purge and ctx_upgrade per the policy above.
+CTX_ALLOW_TOOLS=(
+  "mcp__plugin_context-mode_context-mode__ctx_execute"
+  "mcp__plugin_context-mode_context-mode__ctx_execute_file"
+  "mcp__plugin_context-mode_context-mode__ctx_search"
+  "mcp__plugin_context-mode_context-mode__ctx_batch_execute"
+  "mcp__plugin_context-mode_context-mode__ctx_index"
+  "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index"
+  "mcp__plugin_context-mode_context-mode__ctx_stats"
+  "mcp__plugin_context-mode_context-mode__ctx_doctor"
+  "mcp__plugin_context-mode_context-mode__ctx_insight"
+  "mcp__context-mode__ctx_execute"
+  "mcp__context-mode__ctx_execute_file"
+  "mcp__context-mode__ctx_search"
+  "mcp__context-mode__ctx_batch_execute"
+  "mcp__context-mode__ctx_index"
+  "mcp__context-mode__ctx_fetch_and_index"
+  "mcp__context-mode__ctx_stats"
+  "mcp__context-mode__ctx_doctor"
+  "mcp__context-mode__ctx_insight"
+)
+# Count of distinct CMM tools that constitutes a complete allowlist.
+CMM_ALLOW_COUNT=${#CMM_ALLOW_TOOLS[@]}   # 13
+CTX_ALLOW_COUNT=${#CTX_ALLOW_TOOLS[@]}   # 18
+
+# _allowlist_union_count <kind: cmm|ctx> <settings_file...>
+# Print the number of distinct required tools of <kind> present across the union
+# of the given settings files' permissions.allow. Missing/invalid files count 0.
+_allowlist_union_count() {
+  local kind="$1"; shift
+  local req
+  if [ "$kind" = "ctx" ]; then req="$(printf '%s\n' "${CTX_ALLOW_TOOLS[@]}")"; else req="$(printf '%s\n' "${CMM_ALLOW_TOOLS[@]}")"; fi
+  REQ_TOOLS="$req" python3 - "$@" <<'PYEOF'
+import json, os, sys
+req = set(filter(None, os.environ.get("REQ_TOOLS", "").splitlines()))
+present = set()
+for path in sys.argv[1:]:
+    try:
+        with open(path) as f:
+            allow = json.load(f).get("permissions", {}).get("allow", [])
+    except Exception:
+        continue
+    for t in allow:
+        if t in req:
+            present.add(t)
+print(len(present))
+PYEOF
+}
+
+# ---------------------------------------------------------------------------
 # CMM setup state directory (VBW-independent)
 # ---------------------------------------------------------------------------
 # Migration sentinels and optional CMM config live under a neutral, always-present
@@ -880,28 +956,23 @@ detect_cmm_tools_allowed() {
     return 0
   fi
 
-  local settings_file=".claude/settings.json"
+  # Consider the MERGED allow set. Claude Code unions permissions.allow across
+  # scopes, so a CMM allowlist written once to the global (user) settings applies
+  # to every project. We therefore count distinct required CMM tools across BOTH
+  # the project settings and the global settings — a global allowlist satisfies
+  # the check and suppresses the per-project "not allowlisted" warning.
+  local project_file=".claude/settings.json"
+  local global_file; global_file="$(detect_config_dir)/settings.json"
 
-  if [ ! -f "$settings_file" ]; then
+  if [ ! -f "$project_file" ] && [ ! -f "$global_file" ]; then
     CMM_TOOLS_STATUS="missing"
+    CMM_TOOLS_COUNT=0
     return 0
   fi
 
-  # Count mcp__codebase-memory-mcp__ entries in permissions.allow
-  CMM_TOOLS_COUNT=$(python3 - "$settings_file" <<'PYEOF'
-import json, sys
-try:
-    with open(sys.argv[1]) as f:
-        data = json.load(f)
-    allow = data.get("permissions", {}).get("allow", [])
-    count = sum(1 for t in allow if "mcp__codebase-memory-mcp__" in str(t))
-    print(count)
-except Exception:
-    print(0)
-PYEOF
-)
+  CMM_TOOLS_COUNT="$(_allowlist_union_count cmm "$project_file" "$global_file")"
 
-  if [ "$CMM_TOOLS_COUNT" -ge 13 ]; then
+  if [ "$CMM_TOOLS_COUNT" -ge "$CMM_ALLOW_COUNT" ]; then
     CMM_TOOLS_STATUS="ok"
     return 0
   fi
@@ -1388,9 +1459,9 @@ print_preflight_summary() {
 
   # CMM tools line
   case "$CMM_TOOLS_STATUS" in
-    ok)      tools_line="[ok]   All 13 CMM tools allowlisted in .claude/settings.json" ;;
-    warn)    tools_line="[warn] ${CMM_TOOLS_COUNT}/13 CMM tools in .claude/settings.json" ;;
-    missing) tools_line="[warn] .claude/settings.json not found — CMM tools not allowlisted" ;;
+    ok)      tools_line="[ok]   All ${CMM_ALLOW_COUNT} CMM tools allowlisted (project or global settings)" ;;
+    warn)    tools_line="[warn] ${CMM_TOOLS_COUNT}/${CMM_ALLOW_COUNT} CMM tools allowlisted (project + global merged)" ;;
+    missing) tools_line="[warn] no settings.json found (project or global) — CMM tools not allowlisted" ;;
     skip)    tools_line="[skip] CMM tools check (--skip-mcp-check)" ;;
     *)       tools_line="[skip] CMM tools check (not run)" ;;
   esac
@@ -2071,6 +2142,11 @@ install_project() {
   #                       setup.sh after installing VBW to enable it.
   local _vbw_present=false
   if vbw_is_available; then _vbw_present=true; fi
+
+  # .claude/agents/ is the standard user-agents location; create it regardless of
+  # VBW so the project layout is consistent (VBW overrides land here only when
+  # VBW is available; the dir stays empty otherwise).
+  [ "$DRY_RUN" = true ] || mkdir -p ".claude/agents"
 
   if [ "$_vbw_present" = true ]; then
     if [ "$DRY_RUN" = true ]; then
@@ -2863,155 +2939,131 @@ print_next_steps() {
 # Only runs for project installs. Follows the same prompt pattern as
 # install_statusline: detect current state, prompt, merge on yes.
 
-install_allowlist() {
-  if [ "$INSTALL_PROJECT" != true ]; then
-    return 0
+# _write_allowlist <settings_file> <include_ctx>
+# Merge the canonical CMM (+ optional context-mode) tool lists into
+# permissions.allow of <settings_file> (created if absent). Idempotent — only
+# missing entries are appended. Tool lists come from the CMM_ALLOW_TOOLS /
+# CTX_ALLOW_TOOLS single source of truth via env.
+_write_allowlist() {
+  local settings_file="$1" include_ctx="$2"
+  local tools cmm_list
+  cmm_list="$(printf '%s\n' "${CMM_ALLOW_TOOLS[@]}")"
+  tools="$cmm_list"
+  if [ "$include_ctx" = "true" ]; then
+    tools="$tools"$'\n'"$(printf '%s\n' "${CTX_ALLOW_TOOLS[@]}")"
   fi
-
-  echo "[ALLOWLIST]"
-
-  if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would offer to write CMM tool allowlist to .claude/settings.json"
-    [ "$INSTALL_CONTEXT_MODE" = true ] && \
-      echo "  [DRY RUN] Would include context-mode tools (INSTALL_CONTEXT_MODE=true)"
-    echo ""
-    return 0
-  fi
-
-  local settings_file=".claude/settings.json"
-
-  # Determine if CMM tools already fully present
-  if [ "$CMM_TOOLS_STATUS" = "ok" ] && [ "$FORCE" != true ]; then
-    echo "  [ok] CMM tool allowlist already configured in $settings_file"
-    if [ "$INSTALL_CONTEXT_MODE" = true ]; then
-      # Check if context-mode tools are also present
-      local ctx_count
-      ctx_count=$(python3 - "$settings_file" <<'PYEOF'
-import json, sys
-try:
-    with open(sys.argv[1]) as f:
-        data = json.load(f)
-    allow = data.get("permissions", {}).get("allow", [])
-    count = sum(1 for t in allow if "mcp__context-mode__" in str(t) or "mcp__plugin_context-mode_context-mode__" in str(t))
-    print(count)
-except Exception:
-    print(0)
-PYEOF
-)
-      if [ "$ctx_count" -ge 14 ]; then
-        echo "  [ok] context-mode tool allowlist already configured"
-        echo ""
-        return 0
-      else
-        echo "  [warn] context-mode tools not yet allowlisted (${ctx_count}/14)"
-      fi
-    else
-      echo ""
-      return 0
-    fi
-  fi
-
-  # Build prompt describing what will be written
-  local prompt_msg="  Write CMM tool allowlist to ${settings_file}? [y/N] "
-  if [ "$INSTALL_CONTEXT_MODE" = true ]; then
-    prompt_msg="  Write CMM + context-mode tool allowlist to ${settings_file}? [y/N] "
-  fi
-  if [ "$CMM_TOOLS_STATUS" = "warn" ]; then
-    echo "  [warn] Only ${CMM_TOOLS_COUNT}/13 CMM tools currently allowlisted"
-  elif [ "$CMM_TOOLS_STATUS" = "missing" ]; then
-    echo "  [warn] ${settings_file} not found — CMM tools not allowlisted"
-  elif [ "$FORCE" = true ] && [ "$CMM_TOOLS_STATUS" = "ok" ]; then
-    echo "  [info] Overwriting existing CMM allowlist (--force)"
-  fi
-
-  printf "%s" "$prompt_msg"
-  local answer
-  read -r answer
-  if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-    echo "  [skip] Allowlist not written"
-    echo ""
-    return 0
-  fi
-
-  # Merge CMM tools (and optionally context-mode tools) into permissions.allow
-  local include_ctx="false"
-  [ "$INSTALL_CONTEXT_MODE" = true ] && include_ctx="true"
-
-  python3 - "$settings_file" "$include_ctx" <<'PYEOF'
+  ALLOW_TOOLS="$tools" CMM_LIST="$cmm_list" python3 - "$settings_file" <<'PYEOF'
 import json, os, sys
-
 settings_path = sys.argv[1]
-include_ctx = sys.argv[2] == "true"
-
-CMM_TOOLS = [
-    "mcp__codebase-memory-mcp__index_repository",
-    "mcp__codebase-memory-mcp__index_status",
-    "mcp__codebase-memory-mcp__list_projects",
-    "mcp__codebase-memory-mcp__get_architecture",
-    "mcp__codebase-memory-mcp__get_graph_schema",
-    "mcp__codebase-memory-mcp__search_graph",
-    "mcp__codebase-memory-mcp__search_code",
-    "mcp__codebase-memory-mcp__query_graph",
-    "mcp__codebase-memory-mcp__get_code_snippet",
-    "mcp__codebase-memory-mcp__trace_path",
-    "mcp__codebase-memory-mcp__detect_changes",
-    "mcp__codebase-memory-mcp__manage_adr",
-    "mcp__codebase-memory-mcp__ingest_traces",
-]
-
-CTX_TOOLS = [
-    # plugin form (canonical — mcp__plugin_context-mode_context-mode__*), listed first per
-    # the same convention used in the hook-matcher block (~lines 1340-1376)
-    "mcp__plugin_context-mode_context-mode__ctx_execute",
-    "mcp__plugin_context-mode_context-mode__ctx_execute_file",
-    "mcp__plugin_context-mode_context-mode__ctx_search",
-    "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
-    "mcp__plugin_context-mode_context-mode__ctx_index",
-    "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index",
-    "mcp__plugin_context-mode_context-mode__ctx_stats",
-    # legacy MCP-server form (mcp__context-mode__*) — retained for installs without the plugin
-    "mcp__context-mode__ctx_execute",
-    "mcp__context-mode__ctx_search",
-    "mcp__context-mode__ctx_index",
-    "mcp__context-mode__ctx_fetch_and_index",
-    "mcp__context-mode__ctx_batch_execute",
-    "mcp__context-mode__ctx_execute_file",
-    "mcp__context-mode__ctx_stats",
-]
-
+to_add = [t for t in os.environ.get("ALLOW_TOOLS", "").splitlines() if t]
+cmm_set = set(t for t in os.environ.get("CMM_LIST", "").splitlines() if t)
 try:
     with open(settings_path) as f:
         data = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
     data = {}
-
+if not isinstance(data, dict):
+    data = {}
 allow = data.setdefault("permissions", {}).setdefault("allow", [])
 existing = set(allow)
-
-to_add = CMM_TOOLS[:]
-if include_ctx:
-    to_add += CTX_TOOLS
-
 added = [t for t in to_add if t not in existing]
 allow.extend(added)
-
 tmp = settings_path + ".tmp"
-os.makedirs(os.path.dirname(settings_path) if os.path.dirname(settings_path) else ".", exist_ok=True)
+d = os.path.dirname(settings_path)
+os.makedirs(d if d else ".", exist_ok=True)
 with open(tmp, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 os.replace(tmp, settings_path)
-
-print(f"  [ok] Added {len(added)} tool(s) to permissions.allow in {os.path.basename(settings_path)}")
-if include_ctx:
-    ctx_added = [t for t in CTX_TOOLS if t in added]
-    cmm_added = [t for t in CMM_TOOLS if t in added]
-    print(f"       CMM: {len(cmm_added)} added, context-mode: {len(ctx_added)} added")
+cmm_added = sum(1 for t in added if t in cmm_set)
+ctx_added = len(added) - cmm_added
+print(f"  [ok] Added {len(added)} tool(s) to permissions.allow in {settings_path} (CMM: {cmm_added}, context-mode: {ctx_added})")
 PYEOF
-
-  # Validate written JSON
   python3 -m json.tool "$settings_file" > /dev/null 2>&1 || \
     echo "  [warn] JSON validation failed for ${settings_file}"
+}
+
+# _allowlist_confirm <prompt> — return 0 to proceed. --yes accepts; a non-TTY
+# without --yes declines (safe for CI); otherwise prompt [y/N].
+_allowlist_confirm() {
+  [ "$YES_FLAG" = true ] && return 0
+  [ -t 0 ] || return 1
+  printf "%s" "$1"
+  local a; read -r a || a=n
+  [[ "$a" =~ ^[Yy]$ ]]
+}
+
+# _allowlist_is_complete <include_ctx> <settings_file...>
+# Return 0 when the union of the given settings files already contains every
+# required CMM (and, if include_ctx, context-mode) tool.
+_allowlist_is_complete() {
+  local include_ctx="$1"; shift
+  [ "$(_allowlist_union_count cmm "$@")" -ge "$CMM_ALLOW_COUNT" ] || return 1
+  if [ "$include_ctx" = "true" ]; then
+    [ "$(_allowlist_union_count ctx "$@")" -ge "$CTX_ALLOW_COUNT" ] || return 1
+  fi
+  return 0
+}
+
+# install_allowlist — write the tool allowlist to the requested scope(s).
+#
+# Claude Code UNIONS permissions.allow across scopes, so a global (user) allowlist
+# applies to every project. Therefore:
+#   --global  → write the allowlist to the global settings.json ONCE so all
+#               projects inherit it (this is the efficient path for a global CMM).
+#   --project → write to .claude/settings.json, but SKIP when the global allowlist
+#               already covers every required tool (no per-project duplication).
+install_allowlist() {
+  if [ "$INSTALL_GLOBAL" != true ] && [ "$INSTALL_PROJECT" != true ]; then
+    return 0
+  fi
+  echo "[ALLOWLIST]"
+
+  # Include the context-mode tool allowlist unless the user opted out with
+  # --skip-context-mode. We deliberately do NOT gate this on INSTALL_CONTEXT_MODE
+  # (which is project-.mcp.json-scoped and is false for a --global-only install):
+  # ctx allow entries are inert when context-mode is absent, and pre-approving
+  # them makes the allowlist complete and ready the moment context-mode is added.
+  local include_ctx="true"
+  [ "$SKIP_CONTEXT_MODE" = true ] && include_ctx="false"
+  local kinds="CMM"; [ "$include_ctx" = "true" ] && kinds="CMM + context-mode"
+
+  local global_file project_file
+  global_file="$(detect_config_dir)/settings.json"
+  project_file=".claude/settings.json"
+
+  if [ "$DRY_RUN" = true ]; then
+    [ "$INSTALL_GLOBAL" = true ] && \
+      echo "  [DRY RUN] Would offer to write ${kinds} tool allowlist to ${global_file} (global — inherited by all projects)"
+    [ "$INSTALL_PROJECT" = true ] && \
+      echo "  [DRY RUN] Would offer to write ${kinds} tool allowlist to ${project_file} (skipped when the global allowlist already covers it)"
+    echo ""
+    return 0
+  fi
+
+  # --- Global scope ---
+  if [ "$INSTALL_GLOBAL" = true ]; then
+    if _allowlist_is_complete "$include_ctx" "$global_file" && [ "$FORCE" != true ]; then
+      echo "  [ok] ${kinds} tool allowlist already complete in ${global_file}"
+    elif _allowlist_confirm "  Write ${kinds} tool allowlist to ${global_file} (global — applies to all projects)? [y/N] "; then
+      _write_allowlist "$global_file" "$include_ctx"
+    else
+      echo "  [skip] Global allowlist not written"
+    fi
+  fi
+
+  # --- Project scope ---
+  if [ "$INSTALL_PROJECT" = true ]; then
+    if _allowlist_is_complete "$include_ctx" "$global_file" && [ "$FORCE" != true ]; then
+      echo "  [ok] ${kinds} tools already allowlisted globally (${global_file}) — skipping project allowlist; global rules apply to every project"
+    elif _allowlist_is_complete "$include_ctx" "$project_file" "$global_file" && [ "$FORCE" != true ]; then
+      echo "  [ok] ${kinds} tool allowlist already configured in ${project_file}"
+    elif _allowlist_confirm "  Write ${kinds} tool allowlist to ${project_file}? [y/N] "; then
+      _write_allowlist "$project_file" "$include_ctx"
+    else
+      echo "  [skip] Project allowlist not written"
+    fi
+  fi
 
   echo ""
 }
@@ -3052,9 +3104,13 @@ Usage:
   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--force-local-cmm] [--skip-context-mode] [--no-migrate] [--skip-statusline] [--with-metrics] [--verify]
 
 Flags:
-  --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
+  --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json.
+                    Also offers to write the CMM (+ context-mode) tool allowlist to the GLOBAL
+                    settings.json — Claude Code unions permissions.allow across scopes, so a global
+                    allowlist applies to every project and you never need to allowlist per-project.
   --project         Install project hooks to .claude/hooks/, rules to .claude/rules/,
-                    create .mcp.json, and merge into .claude/settings.json
+                    create .mcp.json, and merge into .claude/settings.json. The project allowlist
+                    is skipped when the global allowlist already covers every required tool.
   --all             Install both global and project hooks
   --force           Overwrite existing files without prompting (default: detect drift and prompt)
   --dry-run         Show what would be done without making changes
@@ -3095,7 +3151,7 @@ Flags:
 MCP pre-flight checks (run automatically unless --skip-mcp-check):
   - CMM binary       detected via PATH and common install locations
   - CMM registration checked in .mcp.json and global MCP config
-  - Tool allowlist   verified in .claude/settings.json (13 CMM tools)
+  - Tool allowlist   verified across project + global settings.json (13 CMM tools)
   - Context Mode     optional; prompts to install if not detected
 
 Context Mode hooks (context-mode-*.sh) are always installed but gracefully
