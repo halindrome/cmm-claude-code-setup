@@ -145,11 +145,24 @@ You do NOT need to call `ctx_stats` manually — the gate is already open.
 
 **If the Context Mode MCP server is unavailable** (sentinel missing despite auto-init):
   touch "/tmp/context-mode-ready-${PROJECT_HASH}"
+PROMPT
+
+  # --- Optional VBW task-location guidance ---
+  # VBW is an optional add-on. Only surface planning-file guidance when a VBW
+  # planning directory actually exists in this project; a CMM-only or
+  # CMM+context-mode project has no .vbw-planning/ and should not be told to
+  # read files that do not exist.
+  if [ -n "$PROJECT_ROOT" ] && [ -d "$PROJECT_ROOT/.vbw-planning" ]; then
+    cat <<'PROMPT'
 
 ## Finding Your Task
 
 Check `.vbw-planning/STATE.md` to find the active phase and current plan, then read the
 corresponding `.vbw-planning/phases/<phase>/<plan>.md` file for your task list.
+PROMPT
+  fi
+
+  cat <<'PROMPT'
 
 ## CMM Tool Decision Table
 

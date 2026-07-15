@@ -123,8 +123,11 @@ _CMM_PROJECT_NAME="${_CMM_PROJECT_NAME//\//-}"
 _CMM_TOUCH_JSON=$(python3 -c "import json; print(json.dumps({'project': '$_CMM_PROJECT_NAME'.replace(chr(39), '')}))" 2>/dev/null || echo '{"project":"'"$_CMM_PROJECT_NAME"'"}')
 _CMM_TOUCH_OUTPUT=$(codebase-memory-mcp cli touch_project "$_CMM_TOUCH_JSON" 2>/dev/null) && _CMM_TOUCH_OK=1 || _CMM_TOUCH_OK=0
 
-# Debug logging (only when debug_logging=true in config)
-_CMM_CONFIG="$PROJECT_ROOT/.vbw-planning/config.json"
+# Debug logging (only when debug_logging=true in config).
+# Prefer the neutral CMM state dir; fall back to legacy VBW planning config for
+# back-compat. VBW is optional — neither file is required for the hook to work.
+_CMM_CONFIG="$PROJECT_ROOT/.claude/.cmm-setup/config.json"
+[ -f "$_CMM_CONFIG" ] || _CMM_CONFIG="$PROJECT_ROOT/.vbw-planning/config.json"
 if [ -f "$_CMM_CONFIG" ] && python3 -c "import sys,json; d=json.load(open('$_CMM_CONFIG')); sys.exit(0 if d.get('debug_logging') else 1)" 2>/dev/null; then
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] touch_project project=$_CMM_PROJECT_NAME output=$_CMM_TOUCH_OUTPUT cwd=$(pwd)" >> /tmp/cmm-touch-project.log 2>/dev/null || true
 fi

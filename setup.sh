@@ -71,6 +71,29 @@ DEPRECATED_HOOKS=(
   "ctx-annotate-nudge.sh"
 )
 
+# ---------------------------------------------------------------------------
+# CMM setup state directory (VBW-independent)
+# ---------------------------------------------------------------------------
+# Migration sentinels and optional CMM config live under a neutral, always-present
+# directory so the stack no longer assumes VBW's .vbw-planning/ exists. Legacy
+# installs stored these under .vbw-planning/ — cmm_state_file() still reads that
+# location when a file is already there (back-compat), but new writes default to
+# the neutral CMM_STATE_DIR.
+CMM_STATE_DIR=".claude/.cmm-setup"
+LEGACY_STATE_DIR=".vbw-planning"
+
+# cmm_state_file <basename> — resolve a state file path. Prefers an existing
+# legacy .vbw-planning/ copy (so a mid-migration install keeps tracking the same
+# sentinel), otherwise returns the neutral CMM_STATE_DIR path for fresh writes.
+cmm_state_file() {
+  local name="$1"
+  if [ -f "$LEGACY_STATE_DIR/$name" ]; then
+    printf '%s\n' "$LEGACY_STATE_DIR/$name"
+  else
+    printf '%s\n' "$CMM_STATE_DIR/$name"
+  fi
+}
+
 # Detect Claude Code config directory at runtime.
 # Priority: $CLAUDE_CONFIG_DIR (set by Claude Code) > ~/.config/claude-code (XDG) > ~/.claude (legacy)
 detect_config_dir() {
@@ -764,7 +787,7 @@ sys.exit(1)
 
   # If a prior session wrote the migration sentinel and plugin form is now
   # present, clear the sentinel — the migration follow-up is complete (G1).
-  local _migration_sentinel=".vbw-planning/.context-mode-migration-pending"
+  local _migration_sentinel; _migration_sentinel="$(cmm_state_file ".context-mode-migration-pending")"
   if [ "$_plugin_form_present" = true ] && [ -f "$_migration_sentinel" ]; then
     if [ "$DRY_RUN" != true ]; then
       rm -f "$_migration_sentinel" 2>/dev/null || true
@@ -824,21 +847,22 @@ sys.exit(1)
 # the canonical /plugin install context-mode@context-mode form. Silent `n`
 # fallback under --no-migrate or non-TTY stdin.
 #
-# Sentinel files (mirror existing project-state sentinel patterns):
-#   .vbw-planning/.context-mode-migration-pending  — created on Y, cleared once
-#                                                    plugin form is detected.
-#   .vbw-planning/.context-mode-form-preference     — written on `keep` (single
-#                                                    line: `mcp-server`).
+# Sentinel files (stored under CMM_STATE_DIR — .claude/.cmm-setup/ — with
+# back-compat reads of legacy .vbw-planning/ copies via cmm_state_file):
+#   .context-mode-migration-pending  — created on Y, cleared once plugin form is
+#                                       detected.
+#   .context-mode-form-preference     — written on `keep` (single line:
+#                                       `mcp-server`).
 maybe_offer_context_mode_migration() {
   # If user already expressed `keep` preference, do not nag again.
-  local _pref_file=".vbw-planning/.context-mode-form-preference"
+  local _pref_file; _pref_file="$(cmm_state_file ".context-mode-form-preference")"
   if [ -f "$_pref_file" ] && grep -qx "mcp-server" "$_pref_file" 2>/dev/null; then
     return 0
   fi
 
   # If sentinel already exists, user previously answered Y but hasn't yet run
   # /plugin install. Print a one-line reminder rather than re-prompting.
-  local _sentinel=".vbw-planning/.context-mode-migration-pending"
+  local _sentinel; _sentinel="$(cmm_state_file ".context-mode-migration-pending")"
   if [ -f "$_sentinel" ]; then
     echo "  [info] migration pending — run /plugin install context-mode@context-mode in your next Claude Code session"
     return 0
@@ -1781,29 +1805,51 @@ install_project() {
     shopt -u nullglob
   fi
 
-  # Best-effort synchronous generation: run the generator now so the first
-  # session has up-to-date override files immediately (no session-restart needed
-  # after a fresh install). Fail-open: if VBW is absent or generation fails,
-  # setup.sh succeeds anyway — SessionStart will regenerate when VBW is found.
+  # VBW is an OPTIONAL add-on. The delta files above are always installed (they are
+  # inert without VBW), but override generation is auto-detected: we only run the
+  # generator synchronously when a VBW plugin tree is actually resolvable. When VBW
+  # is absent, we skip quietly — the SessionStart hook self-heals and generates the
+  # overrides automatically if VBW is installed later. This keeps the CMM + optional
+  # context-mode stack fully functional with no VBW dependency.
   mkdir -p ".claude/agents"
-  local _gen_script
-  _gen_script="$(pwd -P)/.claude/hooks/agent-override-generate.sh"
-  if [ -f "$_gen_script" ]; then
+  local _vbw_present=false
+  if [ -f "$SCRIPT_DIR/hooks/lib/vbw-source.sh" ]; then
+    # shellcheck disable=SC1091
+    if ( source "$SCRIPT_DIR/hooks/lib/vbw-source.sh" && resolve_vbw_source >/dev/null 2>&1 ); then
+      _vbw_present=true
+    fi
+  fi
+
+  if [ "$_vbw_present" != true ]; then
     if [ "$DRY_RUN" = true ]; then
-      echo "  [DRY RUN] Would run agent-override-generate.sh for initial override generation"
+      echo "  [DRY RUN] VBW not detected — would skip agent override generation (self-heals at SessionStart if VBW is installed)"
     else
-      echo "  [ok] Running agent-override-generate.sh for initial VBW override generation..."
-      # Discard the script's stdout (the hook-only systemMessage JSON, meant for
-      # SessionStart hook consumption — not for a direct shell run); keep only the
-      # human-readable stderr advisories in the install transcript.
-      if bash "$_gen_script" 2>&1 1>/dev/null | sed 's/^/    /'; then
-        echo "  [ok] VBW agent overrides generated (or already current)"
-      else
-        echo "  [warn] agent-override-generate.sh exited non-zero — overrides will be generated at next session start"
-      fi
+      echo "  [info] VBW not detected — skipping agent override generation (optional). Delta files installed; SessionStart will generate overrides automatically if VBW is added later."
     fi
   else
-    echo "  [warn] agent-override-generate.sh not found at expected path — overrides will be generated at first session start"
+    # Best-effort synchronous generation: run the generator now so the first
+    # session has up-to-date override files immediately (no session-restart needed
+    # after a fresh install). Fail-open: if generation fails, setup.sh succeeds
+    # anyway — SessionStart will regenerate.
+    local _gen_script
+    _gen_script="$(pwd -P)/.claude/hooks/agent-override-generate.sh"
+    if [ -f "$_gen_script" ]; then
+      if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY RUN] Would run agent-override-generate.sh for initial override generation (VBW detected)"
+      else
+        echo "  [ok] VBW detected — running agent-override-generate.sh for initial override generation..."
+        # Discard the script's stdout (the hook-only systemMessage JSON, meant for
+        # SessionStart hook consumption — not for a direct shell run); keep only the
+        # human-readable stderr advisories in the install transcript.
+        if bash "$_gen_script" 2>&1 1>/dev/null | sed 's/^/    /'; then
+          echo "  [ok] VBW agent overrides generated (or already current)"
+        else
+          echo "  [warn] agent-override-generate.sh exited non-zero — overrides will be generated at next session start"
+        fi
+      fi
+    else
+      echo "  [warn] agent-override-generate.sh not found at expected path — overrides will be generated at first session start"
+    fi
   fi
 
   # Purge deprecated hook files and their settings.json entries (unconditional).
