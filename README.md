@@ -1,13 +1,14 @@
-# CMM + Context Mode Setup for Claude Code
+# CMM Setup for Claude Code
 
-Hooks, rules, and enforcement layer for two complementary MCP servers:
+**codebase-memory-mcp (CMM) is the core.** This repo is the hook-based enforcement and tracking layer that makes Claude Code actually use CMM's persistent code knowledge graph instead of re-reading files — saving ~99% of tokens on code exploration. Two add-ons are **optional** and **auto-detected** at install time; each layers on top only when present, and CMM works fully without either:
 
-- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)** (by [DeusData](https://github.com/DeusData)) — persistent code knowledge graph across 155 languages with cross-repo intelligence and gRPC/GraphQL/tRPC service detection; replaces file-reading with precise graph queries, saving ~99% of tokens on code exploration
-- **[Context Mode MCP](https://github.com/mksglu/context-mode)** *(optional)* — execution sandboxing + SQLite session persistence; routes tool outputs through isolated subprocesses to keep large outputs out of the context window (~98% context reduction)
+- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)** (by [DeusData](https://github.com/DeusData)) — **core, always installed.** Persistent code knowledge graph across 155 languages with cross-repo intelligence and gRPC/GraphQL/tRPC service detection; replaces file-reading with precise graph queries, saving ~99% of tokens on code exploration.
+- **[Context Mode MCP](https://github.com/mksglu/context-mode)** *(optional, auto-detected)* — execution sandboxing + SQLite session persistence; routes tool outputs through isolated subprocesses to keep large outputs out of the context window (~98% context reduction). Registered automatically when detected; pass `--skip-context-mode` to opt out. Its hooks no-op gracefully when it is absent.
+- **VBW (Vibe Better with Claude Code)** *(optional, auto-detected)* — a structured planning/agent workflow. When a VBW plugin tree is resolvable, setup generates CMM-aware agent overrides; without VBW the bundled agent delta files stay inert and CMM runs on its own.
 
-Together they eliminate the two main token sinks in long Claude Code sessions: redundant file reads (CMM) and bloated tool output (Context Mode).
+CMM alone eliminates the biggest token sink in long Claude Code sessions — redundant file reads. Context Mode adds a second layer for bloated tool output; VBW adds structured planning. Neither add-on is required.
 
-> **Credit where it's due:** The hook-based enforcement approach and repository structure are adapted from [jmunch-claude-code-setup](https://github.com/shacharbard/jmunch-claude-code-setup) by [Shachar Bard](https://github.com/shacharbard). This repo does not contain either MCP server — it provides the enforcement and tracking layer that makes Claude actually use them. All the clever indexing, knowledge graph construction, and execution sandboxing is the MCP authors' work.
+> **Credit where it's due:** The hook-based enforcement approach and repository structure are adapted from [jmunch-claude-code-setup](https://github.com/shacharbard/jmunch-claude-code-setup) by [Shachar Bard](https://github.com/shacharbard). This repo does not contain the MCP servers — it provides the enforcement and tracking layer that makes Claude actually use them. All the clever indexing, knowledge graph construction, and execution sandboxing is the MCP authors' work.
 
 ## What Each MCP Does
 
@@ -68,6 +69,14 @@ bash /path/to/cmm-claude-code-setup/setup.sh --all
 ```
 
 Setup handles the rest automatically: it installs global hooks and rules (to `$CLAUDE_CONFIG_DIR/` or `~/.claude/`), project hooks and rules (to `.claude/`), detects whether CMM is registered with Claude Code and creates `.mcp.json` if needed, adds all 14 CMM tool names to `.claude/settings.json` (the tool allowlist), and optionally sets up Context Mode — all interactively with prompts at each step.
+
+**Core vs. optional at install time:**
+
+- **CMM (core)** — hooks, rules, statusline, and the tool allowlist are always installed. This is the enforcement layer's reason for being.
+- **Context Mode (optional, auto-detected)** — registered automatically when detected via `detect_context_mode()`; pass `--skip-context-mode` to opt out. Its hooks are installed unconditionally and no-op gracefully when Context Mode is absent, so you can enable it later without re-running setup.
+- **VBW (optional, auto-detected)** — setup resolves an active VBW plugin tree (`hooks/lib/vbw-source.sh`) and generates CMM-aware agent overrides only when one is found. The bundled `agents/vbw-*.md` delta files are installed either way but stay inert without VBW; the SessionStart hook self-heals and generates the overrides automatically if VBW is added later.
+
+Non-VBW setup state (Context Mode migration sentinels, optional CMM config) lives under `.claude/.cmm-setup/`, so a CMM-only project needs no `.vbw-planning/` directory (legacy `.vbw-planning/` copies are still read for back-compat).
 
 ```bash
 # setup.sh options
@@ -332,6 +341,14 @@ Our own project hooks (`session-gate`, `ctx-execute-enforcer`, `cmm-nudge`, etc.
 
 > **Matcher-drift heal (overwrites user matcher edits on upstream entries).**
 > On every `setup.sh --project` run, the merge finds each upstream entry by substring match on either `hook claude-code <event>` (legacy/npx form) or `context-mode-hook-dispatch.sh <event>` (current form). It rewrites the `matcher` field back to the upstream default if the two diverge; this keeps all installs on the same tool-coverage contract. **User customizations to the `matcher` field on these five entries are overwritten.** User customizations appended to the dispatcher command (e.g. `bash /path/dispatch.sh posttooluse --verbose`) are preserved — the heal only rewrites the command when `context-mode-hook-dispatch.sh <event>` is absent. Early phase-51 installs using the bare-form or npx-launcher commands are rewritten in-place to the dispatcher form on re-run. Matchers on your other (non-upstream) hook entries — including the CMM enforcement hooks and anything you added by hand — are never touched.
+
+## VBW (Vibe Better with Claude Code) — Optional Add-on
+
+VBW is a structured planning/agent workflow. It is **optional and auto-detected** — CMM is fully functional without it. When VBW is present, this repo makes its agents CMM-aware; when it is absent, nothing about VBW is required and the bundled agent deltas stay inert.
+
+- **Auto-detection.** `setup.sh` sources `hooks/lib/vbw-source.sh` (`resolve_vbw_source`) to locate an active VBW plugin tree — a `--plugin-dir` local symlink, a marketplace install, or a dev checkout. If none resolves, setup fails open: it skips agent-override generation and never blocks the install.
+- **Agent deltas.** The `agents/vbw-*.md` delta files are installed regardless, but they do nothing without a resolvable VBW tree. If you add VBW later, the SessionStart hook self-heals and generates the CMM-aware agent overrides automatically — no manual re-run needed.
+- **No planning directory required.** A CMM-only project has no `.vbw-planning/`. Setup state that used to live there (Context Mode migration sentinels, optional CMM config) now lives under `.claude/.cmm-setup/`; legacy `.vbw-planning/` copies are still read for back-compat.
 
 ## Diagnostics & problem reports
 
