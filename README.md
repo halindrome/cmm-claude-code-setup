@@ -349,6 +349,24 @@ VBW is a structured planning/agent workflow. It is **optional and auto-detected*
 - **Auto-detection.** `setup.sh` sources `hooks/lib/vbw-source.sh` (`resolve_vbw_source`) to locate an active VBW plugin tree — a `--plugin-dir` local symlink, a marketplace install, or a dev checkout. If none resolves, setup fails open: it skips agent-override generation and never blocks the install.
 - **Agent deltas.** The `agents/vbw-*.md` delta files are installed regardless, but they do nothing without a resolvable VBW tree. If you add VBW later, the SessionStart hook self-heals and generates the CMM-aware agent overrides automatically — no manual re-run needed.
 - **No planning directory required.** A CMM-only project has no `.vbw-planning/`. Setup state that used to live there (Context Mode migration sentinels, optional CMM config) now lives under `.claude/.cmm-setup/`; legacy `.vbw-planning/` copies are still read for back-compat.
+- **Migrating an existing install off VBW.** If a project was previously set up with VBW and you re-run `setup.sh --project` on a machine where VBW is no longer resolvable, setup moves any stale generated `.claude/agents/vbw-*.md` overrides aside into `.claude/.cmm-setup/vbw-agents.bak/` (reversible — files are moved, not deleted) so Claude Code stops loading them. The inert delta files and hooks stay in place, so the stack self-heals if VBW returns.
+
+## Uninstalling
+
+Remove the whole stack from a project or globally with `--uninstall` (requires an explicit scope):
+
+```bash
+bash setup.sh --uninstall --project --dry-run   # preview what would be removed
+bash setup.sh --uninstall --project             # remove from this project
+bash setup.sh --uninstall --global              # remove global install
+bash setup.sh --uninstall --all --yes           # remove both, no prompt
+```
+
+- **What it removes:** the hooks, `hooks/lib/` helpers, rules, skills, VBW agent deltas + generated overrides, the statusline hook, the optional metrics tool, and `.claude/.cmm-setup/` — plus the stack's hook registrations, permission-allowlist entries, and `statusLine` block from `settings.json` / `settings.local.json`.
+- **What it preserves:** user-owned hooks, agents, skills, and any other `settings.json` entries the stack did not add are left untouched.
+- **Reversible:** removed files are **moved** into a timestamped `.cmm-setup-uninstall-<ts>/` backup dir under the target, and edited JSON files are backed up there first. Delete the backup once you're satisfied.
+- **MCP servers:** `.mcp.json` entries for `codebase-memory-mcp` and `context-mode` are **left intact** by default (they're external tools you may want to keep). Pass `--purge-mcp` to remove them too.
+- Honors `--dry-run` and `--yes`. Restart any open Claude Code sessions afterward.
 
 ## Diagnostics & problem reports
 
