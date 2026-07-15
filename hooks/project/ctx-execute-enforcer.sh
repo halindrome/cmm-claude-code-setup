@@ -272,9 +272,29 @@ case "$COMMAND" in
   bash\ */.vbw-planning/*|bash\ */tmp/.vbw-plugin-root-link-*)                _track_exempt vbw-planning; exit 0 ;;
 esac
 
-# Package version queries (bounded output)
+# Package/tool version queries (bounded output) — narrowly scoped.
+# The long form --version is unambiguous, so exempt it anywhere it appears.
 case "$COMMAND" in
-  *--version|*\ -v|*\ -V)   _track_exempt version; exit 0 ;;
+  *--version)   _track_exempt version; exit 0 ;;
+esac
+# The short forms -v / -V are OVERLOADED with "verbose": a blanket `* -v` match
+# wrongly exempts verbose test runs (e.g. `pytest -v`, `pytest tests/ -v`) and
+# leaks the full log to context as plain Bash. Exempt only a BARE version query —
+# exactly two tokens `<tool> -v|-V` — and never when the tool is a known
+# test/build/lint runner (whose -v means verbose). A real version check carries
+# no other arguments; a test run does.
+case "$COMMAND" in
+  *\ -v|*\ -V)
+    read -ra _VTOK <<< "$COMMAND"
+    if [ "${#_VTOK[@]}" -eq 2 ]; then
+      case "${_VTOK[0]}" in
+        pytest|py.test|prove|jest|mocha|vitest|jasmine|ava|tap|phpunit|pest|rspec|minitest|tox|nose2|nosetests|behave|cucumber|bats|go|cargo|make|gmake|npm|npx|yarn|pnpm|gradle|gradlew|mvn|ctest|rake|playwright|cypress|dotnet|ninja)
+          : ;;  # verbose flag on a runner — fall through to the default block
+        *)
+          _track_exempt version; exit 0 ;;
+      esac
+    fi
+    ;;
 esac
 
 # --- Default: block everything not explicitly exempt ---

@@ -140,6 +140,37 @@ _assert_exit "unquoted git status && cat blocked" 2 \
 _assert_exit "git status exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
 
+# --- Version-flag disambiguation (-v/-V overloaded with "verbose") ---
+echo ""
+echo "--- Version-flag disambiguation (bare version query exempt; verbose test runs blocked) ---"
+
+# Unambiguous long form --version is always exempt (bounded output).
+_assert_exit "node --version exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"node --version"}}'
+_assert_exit "pytest --version exempt (long form is unambiguous)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"pytest --version"}}'
+
+# Bare two-token -v/-V version query on a non-runner: exempt.
+_assert_exit "node -v exempt (bare version query)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"node -v"}}'
+_assert_exit "python -V exempt (bare version query)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"python -V"}}'
+
+# Verbose test runs must be BLOCKED (the bug this fixes): a runner with -v, and
+# any -v that is not the sole argument.
+_assert_exit "pytest -v blocked (verbose, not a version query)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"pytest -v"}}'
+_assert_exit "pytest tests/ -v blocked (>2 tokens)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"pytest tests/ -v"}}'
+_assert_exit "prove -v blocked (verbose test run)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"prove -v"}}'
+_assert_exit "cargo test -v blocked (>2 tokens)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cargo test -v"}}'
+_assert_exit "make test -v blocked (>2 tokens)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"make test -v"}}'
+_assert_exit "some_tool --config x -v blocked (>2 tokens)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"foo --config x -v"}}'
+
 # --- Allowlist: previously-unblocked commands now blocked (expect exit 2) ---
 echo ""
 echo "--- Allowlist: previously-unblocked commands now blocked (expect exit 2) ---"
