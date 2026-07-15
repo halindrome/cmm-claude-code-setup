@@ -44,6 +44,13 @@ INSTALL_PROJECT=false
 SKIP_MCP_CHECK=false
 SKIP_STATUSLINE=false
 WITH_METRICS=false   # opt-in: install scripts/analyze-gate-blocks.py into <scope>/tools/
+# Uninstall mode (--uninstall): remove this stack from the requested scope instead
+# of installing. Requires an explicit --project and/or --global scope.
+UNINSTALL=false
+# --purge-mcp (uninstall only): also remove codebase-memory-mcp / context-mode
+# entries from .mcp.json. Off by default — MCP server registrations are external
+# tools the user may want to keep after removing the enforcement layer.
+PURGE_MCP=false
 # CMM install-scope globals (set by detect_cmm_install_scope; consumed by install_project)
 # Four-value enum: none | global | project | both
 CMM_INSTALL_SCOPE="none"
@@ -92,6 +99,236 @@ cmm_state_file() {
   else
     printf '%s\n' "$CMM_STATE_DIR/$name"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# Uninstall support
+# ---------------------------------------------------------------------------
+# stack_owned_hook_basenames — print (one per line) every hook filename this
+# stack installs into <base>/hooks/ and <base>/hooks/lib/. Derived from the repo
+# hook tree at runtime so it stays in sync with what install_* copies, plus the
+# generated statusline hook and the historical DEPRECATED_HOOKS. Used by
+# uninstall_stack to know exactly which files to remove.
+stack_owned_hook_basenames() {
+  local f
+  for f in "$SCRIPT_DIR"/hooks/project/*.sh "$SCRIPT_DIR"/hooks/global/*.sh "$SCRIPT_DIR"/hooks/lib/*.sh; do
+    [ -e "$f" ] && basename "$f"
+  done
+  # Generated at install time (not present in the repo hook tree):
+  printf '%s\n' "statusline-cmm.sh"
+  # Historical hook filenames superseded across versions:
+  local d
+  for d in "${DEPRECATED_HOOKS[@]}"; do printf '%s\n' "$d"; done
+}
+
+# uninstall_stack <base_dir> <scope_label>
+# Removes the installed stack from <base_dir> (e.g. .claude for project, the
+# resolved config dir for global). Files are MOVED to a timestamped backup dir
+# under <base_dir> (reversible), and settings.json / .mcp.json are backed up
+# before being edited. Honors DRY_RUN and YES_FLAG. .mcp.json MCP-server entries
+# are removed only when --purge-mcp is passed.
+uninstall_stack() {
+  local base="$1" scope="$2"
+  if [ ! -d "$base" ]; then
+    echo "  [skip] $scope: $base does not exist — nothing to uninstall"
+    return 0
+  fi
+
+  local ts backup
+  ts="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo backup)"
+  backup="$base/.cmm-setup-uninstall-$ts"
+
+  echo ""
+  echo "Uninstalling CMM stack ($scope) from: $base"
+  if [ "$DRY_RUN" != true ]; then
+    echo "  Removed files are moved to: $backup (delete it once you're satisfied)"
+  fi
+
+  # Confirmation (skipped by --yes / non-interactive / dry-run).
+  if [ "$DRY_RUN" != true ] && [ "$YES_FLAG" != true ] && [ -t 0 ]; then
+    printf "  Proceed with uninstall of %s scope? [y/N] " "$scope"
+    local _ans; read -r _ans || _ans=n
+    case "${_ans:-n}" in
+      y|Y|yes|YES) : ;;
+      *) echo "  [info] Uninstall aborted ($scope)"; return 0 ;;
+    esac
+  fi
+
+  # _rm_move <relative-path> — move a file/dir under $base into the backup tree,
+  # preserving its relative path. No-op when the target is absent.
+  _rm_move() {
+    local rel="$1" src="$base/$1"
+    [ -e "$src" ] || return 0
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would remove $base/$rel"
+      return 0
+    fi
+    mkdir -p "$backup/$(dirname "$rel")" 2>/dev/null
+    mv "$src" "$backup/$rel" 2>/dev/null && echo "  [ok] removed $rel" \
+      || echo "  [warn] could not remove $rel"
+  }
+
+  # 1. Hooks (and hooks/lib) this stack owns.
+  local h
+  while IFS= read -r h; do
+    [ -n "$h" ] || continue
+    _rm_move "hooks/$h"
+    _rm_move "hooks/lib/$h"
+  done < <(stack_owned_hook_basenames)
+  # Prune now-empty hooks/lib and hooks dirs.
+  [ "$DRY_RUN" = true ] || { rmdir "$base/hooks/lib" 2>/dev/null || true; rmdir "$base/hooks" 2>/dev/null || true; }
+
+  # 2. Rule files this stack ships.
+  local r
+  for r in "$SCRIPT_DIR"/rules/*; do
+    [ -e "$r" ] && _rm_move "rules/$(basename "$r")"
+  done
+  [ "$DRY_RUN" = true ] || rmdir "$base/rules" 2>/dev/null || true
+
+  # 3. Skills this stack ships (own subdirs only).
+  local s name
+  for s in "$SCRIPT_DIR"/skills/*/; do
+    [ -d "$s" ] || continue
+    name="$(basename "$s")"
+    _rm_move "skills/$name"
+  done
+  [ "$DRY_RUN" = true ] || rmdir "$base/skills" 2>/dev/null || true
+
+  # 4. VBW agent deltas + generated overrides.
+  local a
+  for a in "$base"/agents-delta/vbw-*.md; do
+    [ -e "$a" ] && _rm_move "agents-delta/$(basename "$a")"
+  done
+  for a in "$base"/agents/vbw-*.md; do
+    [ -e "$a" ] && _rm_move "agents/$(basename "$a")"
+  done
+  [ "$DRY_RUN" = true ] || { rmdir "$base/agents-delta" 2>/dev/null || true; rmdir "$base/agents" 2>/dev/null || true; }
+
+  # 5. Optional metrics tool + neutral state dir.
+  _rm_move "tools/analyze-gate-blocks.py"
+  [ "$DRY_RUN" = true ] || rmdir "$base/tools" 2>/dev/null || true
+  _rm_move ".cmm-setup"
+
+  # 6. settings.json / settings.local.json: strip our hook registrations,
+  #    permission allowlist entries, and the statusLine block.
+  local owned_hooks_csv
+  owned_hooks_csv="$(stack_owned_hook_basenames | paste -sd, - 2>/dev/null)"
+  local sf
+  for sf in "$base/settings.json" "$base/settings.local.json"; do
+    [ -f "$sf" ] || continue
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would strip stack hooks / allowlist / statusLine from $sf"
+      continue
+    fi
+    cp "$sf" "$backup/$(basename "$sf")" 2>/dev/null || { mkdir -p "$backup"; cp "$sf" "$backup/$(basename "$sf")" 2>/dev/null; }
+    OWNED_HOOKS_CSV="$owned_hooks_csv" python3 - "$sf" <<'PYEOF'
+import json, os, sys
+path = sys.argv[1]
+owned = set(filter(None, os.environ.get("OWNED_HOOKS_CSV", "").split(",")))
+try:
+    with open(path) as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+if not isinstance(data, dict):
+    sys.exit(0)
+
+def cmd_is_ours(cmd):
+    return isinstance(cmd, str) and any(h and h in cmd for h in owned)
+
+# Strip hook entries whose command references one of our hook scripts.
+hooks = data.get("hooks")
+removed_hooks = 0
+if isinstance(hooks, dict):
+    for event, groups in list(hooks.items()):
+        if not isinstance(groups, list):
+            continue
+        new_groups = []
+        for g in groups:
+            inner = g.get("hooks") if isinstance(g, dict) else None
+            if isinstance(inner, list):
+                kept = [hk for hk in inner if not cmd_is_ours(hk.get("command") if isinstance(hk, dict) else None)]
+                removed_hooks += len(inner) - len(kept)
+                if kept:
+                    g["hooks"] = kept
+                    new_groups.append(g)
+            else:
+                new_groups.append(g)
+        if new_groups:
+            hooks[event] = new_groups
+        else:
+            del hooks[event]
+    if not hooks:
+        data.pop("hooks", None)
+
+# Strip our permission allowlist entries.
+removed_perms = 0
+perms = data.get("permissions")
+if isinstance(perms, dict) and isinstance(perms.get("allow"), list):
+    prefixes = ("mcp__codebase-memory-mcp__", "mcp__context-mode__", "mcp__plugin_context-mode_context-mode__")
+    before = perms["allow"]
+    perms["allow"] = [t for t in before if not (isinstance(t, str) and t.startswith(prefixes))]
+    removed_perms = len(before) - len(perms["allow"])
+    if not perms["allow"]:
+        perms.pop("allow", None)
+    if not perms:
+        data.pop("permissions", None)
+
+# Strip our statusLine block (statusline-cmm.sh).
+removed_sl = False
+sl = data.get("statusLine")
+if isinstance(sl, dict) and isinstance(sl.get("command"), str) and "statusline-cmm.sh" in sl["command"]:
+    data.pop("statusLine", None)
+    removed_sl = True
+
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+os.replace(tmp, path)
+print(f"  [ok] {os.path.basename(path)}: removed {removed_hooks} hook entr(ies), {removed_perms} allowlist entr(ies)" + (", statusLine" if removed_sl else ""))
+PYEOF
+  done
+
+  # 7. .mcp.json MCP-server entries — only with --purge-mcp.
+  if [ "$PURGE_MCP" = true ] && [ -f "$base/../.mcp.json" -o -f ".mcp.json" ]; then
+    local mcpf=".mcp.json"
+    [ -f "$mcpf" ] || mcpf="$base/../.mcp.json"
+    if [ -f "$mcpf" ]; then
+      if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY RUN] Would remove codebase-memory-mcp / context-mode from $mcpf (--purge-mcp)"
+      else
+        cp "$mcpf" "$backup/mcp.json" 2>/dev/null || true
+        python3 - "$mcpf" <<'PYEOF'
+import json, os, sys
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+servers = data.get("mcpServers") if isinstance(data, dict) else None
+removed = []
+if isinstance(servers, dict):
+    for name in ("codebase-memory-mcp", "context-mode"):
+        if name in servers:
+            del servers[name]
+            removed.append(name)
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+os.replace(tmp, path)
+print(f"  [ok] .mcp.json: removed {', '.join(removed) if removed else 'nothing'}")
+PYEOF
+      fi
+    fi
+  elif [ "$PURGE_MCP" != true ]; then
+    echo "  [info] .mcp.json MCP-server entries left intact (pass --purge-mcp to remove codebase-memory-mcp / context-mode)"
+  fi
+
+  echo "  [ok] Uninstall ($scope) complete."
+  [ "$DRY_RUN" = true ] || echo "  Backup: $backup"
 }
 
 # Detect Claude Code config directory at runtime.
@@ -1823,8 +2060,29 @@ install_project() {
   if [ "$_vbw_present" != true ]; then
     if [ "$DRY_RUN" = true ]; then
       echo "  [DRY RUN] VBW not detected — would skip agent override generation (self-heals at SessionStart if VBW is installed)"
+      shopt -s nullglob
+      for _stale in .claude/agents/vbw-*.md; do
+        echo "  [DRY RUN] Would move stale generated override aside: $_stale -> .claude/.cmm-setup/vbw-agents.bak/"
+      done
+      shopt -u nullglob
     else
       echo "  [info] VBW not detected — skipping agent override generation (optional). Delta files installed; SessionStart will generate overrides automatically if VBW is added later."
+      # Move any generated overrides left by a prior (VBW-enabled) install aside so
+      # Claude Code stops loading them. Reversible: files go to a backup dir, not
+      # deleted. Delta files + hooks stay installed so the stack self-heals if VBW
+      # returns.
+      shopt -s nullglob
+      local _stale _moved=0
+      for _stale in .claude/agents/vbw-*.md; do
+        mkdir -p ".claude/.cmm-setup/vbw-agents.bak"
+        if mv "$_stale" ".claude/.cmm-setup/vbw-agents.bak/$(basename "$_stale")" 2>/dev/null; then
+          _moved=$((_moved + 1))
+        fi
+      done
+      shopt -u nullglob
+      if [ "$_moved" -gt 0 ]; then
+        echo "  [ok] Moved $_moved stale VBW agent override(s) to .claude/.cmm-setup/vbw-agents.bak/ (VBW not installed)"
+      fi
     fi
   else
     # Best-effort synchronous generation: run the generator now so the first
@@ -2745,6 +3003,8 @@ parse_args() {
       --force-local-cmm) FORCE_LOCAL_CMM=true ;;
       --skip-context-mode) SKIP_CONTEXT_MODE=true ;;
       --no-migrate)      NO_MIGRATE=true ;;
+      --uninstall)       UNINSTALL=true ;;
+      --purge-mcp)       PURGE_MCP=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
       --with-metrics)    WITH_METRICS=true ;;
       --reconfigure-statusline) RECONFIGURE_STATUSLINE=true ;;
@@ -2778,6 +3038,16 @@ Flags:
                     MCP-server form of context-mode to /plugin install context-mode.
                     Equivalent to answering "n" to the prompt. Useful for CI/automation.
                     Non-interactive stdin ([ ! -t 0 ]) implies --no-migrate.
+  --uninstall       Remove this stack from the requested scope instead of installing.
+                    Requires an explicit --project and/or --global (or --all). Removed
+                    files (hooks, rules, skills, VBW agent deltas/overrides, statusline,
+                    optional tools, .cmm-setup state) are MOVED to a timestamped backup
+                    dir under the target (reversible), and settings.json hook/allowlist/
+                    statusLine entries are stripped after being backed up. Honors
+                    --dry-run and --yes. MCP-server entries in .mcp.json are left intact
+                    unless --purge-mcp is also passed.
+  --purge-mcp       (with --uninstall) Also remove codebase-memory-mcp and context-mode
+                    entries from .mcp.json. Off by default.
   --skip-statusline Skip the CMM statusline installation offer
   --reconfigure-statusline  Re-prompt for statusline component selection (overwrite existing config)
   --with-metrics    Also install the gate-metrics tool (scripts/analyze-gate-blocks.py)
@@ -2805,6 +3075,9 @@ Examples:
   bash setup.sh --dry-run --project   # Preview project install without making changes
   bash setup.sh --project --force     # Re-install everything, overwriting all existing files
   bash setup.sh --project --skip-mcp-check  # Install without MCP availability checks
+  bash setup.sh --uninstall --project --dry-run  # Preview removing the stack from a project
+  bash setup.sh --uninstall --project        # Remove the stack from this project (files backed up)
+  bash setup.sh --uninstall --all --purge-mcp --yes  # Remove everywhere, incl. .mcp.json entries
 HELP
         exit 0
         ;;
@@ -2815,6 +3088,17 @@ HELP
     esac
     shift
   done
+
+  if [ "$UNINSTALL" = true ]; then
+    # Uninstall requires an explicit scope — never guess, since removal is
+    # destructive. Do NOT fall through to interactive_prompt (which offers to
+    # install).
+    if [ "$INSTALL_GLOBAL" = false ] && [ "$INSTALL_PROJECT" = false ]; then
+      echo "--uninstall requires a scope: pass --project and/or --global (or --all)." >&2
+      exit 1
+    fi
+    return 0
+  fi
 
   if [ "$INSTALL_GLOBAL" = false ] && [ "$INSTALL_PROJECT" = false ]; then
     interactive_prompt
@@ -2858,6 +3142,20 @@ install_metrics_tool() {
 
 main() {
   parse_args "$@"
+
+  # Uninstall short-circuits the install pipeline entirely.
+  if [ "$UNINSTALL" = true ]; then
+    if [ "$INSTALL_PROJECT" = true ]; then
+      uninstall_stack ".claude" "project"
+    fi
+    if [ "$INSTALL_GLOBAL" = true ]; then
+      uninstall_stack "$(detect_config_dir)" "global"
+    fi
+    echo ""
+    echo "Uninstall finished. Restart any open Claude Code sessions for changes to take effect."
+    return 0
+  fi
+
   verify_repo_remote
   check_prerequisites
   check_mcp_availability
