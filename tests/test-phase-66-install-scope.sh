@@ -182,19 +182,26 @@ else
 fi
 
 # -----------------------------------------------------------------------
-# 8. setup.sh --project in scratch project: agents-delta + lib files installed
+# 8. setup.sh --project WITH VBW installed (marketplace): agents-delta + lib files
 # -----------------------------------------------------------------------
-echo "--- 8: setup.sh --project installs .claude/agents-delta/ + lib files ---"
+# VBW delta injection is gated on VBW being installed as a plugin. Set up a fake
+# marketplace VBW via CLAUDE_CONFIG_DIR so the gate resolves "available"
+# deterministically (independent of the test machine's ambient VBW state).
+echo "--- 8: setup.sh --project installs .claude/agents-delta/ + lib files (VBW present) ---"
 TMPROOT8=$(mktemp -d /tmp/test-phase-66-scope-XXXXXX)
 trap 'rm -rf "$TMPROOT8"' EXIT
 SCRATCH8="$TMPROOT8/proj"
-mkdir -p "$SCRATCH8"
+FAKE_CFG8="$TMPROOT8/cfg"
+MKT8="vbw-marketplace"; VBWVER8="1.99.0"
+FAKE_VBW8="$FAKE_CFG8/plugins/cache/$MKT8/vbw/$VBWVER8"
+mkdir -p "$SCRATCH8" "$FAKE_VBW8/agents" "$FAKE_CFG8/plugins"
 (cd "$SCRATCH8" && git init -q && git commit --allow-empty -q -m "init") >/dev/null 2>&1
-# Run setup.sh --project in non-interactive mode (DRY_RUN not set; run for real)
-# Use --yes to skip prompts if supported; otherwise pipe yes
+cat >"$FAKE_CFG8/plugins/installed_plugins.json" <<JSON
+{"version":2,"plugins":{"vbw@vbw-marketplace":[{"installPath":"$FAKE_VBW8","version":"$VBWVER8","scope":"user"}]},"enabledPlugins":{"vbw@vbw-marketplace":true}}
+JSON
 (
   cd "$SCRATCH8"
-  bash "$REPO_ROOT/setup.sh" --project --yes 2>&1
+  CLAUDE_CONFIG_DIR="$FAKE_CFG8" bash "$REPO_ROOT/setup.sh" --project --yes --skip-statusline --skip-mcp-check --no-migrate 2>&1
 ) >/dev/null 2>&1 || true
 
 _delta_ok=1
@@ -205,9 +212,9 @@ for _ag in architect debugger dev docs lead qa scout; do
     fi
 done
 if [ "$_delta_ok" -eq 1 ]; then
-    _pass "setup.sh --project: all 7 .claude/agents-delta/vbw-*.md installed"
+    _pass "setup.sh --project (VBW present): all 7 .claude/agents-delta/vbw-*.md installed"
 else
-    _fail "setup.sh --project: all 7 .claude/agents-delta/vbw-*.md installed" \
+    _fail "setup.sh --project (VBW present): all 7 .claude/agents-delta/vbw-*.md installed" \
         "one or more delta files missing in $SCRATCH8/.claude/agents-delta/"
 fi
 
@@ -217,6 +224,38 @@ else
     _fail "setup.sh --project: .claude/hooks/lib/{project-root.sh,vbw-source.sh} installed" \
         "lib files missing in $SCRATCH8/.claude/hooks/lib/"
 fi
+
+# 8b. setup.sh --project WITHOUT VBW: no agents-delta injection; stale moved aside
+# -----------------------------------------------------------------------
+echo "--- 8b: setup.sh --project with VBW absent skips delta injection + moves stale aside ---"
+TMPROOT8B=$(mktemp -d /tmp/test-phase-66-scope-XXXXXX)
+SCRATCH8B="$TMPROOT8B/proj"
+FAKE_CFG8B="$TMPROOT8B/cfg"
+mkdir -p "$SCRATCH8B" "$FAKE_CFG8B/plugins"
+echo '{"version":2,"plugins":{},"enabledPlugins":{}}' > "$FAKE_CFG8B/plugins/installed_plugins.json"
+(cd "$SCRATCH8B" && git init -q && git commit --allow-empty -q -m "init") >/dev/null 2>&1
+# Seed a stale generated override from a hypothetical prior VBW-enabled install
+mkdir -p "$SCRATCH8B/.claude/agents"
+echo "stale" > "$SCRATCH8B/.claude/agents/vbw-dev.md"
+(
+  cd "$SCRATCH8B"
+  # CLAUDE_CONFIG_DIR → no plugins; HOME override neutralizes any ~/Sources dev-checkout
+  CLAUDE_CONFIG_DIR="$FAKE_CFG8B" HOME="$TMPROOT8B" bash "$REPO_ROOT/setup.sh" --project --yes --skip-statusline --skip-mcp-check --no-migrate 2>&1
+) >/dev/null 2>&1 || true
+if [ ! -e "$SCRATCH8B/.claude/agents-delta/vbw-dev.md" ]; then
+    _pass "VBW absent: no vbw deltas injected into .claude/agents-delta/"
+else
+    _fail "VBW absent: no vbw deltas injected into .claude/agents-delta/" \
+        "unexpected vbw delta present in $SCRATCH8B/.claude/agents-delta/"
+fi
+if [ ! -e "$SCRATCH8B/.claude/agents/vbw-dev.md" ] && \
+   [ -e "$SCRATCH8B/.claude/.cmm-setup/vbw-agents.bak/agents/vbw-dev.md" ]; then
+    _pass "VBW absent: stale override moved aside to .cmm-setup/vbw-agents.bak/"
+else
+    _fail "VBW absent: stale override moved aside to .cmm-setup/vbw-agents.bak/" \
+        "stale vbw-dev.md not moved as expected in $SCRATCH8B"
+fi
+rm -rf "$TMPROOT8B"
 
 # -----------------------------------------------------------------------
 # 9. Hook exits 0 when no VBW source resolvable (no plugins installed)

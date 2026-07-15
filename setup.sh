@@ -51,6 +51,14 @@ UNINSTALL=false
 # entries from .mcp.json. Off by default — MCP server registrations are external
 # tools the user may want to keep after removing the enforcement layer.
 PURGE_MCP=false
+# --with-vbw: treat a bare VBW dev-checkout (a source clone in ~/Sources) as an
+# installed VBW. By default only an actual plugin install — a marketplace install
+# or a --plugin-dir local symlink — counts as "VBW available"; a stray source
+# checkout does NOT, so migrating-away projects don't get VBW agents injected.
+WITH_VBW=false
+# Set by vbw_is_available(): the resolved VBW source type for messaging
+# (marketplace | local-symlink | dev-checkout | absent).
+VBW_DETECTED_TYPE="absent"
 # CMM install-scope globals (set by detect_cmm_install_scope; consumed by install_project)
 # Four-value enum: none | global | project | both
 CMM_INSTALL_SCOPE="none"
@@ -99,6 +107,37 @@ cmm_state_file() {
   else
     printf '%s\n' "$CMM_STATE_DIR/$name"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# VBW availability (install-time gate)
+# ---------------------------------------------------------------------------
+# vbw_is_available — return 0 only when VBW is installed as a usable plugin, and
+# set VBW_DETECTED_TYPE to the resolved source type for messaging.
+#
+# resolve_vbw_source (hooks/lib/vbw-source.sh) resolves four source types:
+#   marketplace   — published /plugin install                → counts as installed
+#   local-symlink — active `claude --plugin-dir <vbw>` mount  → counts as installed
+#   dev-checkout  — a bare source clone in ~/Sources          → NOT installed by default
+#   absent        — none of the above                         → not installed
+#
+# A dev-checkout is just source code sitting on disk, not an active plugin, so it
+# does not make VBW "available" unless --with-vbw is explicitly passed. This keeps
+# projects that are migrating away from VBW from getting VBW agents injected just
+# because a source clone happens to exist.
+vbw_is_available() {
+  VBW_DETECTED_TYPE="absent"
+  [ -f "$SCRIPT_DIR/hooks/lib/vbw-source.sh" ] || return 1
+  local _type
+  # shellcheck disable=SC1091
+  _type="$( source "$SCRIPT_DIR/hooks/lib/vbw-source.sh" && resolve_vbw_source >/dev/null 2>&1 && printf '%s' "${VBW_SOURCE_TYPE:-absent}" )"
+  [ -n "$_type" ] || _type="absent"
+  VBW_DETECTED_TYPE="$_type"
+  case "$_type" in
+    marketplace|local-symlink) return 0 ;;
+    dev-checkout)              [ "$WITH_VBW" = true ] && return 0 || return 1 ;;
+    *)                         return 1 ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -2023,90 +2062,80 @@ install_project() {
   # Installed path (.claude/agents-delta/) is the primary resolution location for
   # agent-override-generate.sh — it works without the cmm-claude-code-setup repo
   # checked out (curl|bash-ready install). The repo agents/ dir is a dev fallback.
-  if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would create .claude/agents-delta/"
-    shopt -s nullglob
-    for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
-      echo "  [DRY RUN] Would copy $(basename "$file") -> .claude/agents-delta/"
-    done
-    shopt -u nullglob
-  else
-    mkdir -p ".claude/agents-delta"
-    # Pre-scan: report drift before per-file prompts
-    # shellcheck disable=SC2046
-    scan_drift_summary ".claude/agents-delta" $( ls "$SCRIPT_DIR/agents/vbw-"*.md 2>/dev/null )
-    shopt -s nullglob
-    for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
-      copy_file "$file" ".claude/agents-delta/$(basename "$file")"
-    done
-    shopt -u nullglob
-  fi
-
-  # VBW is an OPTIONAL add-on. The delta files above are always installed (they are
-  # inert without VBW), but override generation is auto-detected: we only run the
-  # generator synchronously when a VBW plugin tree is actually resolvable. When VBW
-  # is absent, we skip quietly — the SessionStart hook self-heals and generates the
-  # overrides automatically if VBW is installed later. This keeps the CMM + optional
-  # context-mode stack fully functional with no VBW dependency.
-  mkdir -p ".claude/agents"
+  # VBW is an OPTIONAL add-on and the delta injection is GATED on it. We detect
+  # VBW availability once, up front (only an installed plugin counts — marketplace
+  # or --plugin-dir local symlink; a bare dev-checkout does not unless --with-vbw).
+  #   - VBW available   → install the vbw-*.md delta files + generate overrides.
+  #   - VBW unavailable → do NOT inject deltas; move any VBW artifacts from a prior
+  #                       install aside so Claude Code stops loading them. Re-run
+  #                       setup.sh after installing VBW to enable it.
   local _vbw_present=false
-  if [ -f "$SCRIPT_DIR/hooks/lib/vbw-source.sh" ]; then
-    # shellcheck disable=SC1091
-    if ( source "$SCRIPT_DIR/hooks/lib/vbw-source.sh" && resolve_vbw_source >/dev/null 2>&1 ); then
-      _vbw_present=true
-    fi
-  fi
+  if vbw_is_available; then _vbw_present=true; fi
 
-  if [ "$_vbw_present" != true ]; then
+  if [ "$_vbw_present" = true ]; then
     if [ "$DRY_RUN" = true ]; then
-      echo "  [DRY RUN] VBW not detected — would skip agent override generation (self-heals at SessionStart if VBW is installed)"
+      echo "  [DRY RUN] Would create .claude/agents-delta/ (VBW installed: ${VBW_DETECTED_TYPE})"
       shopt -s nullglob
-      for _stale in .claude/agents/vbw-*.md; do
-        echo "  [DRY RUN] Would move stale generated override aside: $_stale -> .claude/.cmm-setup/vbw-agents.bak/"
+      for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
+        echo "  [DRY RUN] Would copy $(basename "$file") -> .claude/agents-delta/"
       done
       shopt -u nullglob
+      echo "  [DRY RUN] Would run agent-override-generate.sh for initial override generation (VBW ${VBW_DETECTED_TYPE})"
     else
-      echo "  [info] VBW not detected — skipping agent override generation (optional). Delta files installed; SessionStart will generate overrides automatically if VBW is added later."
-      # Move any generated overrides left by a prior (VBW-enabled) install aside so
-      # Claude Code stops loading them. Reversible: files go to a backup dir, not
-      # deleted. Delta files + hooks stay installed so the stack self-heals if VBW
-      # returns.
+      mkdir -p ".claude/agents-delta" ".claude/agents"
+      # Pre-scan: report drift before per-file prompts
+      # shellcheck disable=SC2046
+      scan_drift_summary ".claude/agents-delta" $( ls "$SCRIPT_DIR/agents/vbw-"*.md 2>/dev/null )
       shopt -s nullglob
-      local _stale _moved=0
-      for _stale in .claude/agents/vbw-*.md; do
-        mkdir -p ".claude/.cmm-setup/vbw-agents.bak"
-        if mv "$_stale" ".claude/.cmm-setup/vbw-agents.bak/$(basename "$_stale")" 2>/dev/null; then
-          _moved=$((_moved + 1))
-        fi
+      for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
+        copy_file "$file" ".claude/agents-delta/$(basename "$file")"
       done
       shopt -u nullglob
-      if [ "$_moved" -gt 0 ]; then
-        echo "  [ok] Moved $_moved stale VBW agent override(s) to .claude/.cmm-setup/vbw-agents.bak/ (VBW not installed)"
-      fi
-    fi
-  else
-    # Best-effort synchronous generation: run the generator now so the first
-    # session has up-to-date override files immediately (no session-restart needed
-    # after a fresh install). Fail-open: if generation fails, setup.sh succeeds
-    # anyway — SessionStart will regenerate.
-    local _gen_script
-    _gen_script="$(pwd -P)/.claude/hooks/agent-override-generate.sh"
-    if [ -f "$_gen_script" ]; then
-      if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY RUN] Would run agent-override-generate.sh for initial override generation (VBW detected)"
-      else
-        echo "  [ok] VBW detected — running agent-override-generate.sh for initial override generation..."
-        # Discard the script's stdout (the hook-only systemMessage JSON, meant for
-        # SessionStart hook consumption — not for a direct shell run); keep only the
-        # human-readable stderr advisories in the install transcript.
+      # Best-effort synchronous generation: run the generator now so the first
+      # session has up-to-date override files immediately. Fail-open.
+      local _gen_script
+      _gen_script="$(pwd -P)/.claude/hooks/agent-override-generate.sh"
+      if [ -f "$_gen_script" ]; then
+        echo "  [ok] VBW installed (${VBW_DETECTED_TYPE}) — running agent-override-generate.sh..."
+        # Discard the script's stdout (hook-only systemMessage JSON); keep stderr.
         if bash "$_gen_script" 2>&1 1>/dev/null | sed 's/^/    /'; then
           echo "  [ok] VBW agent overrides generated (or already current)"
         else
           echo "  [warn] agent-override-generate.sh exited non-zero — overrides will be generated at next session start"
         fi
+      else
+        echo "  [warn] agent-override-generate.sh not found at expected path — overrides will be generated at first session start"
       fi
+    fi
+  else
+    # VBW not installed — do not inject deltas; move any prior VBW artifacts aside.
+    local _hint=""
+    if [ "$VBW_DETECTED_TYPE" = "dev-checkout" ]; then
+      _hint=" (a VBW source checkout was found but is not treated as installed — pass --with-vbw to use it)"
+    fi
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] VBW not installed (${VBW_DETECTED_TYPE})${_hint} — would skip agents-delta injection and override generation"
+      shopt -s nullglob
+      for _stale in .claude/agents/vbw-*.md .claude/agents-delta/vbw-*.md; do
+        echo "  [DRY RUN] Would move stale VBW file aside: $_stale -> .claude/.cmm-setup/vbw-agents.bak/"
+      done
+      shopt -u nullglob
     else
-      echo "  [warn] agent-override-generate.sh not found at expected path — overrides will be generated at first session start"
+      echo "  [info] VBW not installed (${VBW_DETECTED_TYPE})${_hint} — skipping VBW agent deltas + override generation. Install VBW and re-run setup.sh to enable."
+      # Reversible: files are MOVED to a backup dir, not deleted.
+      shopt -s nullglob
+      local _stale _moved=0 _sub
+      for _stale in .claude/agents/vbw-*.md .claude/agents-delta/vbw-*.md; do
+        _sub="$(dirname "$_stale" | sed 's#^\.claude/##')"   # agents | agents-delta
+        mkdir -p ".claude/.cmm-setup/vbw-agents.bak/$_sub"
+        if mv "$_stale" ".claude/.cmm-setup/vbw-agents.bak/$_sub/$(basename "$_stale")" 2>/dev/null; then
+          _moved=$((_moved + 1))
+        fi
+      done
+      shopt -u nullglob
+      if [ "$_moved" -gt 0 ]; then
+        echo "  [ok] Moved $_moved stale VBW file(s) to .claude/.cmm-setup/vbw-agents.bak/ (VBW not installed)"
+      fi
     fi
   fi
 
@@ -3005,6 +3034,7 @@ parse_args() {
       --no-migrate)      NO_MIGRATE=true ;;
       --uninstall)       UNINSTALL=true ;;
       --purge-mcp)       PURGE_MCP=true ;;
+      --with-vbw)        WITH_VBW=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
       --with-metrics)    WITH_METRICS=true ;;
       --reconfigure-statusline) RECONFIGURE_STATUSLINE=true ;;
@@ -3048,6 +3078,10 @@ Flags:
                     unless --purge-mcp is also passed.
   --purge-mcp       (with --uninstall) Also remove codebase-memory-mcp and context-mode
                     entries from .mcp.json. Off by default.
+  --with-vbw        Treat a bare VBW dev-checkout (a source clone in ~/Sources) as an
+                    installed VBW. By default only a real plugin install (marketplace
+                    or --plugin-dir symlink) counts, so migrating-away projects don't
+                    get VBW agents injected from a stray source checkout.
   --skip-statusline Skip the CMM statusline installation offer
   --reconfigure-statusline  Re-prompt for statusline component selection (overwrite existing config)
   --with-metrics    Also install the gate-metrics tool (scripts/analyze-gate-blocks.py)
