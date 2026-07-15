@@ -43,11 +43,37 @@ if echo "$PROMPT" | grep -qiE "$KEYWORDS"; then
 fi
 
 # --- Keywords missing: block and provide full instructions ---
+# Prefer the canonical, installed preamble asset (rules/cmm-agent-preamble.md ->
+# .claude/rules/cmm-agent-preamble.md) as the single source of truth. Fall back
+# to the inline block for pre-asset installs. Emit everything to stderr, exit 2.
+_HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+_PREAMBLE="$_HOOK_DIR/../rules/cmm-agent-preamble.md"
+if [ -f "$_PREAMBLE" ]; then
+  {
+    echo "BLOCKED: Agent prompt does not reference codebase-memory-mcp tools."
+    echo
+    echo "Agents MUST use the codebase-memory-mcp (CMM) graph tools for code exploration"
+    echo "instead of reading files directly. Paste the block below into your agent prompt."
+    echo "NOTE: Workflow agent() prompts bypass this gate — paste it into every agent()"
+    echo "call and every .claude/agents/*.md agentType definition, since hooks do not"
+    echo "reach inside a running subagent."
+    echo
+    echo "--- Copy-paste the following into your agent prompt ---"
+    # Extract only the region between the asset's copy markers (DRY).
+    awk '/^--- copy from here ---$/{f=1;next} /^--- copy to here ---$/{f=0} f' "$_PREAMBLE"
+    echo "--- End of copy-paste instructions ---"
+  } >&2
+  exit 2
+fi
+
 cat >&2 <<'BLOCKED'
 BLOCKED: Agent prompt does not reference codebase-memory-mcp tools.
 
 Agents MUST use the codebase-memory-mcp (CMM) graph tools for code exploration
-instead of reading files directly. Add these instructions to your agent prompt:
+instead of reading files directly. Add these instructions to your agent prompt.
+NOTE: Workflow agent() prompts bypass this gate — paste the block into every
+agent() call and .claude/agents/*.md definition, since hooks do not reach inside
+a running subagent.
 
 --- Copy-paste the following into your agent prompt ---
 

@@ -37,3 +37,13 @@ CMM project names are path-derived (`…myrepo-apps-api` vs `…myrepo`), so a s
 ### CMM vs. context-mode
 
 CMM indexes code symbols across sessions (persistent graph of functions/classes/modules). Context-mode captures tool output within one session (FTS5 search over Bash/Read/Grep results). Use CMM for "where is this function defined"; use `ctx_search` for "what did my last test run print".
+
+### Subagents & Workflows — hooks do not reach inside a subagent
+
+The enforcement hooks steer the **main thread only**. They do **not** reach inside a running subagent:
+
+- `PreToolUse` / `PostToolUse` hooks do **not** fire for tool calls made *inside* a subagent (Claude Code issue [#34692](https://github.com/anthropics/claude-code/issues/34692)) — the CMM/grep gates never touch a subagent's `Read`/`Grep`/`Bash`.
+- `agent-cmm-gate.sh` (`PreToolUse:Agent`) enforces the preamble on the **main-thread `Agent` tool only**. A **Workflow-spawned worker** (`agent()` / `parallel()` / `pipeline()` lens) surfaces as a `Workflow` call, not an `Agent` call, so it **bypasses the gate**.
+- `SubagentStart` `additionalContext` injection is best-effort and not a reliable behavioral lever.
+
+Therefore the subagent's **prompt** (and its `.claude/agents/*.md` `agentType` definition) is the only place CMM/ctx guidance provably lands. When authoring a Workflow or subagent, paste the block from `rules/cmm-agent-preamble.md` (installed to `.claude/rules/cmm-agent-preamble.md`) into every `agent()` prompt and agent definition. Do not rely on hooks to make lens agents use CMM.
