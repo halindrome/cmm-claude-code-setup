@@ -12,14 +12,42 @@ INPUT=$(cat)
 SUBAGENT_TYPE=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('subagent_type',''))" 2>/dev/null || echo "")
 PROMPT=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('prompt',''))" 2>/dev/null || echo "")
 
-# --- Subagent Type Exemption ---
-# Built-in Claude Code skills and non-coding agents are exempt from the keyword gate.
+# --- Subagent Type Exemption (built-in) ---
+# Claude Code's own utility agents never need the CMM keyword gate.
 case "$SUBAGENT_TYPE" in
-  claude-code-guide|statusline-setup|vbw:*)
+  claude-code-guide|statusline-setup)
     echo "CMM note: agent type '$SUBAGENT_TYPE' exempted from keyword gate."
     exit 0
     ;;
 esac
+
+# --- Per-project pass-through allow-list ---
+# A project may exempt purpose-built agent types (e.g. a review panel's reviewer
+# or manager) from the keyword gate WITHOUT forcing CMM/ctx keywords into their
+# prompts, by listing them in .claude/cmm-agent-passthrough.txt (sibling of the
+# installed hooks dir). This drops ONLY the prompt-nag: the inside-child PreToolUse
+# hooks still redirect an exempted agent's Read/Grep/Bash toward CMM/ctx where CMM
+# is installed, so behavioural enforcement is preserved. Format: one agent-type
+# per line; '#' comments and blank lines ignored; shell glob patterns allowed
+# (e.g. 'mr-qa-*', or 'vbw:*' for a project that still uses VBW agents).
+if [ -n "$SUBAGENT_TYPE" ]; then
+  _GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+  _PASSTHROUGH="$_GATE_DIR/../cmm-agent-passthrough.txt"
+  if [ -f "$_PASSTHROUGH" ]; then
+    while IFS= read -r _line || [ -n "$_line" ]; do
+      _pat="${_line%%#*}"                                   # strip trailing comment
+      _pat="$(printf '%s' "$_pat" | tr -d '[:space:]')"     # drop surrounding whitespace
+      [ -z "$_pat" ] && continue
+      # shellcheck disable=SC2254 — glob match against the pattern is intentional
+      case "$SUBAGENT_TYPE" in
+        $_pat)
+          echo "CMM note: agent type '$SUBAGENT_TYPE' exempted via .claude/cmm-agent-passthrough.txt."
+          exit 0
+          ;;
+      esac
+    done < "$_PASSTHROUGH"
+  fi
+fi
 
 # --- Explicit bypass marker ---
 # Add "# cmm-exempt" anywhere in the prompt to skip the gate for non-code tasks.

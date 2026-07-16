@@ -43,7 +43,7 @@ CMM and Context Mode are complementary, not competing:
 | CLAUDE.md rules | Instructions | Tells Claude when to use CMM and ctx_* tools |
 | Session gate (CMM) | Blocking (PreToolUse) | Blocks ALL tools until CMM index is refreshed at session start |
 | Session gate (Context Mode) | Blocking (PreToolUse) | Gates tool calls until Context Mode is initialized *(if installed)* |
-| Agent spawn gate | Blocking (PreToolUse) | Blocks main-thread `Agent` spawning without MCP instructions in prompt — **Workflow `agent()` spawns bypass it** (see [Subagent Instructions Template](#subagent-instructions-template)) |
+| Agent spawn gate | Blocking (PreToolUse) | Blocks `Agent` spawns whose prompt lacks MCP instructions — **Workflow `agent()` spawns bypass it**; per-project exempt list in `.claude/cmm-agent-passthrough.txt` (see [Subagent Instructions Template](#subagent-instructions-template)) |
 | PreToolUse nudge | Non-blocking | Reminds Claude when it tries `Read` on indexed code files |
 | PostToolUse logger | Passive | Logs tool calls to SQLite for session resume *(if Context Mode installed)* |
 | PostToolUse tracker | Passive | Tracks CMM call counts per tool |
@@ -252,12 +252,12 @@ When spawning subagents, include CMM/ctx instructions in the prompt to ensure th
 through ctx_execute / ctx_batch_execute / ctx_search so findings — not raw bytes — enter context.
 ```
 
-**Hooks do not reach inside a subagent — the prompt is the only reliable lever.** The `agent-cmm-gate.sh` hook (`PreToolUse:Agent`) blocks a **main-thread `Agent`** spawn whose prompt lacks these instructions, but:
+**The two subagent execution models behave very differently — measured, not assumed.** The `agent-cmm-gate.sh` hook (`PreToolUse:Agent`) blocks a **main-thread or nested `Agent`** spawn whose prompt lacks CMM/ctx keywords. But the spawn-gate is the *author-facing* lever; the *behavioural* enforcement is the inside-child hooks — and whether those fire depends on how the child was spawned:
 
-- `PreToolUse`/`PostToolUse` hooks do **not** fire for tool calls made *inside* a subagent (Claude Code issue [#34692](https://github.com/anthropics/claude-code/issues/34692)), so the CMM/grep gates never touch a subagent's `Read`/`Grep`/`Bash`.
-- A **Workflow-spawned worker** (`agent()` / `parallel()` / `pipeline()` lens, e.g. a review-panel skill like `mr-qa`) surfaces as a `Workflow` call, not an `Agent` call, so it **bypasses the gate entirely**.
+- **Agent-tool subagents (including a manager's nested lens grandchildren):** project `PreToolUse` hooks **do** fire on their `Read`/`Grep`/`Bash` (verified to depth 2), so `cmm-nudge` / `grep-cmm-gate` / `ctx-execute-enforcer` redirect them toward CMM/ctx **even if their prompt never mentions CMM**. Here the spawn-gate is mostly a proactive nudge, not the enforcement.
+- **Workflow-spawned workers** (`agent()` / `parallel()` / `pipeline()` lenses): project `PreToolUse` hooks do **not** fire inside them, and they **bypass** the spawn-gate entirely. Their only guidance is the (ignorable) `SubagentStart` injection plus whatever you bake into the `agent()` prompt.
 
-So for Workflows and custom agent definitions you must **bake the preamble into the `agent()` prompt and the `.claude/agents/*.md` `agentType` body yourself** — that is what `rules/cmm-agent-preamble.md` is for.
+So: for a **Workflow** panel, bake the preamble into the `agent()` prompt (`rules/cmm-agent-preamble.md`) — it's the only lever that lands. For **Agent-tool** panels you can instead **exempt purpose-built agent types** from the spawn-gate via `.claude/cmm-agent-passthrough.txt` (one agent-type per line, `#` comments and shell globs allowed) — the inside-child hooks keep enforcing, so you drop only the prompt-nag. This is the tool-agnostic path: a skill lists its reviewer/manager types and never has to mention CMM.
 
 ## Context Mode MCP — Optional Add-on
 

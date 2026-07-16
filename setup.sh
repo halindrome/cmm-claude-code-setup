@@ -2069,6 +2069,34 @@ install_project() {
   done
   shopt -u nullglob
 
+  # Seed the per-project CMM spawn-gate pass-through allow-list (create-once —
+  # never overwrite user edits). Lists agent TYPES that agent-cmm-gate.sh lets
+  # spawn WITHOUT forcing CMM/ctx keywords into their prompts. Inert by default.
+  if [ "$DRY_RUN" = true ]; then
+    [ -f ".claude/cmm-agent-passthrough.txt" ] || echo "  [DRY RUN] Would seed .claude/cmm-agent-passthrough.txt (template)"
+  elif [ ! -f ".claude/cmm-agent-passthrough.txt" ]; then
+    cat > ".claude/cmm-agent-passthrough.txt" <<'PASSTHROUGH'
+# cmm-agent-passthrough.txt — per-project CMM spawn-gate pass-through list
+#
+# agent-cmm-gate.sh (PreToolUse:Agent) blocks an Agent-tool spawn whose prompt
+# does not reference CMM/ctx tools. List agent TYPES here to exempt them from that
+# keyword check — useful for purpose-built agents that should stay tool-agnostic.
+# Exemption drops ONLY the prompt-nag: the inside-child PreToolUse hooks still
+# redirect an exempted agent's Read/Grep/Bash toward CMM/ctx where CMM is
+# installed, so behavioural enforcement is preserved.
+#
+# Format: one agent-type per line. '#' starts a comment; blank lines ignored;
+# shell glob patterns allowed. Examples:
+#   mr-qa-reviewer
+#   mr-qa-manager
+#   my-review-*
+#   vbw:*            # (if this project still uses VBW agents)
+#
+# No entries are active by default.
+PASSTHROUGH
+    echo "  [ok] Seeded .claude/cmm-agent-passthrough.txt (edit to exempt project agents)"
+  fi
+
   # Copy cmm-nudge.sh from hooks/global/ to .claude/hooks/ — needed by agent frontmatter
   # hooks (in .claude/agents/) that reference cmm-nudge.sh via project-relative paths
   # (e.g., "bash .claude/hooks/cmm-nudge.sh"). Without this, project installs that skip
