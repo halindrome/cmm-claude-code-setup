@@ -53,8 +53,12 @@ fi
 # --- Context Mode Presence Check (shared library) ---
 # Uncached: this hook runs only after a ctx_* tool call, so the probe cost is
 # negligible and a fresh read avoids writing a sentinel from stale state.
-if [ -f "$_LIB_DIR/context-mode-detect.sh" ]; then
-  source "$_LIB_DIR/context-mode-detect.sh"
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+  [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+  source "$_CM_LIB"
   detect_context_mode "$PROJECT_ROOT"
 else
   exit 0

@@ -49,9 +49,12 @@ PROJECT_HASH=$(echo "$REPO_ROOT" | md5 -q 2>/dev/null || echo "$REPO_ROOT" | md5
 # --- Context Mode Availability Check (cached) ---
 # Cache result in /tmp/ctx-subagent-avail-<hash> to avoid repeated python3 JSON parsing.
 # Silently no-op when context-mode is not registered anywhere.
-_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
-if [ -f "$_LIB_DIR/context-mode-detect.sh" ]; then
-    source "$_LIB_DIR/context-mode-detect.sh"
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+    source "$_CM_LIB"
     detect_context_mode "$REPO_ROOT" "/tmp/ctx-subagent-avail-${PROJECT_HASH}"
 else
     # Partial install (lib missing) — no advisory rather than a misleading one.

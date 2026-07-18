@@ -78,8 +78,12 @@ touch "/tmp/cmm-indexing-${PROJECT_HASH}"
 # delete-then-recreate pattern (lines 55-56 delete, lines 87-89 recreate)
 # is safe because no PreToolUse hook can interleave between them.
 CONTEXT_MODE_INSTALLED=0
-if [ -f "$_LIB_DIR/context-mode-detect.sh" ]; then
-  source "$_LIB_DIR/context-mode-detect.sh"
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+  [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+  source "$_CM_LIB"
   detect_context_mode "$PROJECT_ROOT"
 fi
 

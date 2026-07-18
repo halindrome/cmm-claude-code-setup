@@ -39,9 +39,12 @@ PROJECT_HASH=$(echo "$REPO_ROOT" | md5 -q 2>/dev/null || echo "$REPO_ROOT" | md5
 # Cache result in /tmp/ctx-webfetch-avail-<hash> to avoid repeated python3 JSON parsing per WebFetch call.
 # NOTE: This hook does NOT require /tmp/context-mode-ready-<hash> sentinel — WebFetch nudge has no
 # bootstrap deadlock risk (ctx_fetch_and_index can run before any ctx_execute has ever run).
-_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
-if [ -f "$_LIB_DIR/context-mode-detect.sh" ]; then
-    source "$_LIB_DIR/context-mode-detect.sh"
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+    source "$_CM_LIB"
     detect_context_mode "$REPO_ROOT" "/tmp/ctx-webfetch-avail-${PROJECT_HASH}"
 else
     # Partial install (lib missing) — fail open rather than block WebFetch blindly.

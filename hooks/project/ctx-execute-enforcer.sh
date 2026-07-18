@@ -69,8 +69,12 @@ COMMAND=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin
 # a plugin whose registered installPath does not resolve here (the devcontainer
 # bind-mount case) registers no ctx_* tools, and this hook must not mandate a
 # tool that does not exist. See hooks/lib/context-mode-detect.sh.
-if [ -f "$_LIB_DIR/context-mode-detect.sh" ]; then
-    source "$_LIB_DIR/context-mode-detect.sh"
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+    source "$_CM_LIB"
     detect_context_mode "$PROJECT_ROOT" "/tmp/ctx-enforcer-${PROJECT_HASH}"
 else
     # Partial install (lib missing) — fail open rather than enforce blindly.

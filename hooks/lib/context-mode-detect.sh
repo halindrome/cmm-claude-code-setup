@@ -34,6 +34,18 @@
 # present on disk but actually loadable. A hook that cannot prove the tool
 # exists must not mandate its use.
 
+# LOCATING THIS LIBRARY
+# ---------------------
+# Two layouts must both work:
+#   installed:  hooks live at <base>/hooks/,        lib at <base>/hooks/lib/
+#   repo:       hooks live at hooks/project|global/, lib at hooks/lib/
+# so callers resolve "<dir>/lib" first, then "<dir>/../lib":
+#
+#   _CM_LIB=""
+#   for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+#     [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+#   done
+
 # detect_context_mode <root> [cache_file]
 #   <root>       repo/project root (used for .mcp.json lookup)
 #   [cache_file] optional /tmp cache path; auto-invalidated when any input file
