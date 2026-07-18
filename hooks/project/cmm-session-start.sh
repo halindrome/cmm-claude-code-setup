@@ -78,31 +78,18 @@ touch "/tmp/cmm-indexing-${PROJECT_HASH}"
 # delete-then-recreate pattern (lines 55-56 delete, lines 87-89 recreate)
 # is safe because no PreToolUse hook can interleave between them.
 CONTEXT_MODE_INSTALLED=0
-if python3 -c "
-import json, os, sys
-# 1. Project .mcp.json
-try:
-    with open('${PROJECT_ROOT}/.mcp.json') as f:
-        if 'context-mode' in json.load(f).get('mcpServers', {}):
-            sys.exit(0)
-except Exception: pass
-# 2. Global Claude Code settings
-for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
-    if not d: continue
-    try:
-        with open(os.path.join(d, 'settings.json')) as f:
-            if 'context-mode' in json.load(f).get('mcpServers', {}):
-                sys.exit(0)
-    except Exception: pass
-sys.exit(1)
-" 2>/dev/null; then
-  CONTEXT_MODE_INSTALLED=1
+if [ -f "$_LIB_DIR/context-mode-detect.sh" ]; then
+  source "$_LIB_DIR/context-mode-detect.sh"
+  detect_context_mode "$PROJECT_ROOT"
 fi
-# Also activate if a session DB already exists (context-mode was used here before)
-[ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
+# Only pre-arm the sentinel when context-mode is genuinely loadable. Writing it
+# for an unloadable plugin is what let the blocking hooks enforce ctx_* tools
+# that were never registered — see hooks/lib/context-mode-detect.sh.
 if [ "$CONTEXT_MODE_INSTALLED" -eq 1 ]; then
   echo "ready" > "/tmp/context-mode-ready-${PROJECT_HASH}"
+else
+  rm -f "/tmp/context-mode-ready-${PROJECT_HASH}" 2>/dev/null || true
 fi
 
 # --- Session Type Detection ---

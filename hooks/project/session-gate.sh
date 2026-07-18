@@ -155,31 +155,16 @@ Call mcp__codebase-memory-mcp__index_repository now if you need graph data to be
 WARN
 fi
 
-# --- Phase 3: Context Mode Gate (only if installed) ---
-# Detection: check project .mcp.json and global Claude Code settings, then session DB
-CONTEXT_MODE_INSTALLED=0
-if python3 -c "
-import json, os, sys
-# 1. Project .mcp.json
-try:
-    with open('${PROJECT_ROOT}/.mcp.json') as f:
-        if 'context-mode' in json.load(f).get('mcpServers', {}):
-            sys.exit(0)
-except Exception: pass
-# 2. Global Claude Code settings
-for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
-    if not d: continue
-    try:
-        with open(os.path.join(d, 'settings.json')) as f:
-            if 'context-mode' in json.load(f).get('mcpServers', {}):
-                sys.exit(0)
-    except Exception: pass
-sys.exit(1)
-" 2>/dev/null; then
-  CONTEXT_MODE_INSTALLED=1
+# --- Phase 3: Context Mode Gate (only if installed AND loadable) ---
+# See hooks/lib/context-mode-detect.sh: presence on disk is not proof the
+# plugin loaded. Gating tools behind ctx_* when ctx_* is unregistered leaves
+# the session with no way to satisfy the gate.
+if [ -f "$_LIB_DIR/context-mode-detect.sh" ]; then
+  source "$_LIB_DIR/context-mode-detect.sh"
+  detect_context_mode "$PROJECT_ROOT" "/tmp/ctx-session-gate-${PROJECT_HASH}"
+else
+  exit 0
 fi
-# Also activate if a session DB already exists (context-mode was used here before)
-[ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
 if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
   exit 0

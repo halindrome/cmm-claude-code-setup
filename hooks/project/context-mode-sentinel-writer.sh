@@ -50,27 +50,15 @@ if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PR
     echo "Project was moved or cloned. Re-run: bash setup.sh --project --force" >&2
 fi
 
-# --- Context Mode Presence Check ---
-CONTEXT_MODE_INSTALLED=0
-if python3 -c "
-import json, os, sys
-try:
-    with open('${PROJECT_ROOT}/.mcp.json') as f:
-        if 'context-mode' in json.load(f).get('mcpServers', {}):
-            sys.exit(0)
-except Exception: pass
-for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
-    if not d: continue
-    try:
-        with open(os.path.join(d, 'settings.json')) as f:
-            if 'context-mode' in json.load(f).get('mcpServers', {}):
-                sys.exit(0)
-    except Exception: pass
-sys.exit(1)
-" 2>/dev/null; then
-  CONTEXT_MODE_INSTALLED=1
+# --- Context Mode Presence Check (shared library) ---
+# Uncached: this hook runs only after a ctx_* tool call, so the probe cost is
+# negligible and a fresh read avoids writing a sentinel from stale state.
+if [ -f "$_LIB_DIR/context-mode-detect.sh" ]; then
+  source "$_LIB_DIR/context-mode-detect.sh"
+  detect_context_mode "$PROJECT_ROOT"
+else
+  exit 0
 fi
-[ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
 if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
   exit 0

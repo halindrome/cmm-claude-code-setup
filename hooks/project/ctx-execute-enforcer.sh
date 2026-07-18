@@ -64,73 +64,18 @@ COMMAND=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin
 # If parsing failed or command is empty, do not block — fail open to avoid spurious hook errors
 [ -z "$COMMAND" ] && exit 0
 
-# --- Context Mode Detection (cached, dual-form per Phase 57 G3) ---
-# Cache result in /tmp/ctx-enforcer-<hash> to avoid repeated python3 JSON parsing on every Bash call.
-# Probe order: plugin-form fast-path (CLAUDE_PLUGIN_ROOT env / ~/.claude/plugins/cache scan)
-# FIRST per G3 ordering; legacy MCP-server-form probe second.
-CTX_CACHE="/tmp/ctx-enforcer-${PROJECT_HASH}"
-if [ -f "$CTX_CACHE" ]; then
-    CONTEXT_MODE_INSTALLED=$(cat "$CTX_CACHE" 2>/dev/null)
-    CONTEXT_MODE_INSTALLED="${CONTEXT_MODE_INSTALLED:-0}"
+# --- Context Mode Detection (shared library) ---
+# The probe verifies context-mode is LOADABLE, not merely present on disk:
+# a plugin whose registered installPath does not resolve here (the devcontainer
+# bind-mount case) registers no ctx_* tools, and this hook must not mandate a
+# tool that does not exist. See hooks/lib/context-mode-detect.sh.
+if [ -f "$_LIB_DIR/context-mode-detect.sh" ]; then
+    source "$_LIB_DIR/context-mode-detect.sh"
+    detect_context_mode "$PROJECT_ROOT" "/tmp/ctx-enforcer-${PROJECT_HASH}"
 else
-    CONTEXT_MODE_INSTALLED=0
-
-    # 1. Plugin-form fast-path (canonical, listed first per G3).
-    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && \
-       [ -f "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" ] && \
-       grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' \
-         "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
-        CONTEXT_MODE_INSTALLED=1
-    else
-        # Scan ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/ for an installed context-mode plugin.
-        # The real layout is <cache>/<marketplace>/<plugin>/[<version>/]/.claude-plugin/plugin.json,
-        # so a fixed-depth glob misses versioned installs. Use find to discover any nesting.
-        if [ -d "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" ]; then
-            while IFS= read -r _ctx_pl; do
-                [ -z "$_ctx_pl" ] && continue
-                if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_ctx_pl" 2>/dev/null; then
-                    CONTEXT_MODE_INSTALLED=1
-                    break
-                fi
-            done < <(find "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" \
-                -maxdepth 7 -name 'plugin.json' -path '*/.claude-plugin/*' 2>/dev/null)
-        fi
-    fi
-
-    # 2. MCP-server-form probe (legacy, listed second per G3) — plus enabledPlugins fallback.
-    # context-mode can be installed as a Claude Code plugin without registering an mcpServers entry;
-    # enabledPlugins entries take the form "<plugin>@<marketplace>: true".
-    if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
-        if python3 -c "
-import json, os, sys
-# 1. Project .mcp.json
-try:
-    with open('${PROJECT_ROOT}/.mcp.json') as f:
-        if 'context-mode' in json.load(f).get('mcpServers', {}):
-            sys.exit(0)
-except Exception: pass
-# 2. Global Claude Code settings — mcpServers OR enabledPlugins
-for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
-    if not d: continue
-    try:
-        with open(os.path.join(d, 'settings.json')) as f:
-            cfg = json.load(f)
-            if 'context-mode' in cfg.get('mcpServers', {}):
-                sys.exit(0)
-            for key, enabled in cfg.get('enabledPlugins', {}).items():
-                if enabled and key.split('@', 1)[0] == 'context-mode':
-                    sys.exit(0)
-    except Exception: pass
-sys.exit(1)
-" 2>/dev/null; then
-            CONTEXT_MODE_INSTALLED=1
-        fi
-    fi
-
-    # Also activate if a session DB already exists (context-mode was used here before)
-    [ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
-    # Write cache
-    echo "$CONTEXT_MODE_INSTALLED" > "$CTX_CACHE" 2>/dev/null || true
+    # Partial install (lib missing) — fail open rather than enforce blindly.
+    # Re-run: bash setup.sh --project --force
+    exit 0
 fi
 
 # No-op if Context Mode is not installed
