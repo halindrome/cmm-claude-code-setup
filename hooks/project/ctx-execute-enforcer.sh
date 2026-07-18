@@ -168,8 +168,46 @@ _track_exempt() {
   bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-exempt" "$1" 2>/dev/null || true
 }
 
+# --- Git global-flag normalization ---
+# The git exemptions below anchor on `git ` followed immediately by the
+# subcommand, so any global flag in between defeats every one of them. That
+# silently contradicts cwd-guard.sh, which tells the agent to prefer
+# `git -C apps/rest-api status` over `cd apps/rest-api && git status` — and in
+# a submodule/monorepo checkout it left NO unblocked path to commit, since the
+# `cd … &&` alternative is rejected by the compound check above.
+#
+# Peel leading repo-selection flags into _EXEMPT_CMD so the exemption patterns
+# match on the effective subcommand. Only _EXEMPT_CMD is normalized; $COMMAND
+# stays intact for the block messages below.
+#
+# Deliberately narrow: only flags that select WHICH repo/config git acts on.
+# Anything else (notably `-c alias.x=!cmd`) is left in place, so it fails to
+# match any exemption and falls through to the default block.
+#
+# Known limitation: word-splitting is quote-blind, so `-C "my dir"` peels only
+# the first token and the leftover fails to match — blocked, not wrongly
+# exempted. Fail-closed is the correct direction here.
+_EXEMPT_CMD="$COMMAND"
+if [[ "$_EXEMPT_CMD" =~ ^[[:space:]]*git([[:space:]]|$) ]]; then
+  read -ra _GTOK <<< "$_EXEMPT_CMD"
+  _gi=1
+  while [ "$_gi" -lt "${#_GTOK[@]}" ]; do
+    case "${_GTOK[$_gi]}" in
+      # flag + separate value → skip two tokens
+      -C|--git-dir|--work-tree|--namespace)          _gi=$((_gi + 2)) ;;
+      # self-contained flag → skip one token
+      --git-dir=*|--work-tree=*|--namespace=*)       _gi=$((_gi + 1)) ;;
+      --no-pager|--no-replace-objects|--bare)        _gi=$((_gi + 1)) ;;
+      *) break ;;
+    esac
+  done
+  if [ "$_gi" -gt 1 ] && [ "$_gi" -lt "${#_GTOK[@]}" ]; then
+    _EXEMPT_CMD="git ${_GTOK[*]:$_gi}"
+  fi
+fi
+
 # Git write operations (state-changing, bounded output, required for workflow)
-case "$COMMAND" in
+case "$_EXEMPT_CMD" in
   git\ commit*|git\ add*|git\ push*|git\ pull*|git\ fetch*)  _track_exempt git-write; exit 0 ;;
   git\ checkout*|git\ switch*|git\ branch*|git\ tag*)         _track_exempt git-write; exit 0 ;;
   git\ rebase*|git\ merge*|git\ cherry-pick*|git\ reset*)     _track_exempt git-write; exit 0 ;;
@@ -178,7 +216,7 @@ case "$COMMAND" in
 esac
 
 # Git bounded read operations (output is short and predictable)
-case "$COMMAND" in
+case "$_EXEMPT_CMD" in
   git\ status|git\ status\ *)                                                _track_exempt git-bounded-read; exit 0 ;;
   git\ diff\ --stat*|git\ log\ --oneline\ -*)                                _track_exempt git-bounded-read; exit 0 ;;
   git\ log\ --name-only*|git\ log\ --stat*|git\ show\ --name-only*)          _track_exempt git-bounded-read; exit 0 ;;

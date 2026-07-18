@@ -33,8 +33,21 @@ fi
 CM_CACHE="/tmp/ctx-enforcer-${PROJECT_HASH}"
 CM_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
 
-# Register cleanup on exit
-trap 'rm -f "$CM_CACHE" "$CM_SENTINEL"' EXIT
+# This suite drives the hook against the REAL project hash, so $CM_CACHE and
+# $CM_SENTINEL are the same files a live Claude Code session in this repo is
+# using. Blindly rm-ing them on exit revoked the running session's Context Mode
+# sentinel and wedged it mid-task. Snapshot whatever was there and put it back.
+_CM_CACHE_BAK="$(mktemp)"; _CM_CACHE_EXISTED=false
+_CM_SENT_BAK="$(mktemp)";  _CM_SENT_EXISTED=false
+[ -f "$CM_CACHE" ]    && { cp "$CM_CACHE" "$_CM_CACHE_BAK";   _CM_CACHE_EXISTED=true; }
+[ -f "$CM_SENTINEL" ] && { cp "$CM_SENTINEL" "$_CM_SENT_BAK"; _CM_SENT_EXISTED=true; }
+
+_restore_sentinels() {
+    if [ "$_CM_CACHE_EXISTED" = true ]; then cp "$_CM_CACHE_BAK" "$CM_CACHE"; else rm -f "$CM_CACHE"; fi
+    if [ "$_CM_SENT_EXISTED" = true ];  then cp "$_CM_SENT_BAK" "$CM_SENTINEL"; else rm -f "$CM_SENTINEL"; fi
+    rm -f "$_CM_CACHE_BAK" "$_CM_SENT_BAK"
+}
+trap _restore_sentinels EXIT
 
 # Create sentinels to simulate Context Mode installed and ready
 echo "1" > "$CM_CACHE"
@@ -139,6 +152,52 @@ _assert_exit "unquoted git status && cat blocked" 2 \
 
 _assert_exit "git status exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
+
+# --- Git global-flag normalization (submodule / monorepo targeting) ---
+# cwd-guard.sh instructs the agent to prefer `git -C <subrepo> <cmd>` over
+# `cd <subrepo> && <cmd>`. The exemptions must therefore match past leading
+# repo-selection flags, or the stack recommends a form it then blocks — and
+# with `cd … &&` also blocked by the compound check, submodule commits had no
+# unblocked path at all.
+echo ""
+echo "--- Git global-flag normalization (expect same verdict as unprefixed form) ---"
+
+_assert_exit "git -C <path> status exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api status"}}'
+
+_assert_exit "git -C <path> commit exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api commit -m wip"}}'
+
+_assert_exit "git -C <path> rev-parse exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api rev-parse HEAD"}}'
+
+_assert_exit "git -C <path> log --oneline -N exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api log --oneline -5"}}'
+
+_assert_exit "git --git-dir=<p> --work-tree=<p> status exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git --git-dir=/r/.git --work-tree=/r status"}}'
+
+_assert_exit "git --no-pager status exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git --no-pager status"}}'
+
+# Normalization must not manufacture exemptions the bare form never had.
+_assert_exit "git -C <path> bare log still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api log"}}'
+
+_assert_exit "git -C <path> diff (unbounded) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api diff"}}'
+
+# `-c` is NOT peeled: it can carry arbitrary aliases, so it must fall through.
+_assert_exit "git -c alias injection still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -c alias.x=!id x"}}'
+
+# Compound detection still runs on the full command, before normalization.
+_assert_exit "git -C <path> status && cat blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api status && cat /etc/passwd"}}'
+
+# Flag with no subcommand after it must not be treated as exempt.
+_assert_exit "git -C <path> alone blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api"}}'
 
 # --- Version-flag disambiguation (-v/-V overloaded with "verbose") ---
 echo ""
