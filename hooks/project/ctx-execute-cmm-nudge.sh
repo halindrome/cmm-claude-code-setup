@@ -47,7 +47,7 @@ cwd = d.get('cwd','') or ''
 
 # Phase 57 G3: accept both install-form prefixes for ctx_execute. The install
 # matcher (see header doc-line) routes only ctx_execute today, and the shell
-# `case "$TOOL_NAME"` block at the bottom of this file dispatches only those
+# 'case \$TOOL_NAME' block at the bottom of this file dispatches only those
 # two names — keep this python set in lockstep with that shell case to avoid
 # the F-06 divergence where python classified ctx_execute_file/_batch_execute
 # but shell silently no-op'd. If the install matcher is ever widened to also
