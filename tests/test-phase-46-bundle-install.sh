@@ -71,14 +71,21 @@ found = any(
 sys.exit(0 if found else 1)
 "
 
-_assert "ctx-execute-cmm-nudge registered under PreToolUse with matcher mcp__context-mode__ctx_execute" \
+# Both install-form tool names must be matched. The plugin form is what Claude Code
+# actually emits once context-mode is installed as a plugin; a legacy-only matcher
+# leaves this hard-block hook dark for every real install.
+_assert "ctx-execute-cmm-nudge registered under PreToolUse for plugin form AND legacy form" \
     python3 -c "
 import json, sys
 with open('.claude/settings.json') as f:
     data = json.load(f)
 entries = data.get('hooks', {}).get('PreToolUse', [])
+required = {
+    'mcp__plugin_context-mode_context-mode__ctx_execute',
+    'mcp__context-mode__ctx_execute',
+}
 found = any(
-    entry.get('matcher', '') == 'mcp__context-mode__ctx_execute' and
+    required <= set(entry.get('matcher', '').split('|')) and
     any('ctx-execute-cmm-nudge.sh' in h.get('command', '') for h in entry.get('hooks', []))
     for entry in entries
 )
