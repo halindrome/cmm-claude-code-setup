@@ -87,13 +87,31 @@ if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
     exit 0
 fi
 
-# --- Context Mode Sentinel Check (deadlock prevention) ---
-# If ctx_execute is not ready yet, allowing Bash through avoids a catch-22 where
-# Claude cannot call ctx_execute to initialize Context Mode.
+# --- Context Mode Liveness Check (deadlock prevention + dead-server fail-open) ---
+# The sentinel carries a VERDICT, not merely existence. Two writers, two meanings:
+#
+#   "ready" — cmm-session-start.sh, from detect_context_mode's on-disk check.
+#             OPTIMISTIC. Presence on disk is NOT proof the MCP registered: while
+#             Claude Code re-extracts the plugin cache, installPath exists but the
+#             server never starts. Enforcing on "ready" is what wedged a session
+#             for 24 minutes — every Bash call blocked, redirected to ctx_* tools
+#             that were never registered, with no escape hatch.
+#
+#   "live"  — context-mode-sentinel-writer.sh, PostToolUse on a real ctx_* call.
+#             The server answered, so the tools provably exist.
+#
+# Enforce only on "live", and only while it is fresh. Every ctx_* call rewrites
+# the file, so a server that dies mid-session goes stale and enforcement lifts
+# within the TTL instead of wedging the session until restart.
+#
+# Trade-off, stated plainly: enforcement does not arm until the first successful
+# ctx_* call of a session. That is the point — a hook must not mandate a tool it
+# has never seen work. Same rule as hooks/lib/context-mode-detect.sh.
 CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
-if [ ! -f "$CONTEXT_MODE_SENTINEL" ]; then
-    exit 0
-fi
+CONTEXT_MODE_TTL_MIN="${CTX_ENFORCER_TTL_MIN:-30}"
+[ -f "$CONTEXT_MODE_SENTINEL" ] || exit 0
+grep -q '^live$' "$CONTEXT_MODE_SENTINEL" 2>/dev/null || exit 0
+[ -n "$(find "$CONTEXT_MODE_SENTINEL" -mmin "-${CONTEXT_MODE_TTL_MIN}" 2>/dev/null)" ] || exit 0
 
 # --- Bypass Marker ---
 # Internal bypass marker — undocumented, for operator use only.

@@ -49,9 +49,12 @@ _restore_sentinels() {
 }
 trap _restore_sentinels EXIT
 
-# Create sentinels to simulate Context Mode installed and ready
+# Create sentinels to simulate Context Mode installed and PROVEN LIVE.
+# "live" (not a bare touch) is required: the enforcer arms only on a sentinel
+# whose content is "live" — written by context-mode-sentinel-writer.sh after a
+# real ctx_* call — and only while that file is fresh.
 echo "1" > "$CM_CACHE"
-touch "$CM_SENTINEL"
+echo "live" > "$CM_SENTINEL"
 
 # Bail out early with a clear message if hook doesn't exist yet
 if [ ! -f "$HOOK" ]; then
@@ -334,8 +337,39 @@ rm -f "$CM_SENTINEL"
 _assert_exit "missing sentinel allows npm test" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
 
+# --- Liveness regression tests ---
+# Both cases below reproduce the 2026-08-05 incident: Claude Code re-extracted the
+# plugin cache while a session was starting, so installPath existed (cache says
+# "1", detect_context_mode says installed) but the MCP server never registered and
+# no ctx_* tool existed. The enforcer must NOT mandate tools it has not seen work.
+echo ""
+echo "--- Sentinel liveness tests (expect exit 0, dead-server fail-open) ---"
+
+# "ready" = cmm-session-start.sh's optimistic on-disk verdict, never confirmed by
+# a real ctx_* call. This is the exact state that wedged the session for 24 min.
+echo "ready" > "$CM_SENTINEL"
+_assert_exit "unconfirmed 'ready' sentinel allows npm test" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+
+# A bare touch (empty file) is not a liveness verdict either.
+: > "$CM_SENTINEL"
+_assert_exit "empty sentinel allows npm test" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+
+# "live" but stale — the server answered once, then died mid-session. Enforcement
+# must lift on its own rather than wedging until restart.
+echo "live" > "$CM_SENTINEL"
+touch -t "$(date -v-2H '+%Y%m%d%H%M' 2>/dev/null || date -d '2 hours ago' '+%Y%m%d%H%M')" "$CM_SENTINEL"
+_assert_exit "stale 'live' sentinel allows npm test" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+
+# Fresh "live" re-arms enforcement — the positive control for the three above.
+echo "live" > "$CM_SENTINEL"
+_assert_exit "fresh 'live' sentinel still blocks npm test" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+
 # Restore sentinel for remaining tests
-touch "$CM_SENTINEL"
+echo "live" > "$CM_SENTINEL"
 
 # --- Context Mode not installed test (expect exit 0) ---
 echo ""

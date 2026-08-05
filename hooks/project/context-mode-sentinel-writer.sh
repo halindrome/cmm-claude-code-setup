@@ -68,7 +68,13 @@ if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
   exit 0
 fi
 
-# Write sentinel to unblock session gate
-echo "ready" > "/tmp/context-mode-ready-${PROJECT_HASH}"
+# Write sentinel to unblock session gate.
+#
+# "live", not "ready": this hook is PostToolUse on a real ctx_* call, so reaching
+# this line means the MCP server answered — proof of life, not merely proof the
+# plugin is on disk. ctx-execute-enforcer.sh arms only on "live" and only while
+# this file stays fresh, so every ctx_* call is also the enforcer's heartbeat.
+# session-gate.sh checks existence only, so either verdict still opens that gate.
+echo "live" > "/tmp/context-mode-ready-${PROJECT_HASH}"
 
 exit 0
