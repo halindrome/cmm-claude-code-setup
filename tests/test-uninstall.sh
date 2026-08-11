@@ -14,6 +14,16 @@ _pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 _fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 _chk()  { if eval "$2"; then _pass "$1"; else _fail "$1"; fi; }
 
+# Content fingerprint of a directory tree. BSD `md5` and GNU `md5sum` are both
+# accepted; without a fallback, a host with only one of them yields an EMPTY
+# digest on both sides of a comparison, and the assertion passes vacuously.
+_hash() { if command -v md5sum >/dev/null 2>&1; then md5sum; else md5; fi; }
+# Covers both the path list (catches adds/removes/renames) and file contents.
+_fingerprint() { # <dir> — prints "" only if the tree genuinely cannot be hashed
+  ( cd "$1" && { find .claude | sort; find .claude -type f | sort | xargs cat; } \
+      | _hash | awk '{print $1}' )
+}
+
 _seed_project() {
   # Populate a fake prior install into $1/.claude (+ .mcp.json at $1).
   local root="$1"
@@ -85,12 +95,52 @@ rm -f /tmp/_uninstall_noscope
 # --- Test 4: dry-run mutates nothing ---
 echo "--- Test 4: --uninstall --dry-run ---"
 T4=$(mktemp -d); _seed_project "$T4"
-BEFORE=$(cd "$T4" && find .claude -type f | sort | xargs md5 2>/dev/null | md5)
+BEFORE=$(_fingerprint "$T4")
 ( cd "$T4" && bash "$SETUP" --uninstall --project --dry-run --yes >/tmp/_uninstall_dry 2>&1 )
-AFTER=$(cd "$T4" && find .claude -type f | sort | xargs md5 2>/dev/null | md5)
+AFTER=$(_fingerprint "$T4")
+_chk "fingerprint is non-empty"          '[ -n "$BEFORE" ]'
 _chk "filesystem unchanged"              '[ "$BEFORE" = "$AFTER" ]'
 _chk "prints Would remove"               'grep -qi "would remove" /tmp/_uninstall_dry'
 rm -rf "$T4"; rm -f /tmp/_uninstall_dry
+
+# --- Test 5: global --purge-mcp must not touch the CWD project's .mcp.json ---
+# .mcp.json is project-scoped; a global uninstall run from inside an unrelated
+# project used to resolve it from CWD and strip that project's servers.
+echo "--- Test 5: --uninstall --global --purge-mcp from inside a project ---"
+T5=$(mktemp -d); _seed_project "$T5"
+T5CONF="$T5/conf"; mkdir -p "$T5CONF"
+( cd "$T5" && CLAUDE_CONFIG_DIR="$T5CONF" bash "$SETUP" --uninstall --global --purge-mcp --yes >/tmp/_uninstall_g 2>&1 )
+_chk "CWD project .mcp.json untouched"   'grep -q codebase-memory-mcp "$T5/.mcp.json"'
+_chk "explains .mcp.json is project-scoped" 'grep -q "project-scoped" /tmp/_uninstall_g'
+rm -rf "$T5"; rm -f /tmp/_uninstall_g
+
+# --- Test 6: the passthrough list the installer seeds is removed ---
+echo "--- Test 6: cmm-agent-passthrough.txt removed ---"
+T6=$(mktemp -d); _seed_project "$T6"
+echo '# passthrough' > "$T6/.claude/cmm-agent-passthrough.txt"
+( cd "$T6" && bash "$SETUP" --uninstall --project --yes >/dev/null 2>&1 )
+_chk "passthrough list removed"          '[ ! -e "$T6/.claude/cmm-agent-passthrough.txt" ]'
+_chk "passthrough list backed up"        'ls "$T6"/.claude/.cmm-setup-uninstall-*/cmm-agent-passthrough.txt >/dev/null 2>&1'
+rm -rf "$T6"
+
+# --- Test 7: hook-entry match is anchored, not a bare substring ---
+# Several of our own basenames are suffixes of each other (cmm-nudge.sh is a
+# suffix of ctx-execute-cmm-nudge.sh), so an unanchored `h in cmd` also matched
+# any third-party hook whose filename merely ENDS with an owned name.
+echo "--- Test 7: settings.json hook match is boundary-anchored ---"
+T7=$(mktemp -d); _seed_project "$T7"
+echo '#!/bin/bash' > "$T7/.claude/hooks/my-session-gate.sh"     # NOT ours
+cat > "$T7/.claude/settings.json" <<'JSON'
+{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[
+  {"type":"command","command":"bash .claude/hooks/session-gate.sh"},
+  {"type":"command","command":"bash .claude/hooks/my-session-gate.sh"}
+]}]}}
+JSON
+( cd "$T7" && bash "$SETUP" --uninstall --project --yes >/dev/null 2>&1 )
+_chk "our session-gate.sh entry stripped"    '! grep -q "hooks/session-gate.sh" "$T7/.claude/settings.json"'
+_chk "lookalike my-session-gate.sh survives" 'grep -q "my-session-gate.sh" "$T7/.claude/settings.json"'
+_chk "settings.json still valid JSON"        'python3 -m json.tool "$T7/.claude/settings.json" >/dev/null 2>&1'
+rm -rf "$T7"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

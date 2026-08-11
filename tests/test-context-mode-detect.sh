@@ -1,6 +1,8 @@
 #!/bin/bash
 # Functional test for hooks/lib/context-mode-detect.sh
-source /Users/ahby/Sources/cmm-claude-code-setup/hooks/lib/context-mode-detect.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+source "$REPO_ROOT/hooks/lib/context-mode-detect.sh"
 
 PASS=0; FAIL=0
 check() { # name expected actual

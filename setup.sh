@@ -323,6 +323,8 @@ uninstall_stack() {
   _rm_move "tools/analyze-gate-blocks.py"
   [ "$DRY_RUN" = true ] || rmdir "$base/tools" 2>/dev/null || true
   _rm_move ".cmm-setup"
+  # Per-project spawn-gate pass-through list seeded by the installer.
+  _rm_move "cmm-agent-passthrough.txt"
 
   # 6. settings.json / settings.local.json: strip our hook registrations,
   #    permission allowlist entries, and the statusLine block.
@@ -337,9 +339,14 @@ uninstall_stack() {
     fi
     cp "$sf" "$backup/$(basename "$sf")" 2>/dev/null || { mkdir -p "$backup"; cp "$sf" "$backup/$(basename "$sf")" 2>/dev/null; }
     OWNED_HOOKS_CSV="$owned_hooks_csv" python3 - "$sf" <<'PYEOF'
-import json, os, sys
+import json, os, re, sys
 path = sys.argv[1]
 owned = set(filter(None, os.environ.get("OWNED_HOOKS_CSV", "").split(",")))
+# Anchored on a path/word boundary, NOT a bare substring: several of our own
+# basenames are substrings of each other (cmm-nudge.sh is a suffix of
+# ctx-execute-cmm-nudge.sh), so an unanchored match would also delete a hook
+# entry — the user's or ours — that merely ends with an owned name.
+_OWNED_RE = [re.compile(r'(?:^|[\s/=\'"])' + re.escape(h) + r'(?:$|[\s\'"])') for h in owned if h]
 try:
     with open(path) as f:
         data = json.load(f)
@@ -349,7 +356,7 @@ if not isinstance(data, dict):
     sys.exit(0)
 
 def cmd_is_ours(cmd):
-    return isinstance(cmd, str) and any(h and h in cmd for h in owned)
+    return isinstance(cmd, str) and any(r.search(cmd) for r in _OWNED_RE)
 
 # Strip hook entries whose command references one of our hook scripts.
 hooks = data.get("hooks")
@@ -406,9 +413,13 @@ PYEOF
   done
 
   # 7. .mcp.json MCP-server entries — only with --purge-mcp.
-  if [ "$PURGE_MCP" = true ] && [ -f "$base/../.mcp.json" -o -f ".mcp.json" ]; then
-    local mcpf=".mcp.json"
-    [ -f "$mcpf" ] || mcpf="$base/../.mcp.json"
+  #    The target is derived from the SCOPE being uninstalled, never from CWD:
+  #    .mcp.json is a project-scoped file, so global uninstall must not touch
+  #    whichever project the operator happens to be standing in.
+  if [ "$PURGE_MCP" = true ] && [ "$scope" != "project" ]; then
+    echo "  [info] .mcp.json is project-scoped — not touched by --purge-mcp on $scope uninstall"
+  elif [ "$PURGE_MCP" = true ]; then
+    local mcpf="$base/../.mcp.json"
     if [ -f "$mcpf" ]; then
       if [ "$DRY_RUN" = true ]; then
         echo "  [DRY RUN] Would remove codebase-memory-mcp / context-mode from $mcpf (--purge-mcp)"
