@@ -289,6 +289,28 @@ _assert_exit "Grep path=Config.YAML allowed (mixed case)" 0 \
     "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"name\",\"path\":\"$PROJ/Config.YAML\"},\"cwd\":\"$PROJ\"}" \
     "$ENV_NO_GLOBAL"
 
+# --- CMM registered ONLY in the project settings.json (the default install) ---
+# setup.sh --project writes CMM registration into .claude/settings.json, NOT
+# .mcp.json. The availability cascade omitted that file, so this gate was
+# permanently fail-open on exactly the installs this stack creates.
+PROJ_SETTINGS_ONLY="$TMPDIR_ROOT/proj-settings-only"
+mkdir -p "$PROJ_SETTINGS_ONLY/src" "$PROJ_SETTINGS_ONLY/.claude"
+git -C "$PROJ_SETTINGS_ONLY" init -q 2>/dev/null
+# No .mcp.json at all — registration lives only in the project settings.json.
+echo '{"permissions":{"allow":["mcp__codebase-memory-mcp__search_graph"]}}' \
+    > "$PROJ_SETTINGS_ONLY/.claude/settings.json"
+{ for i in $(seq 1 80); do echo "def handler_$i(): pass"; done; } > "$PROJ_SETTINGS_ONLY/src/app.py"
+# Canonicalize before hashing — the hook derives REPO_ROOT via
+# `git rev-parse --show-toplevel` (macOS /var → /private/var), same as $PROJ above.
+PSO_CANON=$(cd "$PROJ_SETTINGS_ONLY" && pwd -P)
+PSO_HASH=$(_md5 "$PSO_CANON")
+PSO_SENTINEL="/tmp/cmm-session-ready-${PSO_HASH}"
+touch "$PSO_SENTINEL"
+_assert_exit "Grep blocked when CMM registered only in project settings.json" 2 \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"handler\",\"path\":\"$PROJ_SETTINGS_ONLY/src\"},\"cwd\":\"$PROJ_SETTINGS_ONLY\"}" \
+    "$ENV_NO_GLOBAL"
+rm -f "$PSO_SENTINEL"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

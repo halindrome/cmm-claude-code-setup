@@ -138,15 +138,12 @@ else
     _fail "Test 10: project name still interpolated into python program text"
 fi
 
-# Behavioural check: a name containing a quote must still yield valid JSON that
-# round-trips to exactly that name.
-_EVIL="Users-ahby-a'b\"c-proj"
-_JSON=$(P="$_EVIL" python3 -c 'import json, os; print(json.dumps({"project": os.environ["P"]}))' 2>/dev/null)
-_BACK=$(J="$_JSON" python3 -c 'import json, os; print(json.loads(os.environ["J"])["project"])' 2>/dev/null)
-if [ "$_BACK" = "$_EVIL" ]; then
-    _pass "Test 10b: quote-bearing project name round-trips intact"
+# The debug-config probe reads a path built from PROJECT_ROOT and must not
+# interpolate it either — it was missed when the touch_project call was fixed.
+if grep -qE "python3 -c \"[^\"]*\\\$_CMM_CONFIG" "$HOOK"; then
+    _fail "Test 10c: config path still interpolated into python program text"
 else
-    _fail "Test 10b: quote-bearing name mangled (got: '$_BACK')"
+    _pass "Test 10c: config path passed via environment"
 fi
 
 # Cleanup

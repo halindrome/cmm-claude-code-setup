@@ -347,6 +347,13 @@ CMM_FOUND=false
 if [ -f "$REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$REPO_ROOT/.mcp.json" 2>/dev/null; then
     CMM_FOUND=true
 fi
+if [ "$CMM_FOUND" = false ] && [ -f "$REPO_ROOT/.claude/settings.json" ] && \
+   grep -q 'codebase-memory-mcp' "$REPO_ROOT/.claude/settings.json" 2>/dev/null; then
+    # setup.sh --project (the DEFAULT install) registers CMM here, not in
+    # .mcp.json. Omitting it left this gate permanently fail-open on exactly
+    # the installs this stack creates.
+    CMM_FOUND=true
+fi
 if [ "$CMM_FOUND" = false ]; then
     CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
     if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then

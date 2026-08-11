@@ -135,7 +135,12 @@ _CMM_TOUCH_OUTPUT=$(codebase-memory-mcp cli touch_project "$_CMM_TOUCH_JSON" 2>/
 # back-compat. VBW is optional — neither file is required for the hook to work.
 _CMM_CONFIG="$PROJECT_ROOT/.claude/.cmm-setup/config.json"
 [ -f "$_CMM_CONFIG" ] || _CMM_CONFIG="$PROJECT_ROOT/.vbw-planning/config.json"
-if [ -f "$_CMM_CONFIG" ] && python3 -c "import sys,json; d=json.load(open('$_CMM_CONFIG')); sys.exit(0 if d.get('debug_logging') else 1)" 2>/dev/null; then
+# Path passed via the environment, not interpolated into program text — same
+# reason as the touch_project JSON above: PROJECT_ROOT is user-controlled and a
+# quote in it would close the literal and execute the remainder as Python.
+if [ -f "$_CMM_CONFIG" ] && C="$_CMM_CONFIG" python3 -c \
+     'import sys, json, os; d = json.load(open(os.environ["C"])); sys.exit(0 if d.get("debug_logging") else 1)' \
+     2>/dev/null; then
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] touch_project project=$_CMM_PROJECT_NAME output=$_CMM_TOUCH_OUTPUT cwd=$(pwd)" >> /tmp/cmm-touch-project.log 2>/dev/null || true
 fi
 
