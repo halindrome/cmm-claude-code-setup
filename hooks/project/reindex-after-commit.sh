@@ -120,7 +120,14 @@ _CMM_PROJECT_NAME="${_CMM_PROJECT_NAME//\//-}"
 
 # Capture output silently; touch_project is fire-and-forget.
 # Use the CLI interface (not MCP tool name) since this runs in a shell hook, not Claude's agent runtime.
-_CMM_TOUCH_JSON=$(python3 -c "import json; print(json.dumps({'project': '$_CMM_PROJECT_NAME'.replace(chr(39), '')}))" 2>/dev/null || echo '{"project":"'"$_CMM_PROJECT_NAME"'"}')
+# Pass the name through the ENVIRONMENT, never interpolated into program text:
+# a project path containing a quote would otherwise close the string literal and
+# the rest of the path would be evaluated as Python. (The old inline
+# .replace(chr(39),'') ran only AFTER interpolation, so it stripped nothing.)
+_CMM_TOUCH_JSON=$(P="$_CMM_PROJECT_NAME" python3 -c \
+  'import json, os; print(json.dumps({"project": os.environ["P"]}))' 2>/dev/null)
+[ -n "$_CMM_TOUCH_JSON" ] || \
+  _CMM_TOUCH_JSON=$(printf '{"project":"%s"}' "${_CMM_PROJECT_NAME//\"/}")
 _CMM_TOUCH_OUTPUT=$(codebase-memory-mcp cli touch_project "$_CMM_TOUCH_JSON" 2>/dev/null) && _CMM_TOUCH_OK=1 || _CMM_TOUCH_OK=0
 
 # Debug logging (only when debug_logging=true in config).

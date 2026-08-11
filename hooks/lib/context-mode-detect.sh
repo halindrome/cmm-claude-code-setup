@@ -50,7 +50,11 @@
 #   <root>       repo/project root (used for .mcp.json lookup)
 #   [cache_file] optional /tmp cache path; auto-invalidated when any input file
 #                is newer than the cache, so a repaired registry takes effect
-#                without a manual cache purge.
+#                without a manual cache purge, AND when the plugin installPath
+#                the cached verdict rested on no longer exists (removing that
+#                directory touches no registry file, so mtime alone misses it).
+#                Cache format: line 1 = verdict, line 2 = that installPath
+#                ("witness"), empty for mcpServers-form installs.
 detect_context_mode() {
     local _root="$1"
     local _cache="$2"
@@ -68,14 +72,25 @@ detect_context_mode() {
             "${HOME}/.claude/plugins/installed_plugins.json" \
             -newer "$_cache" 2>/dev/null | head -1)
         if [ -z "$_newer" ]; then
-            CONTEXT_MODE_INSTALLED=$(cat "$_cache" 2>/dev/null)
-            CONTEXT_MODE_INSTALLED="${CONTEXT_MODE_INSTALLED:-0}"
-            return 0
+            # Line 1 = verdict, line 2 = the "witness": the plugin installPath
+            # the verdict rested on. Removing a plugin directory does NOT touch
+            # any registry file, so the mtime sweep above cannot see it; without
+            # this check a cached `1` outlives the plugin, and callers that
+            # cache disagree with callers that do not — one gating tools behind
+            # ctx_* while another reports it absent, wedging the session.
+            local _cached _witness
+            _cached=$(sed -n 1p "$_cache" 2>/dev/null)
+            _witness=$(sed -n 2p "$_cache" 2>/dev/null)
+            if [ -z "$_witness" ] || [ -d "$_witness" ]; then
+                CONTEXT_MODE_INSTALLED="${_cached:-0}"
+                return 0
+            fi
         fi
     fi
 
     CONTEXT_MODE_INSTALLED=0
-    if ROOT="$_root" python3 <<'PY' 2>/dev/null
+    local _witness_path=""
+    if _witness_path=$(ROOT="$_root" python3 <<'PY' 2>/dev/null
 import json, os, sys
 
 root = os.environ.get("ROOT", "")
@@ -131,12 +146,15 @@ def plugin_loadable():
                 seen_entry = True
                 # The decisive check: does the recorded path exist HERE?
                 if os.path.isdir(path):
-                    return True
+                    return path
     return False if seen_entry else None
 
 
 verdict = plugin_loadable()
-if verdict is True:
+if isinstance(verdict, str):
+    # Emit the path the verdict rests on so the shell can cache it and notice
+    # when it later disappears — see the cache-witness note in the caller.
+    sys.stdout.write(verdict)
     sys.exit(0)
 if verdict is False:
     # A registry entry exists but points nowhere reachable on this filesystem.
@@ -154,6 +172,7 @@ for d in config_dirs:
 
 sys.exit(1)
 PY
+    )
     then
         CONTEXT_MODE_INSTALLED=1
     fi
@@ -162,7 +181,8 @@ PY
     # permanent-latch defect documented at the top of this file.
 
     if [ -n "$_cache" ]; then
-        echo "$CONTEXT_MODE_INSTALLED" > "$_cache" 2>/dev/null || true
+        printf '%s\n%s\n' "$CONTEXT_MODE_INSTALLED" "$_witness_path" \
+            > "$_cache" 2>/dev/null || true
     fi
     return 0
 }

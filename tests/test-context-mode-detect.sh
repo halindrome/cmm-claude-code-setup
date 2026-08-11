@@ -68,6 +68,30 @@ touch "$CLAUDE_CONFIG_DIR/settings.json"   # newer than cache, now empty
 detect_context_mode "$T/repo" "$CACHE"
 check "registry changed -> cache recomputed" 0 "$CONTEXT_MODE_INSTALLED"
 
+echo "== 7. cache invalidates when the plugin directory disappears =="
+# Removing a plugin dir touches NO registry file, so the mtime sweep cannot see
+# it. A cached 1 surviving here makes cached callers (session-gate) disagree
+# with uncached ones (cmm-session-start): one gates every tool behind ctx_*
+# while the other reports it absent — an unescapable session-wide block.
+CACHE7="$T/cache7"
+PLUGDIR="$CLAUDE_CONFIG_DIR/plugins/cache/context-mode/context-mode/1.0.169"
+rm -f "$CLAUDE_CONFIG_DIR/settings.json"
+reg <<JSON
+{"plugins":{"context-mode@context-mode":[{"installPath":"$PLUGDIR"}]},
+ "enabledPlugins":{"context-mode@context-mode":true}}
+JSON
+detect_context_mode "$T/repo" "$CACHE7"
+check "plugin present -> installed (cache primed)" 1 "$CONTEXT_MODE_INSTALLED"
+check "cache records the installPath witness" "$PLUGDIR" "$(sed -n 2p "$CACHE7")"
+rm -rf "$PLUGDIR"          # no registry file is touched by this
+detect_context_mode "$T/repo" "$CACHE7"
+check "plugin dir gone -> cache invalidated" 0 "$CONTEXT_MODE_INSTALLED"
+
+echo "== 8. cached and uncached callers agree after the plugin vanishes =="
+detect_context_mode "$T/repo" "$CACHE7"; _cached_verdict="$CONTEXT_MODE_INSTALLED"
+detect_context_mode "$T/repo";           _uncached_verdict="$CONTEXT_MODE_INSTALLED"
+check "cached verdict == uncached verdict" "$_uncached_verdict" "$_cached_verdict"
+
 rm -rf "$T"
 echo
 echo "passed=$PASS failed=$FAIL"

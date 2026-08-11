@@ -125,6 +125,30 @@ else
     _fail "Test 9: nothing-to-commit should not mark stale (got: '$(cat "$SENTINEL" 2>/dev/null)')"
 fi
 
+# --- Test 10: project name reaches python3 via the environment, not program text ---
+# The name is derived from an absolute path the user controls. Interpolating it
+# into `python3 -c "...'$NAME'..."` lets a quote in the path close the literal
+# and run the remainder as Python; the old inline .replace(chr(39),'') could not
+# help, because it ran only AFTER interpolation.
+echo "--- Test 10: touch_project JSON is built without interpolation ---"
+if grep -q "os.environ\[" "$HOOK" && \
+   ! grep -qE "python3 -c \"[^\"]*\\\$_CMM_PROJECT_NAME" "$HOOK"; then
+    _pass "Test 10: project name passed via environment"
+else
+    _fail "Test 10: project name still interpolated into python program text"
+fi
+
+# Behavioural check: a name containing a quote must still yield valid JSON that
+# round-trips to exactly that name.
+_EVIL="Users-ahby-a'b\"c-proj"
+_JSON=$(P="$_EVIL" python3 -c 'import json, os; print(json.dumps({"project": os.environ["P"]}))' 2>/dev/null)
+_BACK=$(J="$_JSON" python3 -c 'import json, os; print(json.loads(os.environ["J"])["project"])' 2>/dev/null)
+if [ "$_BACK" = "$_EVIL" ]; then
+    _pass "Test 10b: quote-bearing project name round-trips intact"
+else
+    _fail "Test 10b: quote-bearing name mangled (got: '$_BACK')"
+fi
+
 # Cleanup
 rm -rf "$FAKE_ROOT" "$FAKE_CONFIG"
 rm -f "$SENTINEL"

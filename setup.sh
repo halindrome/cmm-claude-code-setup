@@ -568,20 +568,37 @@ def _last_token_basename(cmd):
     parts = cmd.split()
     if not parts:
         return ""
-    return os.path.basename(parts[-1])
+    # Strip surrounding quotes BEFORE basename. Registrations we write are
+    # quoted (bash "$CLAUDE_PROJECT_DIR/.claude/hooks/x.sh"), so the raw last
+    # token basenames to `x.sh"` — which never matches the stale list, and the
+    # deprecated entry silently survives the purge.
+    # chr(34)/chr(39): this whole program is inside a single-quoted shell
+    # string, so a literal quote here would terminate it.
+    return os.path.basename(parts[-1].strip(chr(34) + chr(39)))
 
 changed = False
 for hook_type in list(data.get("hooks", {})):
-    before = len(data["hooks"][hook_type])
-    data["hooks"][hook_type] = [
-        entry for entry in data["hooks"][hook_type]
-        if not any(
-            _last_token_basename(h.get("command", "")) in stale
-            for h in entry.get("hooks", [])
-        )
-    ]
-    if len(data["hooks"][hook_type]) < before:
-        changed = True
+    groups = data["hooks"][hook_type]
+    if not isinstance(groups, list):
+        continue
+    # Prune the individual stale HOOK, not the whole matcher group: a group can
+    # hold our retired hook alongside the user own, and dropping the group takes
+    # theirs with it. (Latent until the basename match above started working —
+    # nothing matched before, so nothing was ever over-removed.)
+    kept_groups = []
+    for entry in groups:
+        inner = entry.get("hooks") if isinstance(entry, dict) else None
+        if not isinstance(inner, list):
+            kept_groups.append(entry)
+            continue
+        kept = [h for h in inner
+                if _last_token_basename(h.get("command", "")) not in stale]
+        if len(kept) != len(inner):
+            changed = True
+        if kept:
+            entry["hooks"] = kept
+            kept_groups.append(entry)
+    data["hooks"][hook_type] = kept_groups
     if not data["hooks"][hook_type]:
         del data["hooks"][hook_type]
 if changed:
@@ -1940,9 +1957,19 @@ install_global() {
   # shellcheck disable=SC2046
   scan_drift_summary "${config_dir}/rules" $( ls "$SCRIPT_DIR/rules/"*.md 2>/dev/null )
 
-  # Install shared libraries first (sourced by hooks at runtime)
+  # Install shared libraries first (sourced by hooks at runtime).
+  # vbw-source.sh is VBW-only (sourced solely by the VBW agent-override
+  # generator hook) — skip it when VBW is not available, so the zero-VBW
+  # footprint guarantee holds for --global as it does for --project.
+  # NOTE: do not name that hook's filename here; tests/test-phase-66-install-scope.sh
+  # greps this function's body for it to prove --global never registers it.
+  local _vbw_present=false
+  if vbw_is_available; then _vbw_present=true; fi
   shopt -s nullglob
   for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
+    if [ "$(basename "$file")" = "vbw-source.sh" ] && [ "$_vbw_present" != true ]; then
+      continue
+    fi
     copy_file "$file" "${config_dir}/hooks/lib/$(basename "$file")"
   done
 

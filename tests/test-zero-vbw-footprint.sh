@@ -55,6 +55,47 @@ _chk "no VBW agent deltas written" \
 _chk "CMM hooks still installed (install did not just no-op)" \
      '[ -f "$PROJ/.claude/hooks/session-gate.sh" ]'
 
+echo "--- zero-VBW GLOBAL install ---"
+# The zero-VBW guarantee is scope-independent: --global must not write the
+# VBW-only lib either.
+GCONF="$T/gconf"; mkdir -p "$GCONF"
+HOME="$FAKE_HOME" CLAUDE_CONFIG_DIR="$GCONF" \
+  bash "$SETUP" --global --yes --skip-mcp-check --skip-statusline >"$T/global.out" 2>&1
+_chk "global install wrote hooks" \
+     'ls "$GCONF"/hooks/*.sh >/dev/null 2>&1'
+_chk "global install skips VBW-only vbw-source.sh" \
+     '[ ! -e "$GCONF/hooks/lib/vbw-source.sh" ]'
+_chk "global install still writes shared libs" \
+     '[ -f "$GCONF/hooks/lib/context-mode-detect.sh" ]'
+
+echo "--- deprecated-hook purge matches QUOTED registrations ---"
+# purge_deprecated_hooks basenamed the RAW last token, so a quoted command
+# yielded `ctx-search-nudge.sh"` — never a member of the stale list — and the
+# retired registration survived every reinstall. Registrations this installer
+# writes are quoted, so the quoted form is the one that matters.
+P2="$T/purge-proj"; mkdir -p "$P2/.claude/hooks"
+python3 - "$P2/.claude/settings.json" <<'PY'
+import json, sys
+json.dump({"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [
+    {"type": "command",
+     "command": 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/ctx-search-nudge.sh"'},
+    {"type": "command",
+     "command": 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/my-own-hook.sh"'},
+]}]}}, open(sys.argv[1], "w"), indent=2)
+PY
+echo '#!/bin/bash' > "$P2/.claude/hooks/ctx-search-nudge.sh"
+( cd "$P2" && echo n | HOME="$FAKE_HOME" CLAUDE_CONFIG_DIR="$FAKE_CONF" \
+    bash "$SETUP" --project --yes --skip-mcp-check --skip-statusline --no-migrate \
+) > "$T/purge.out" 2>&1
+_chk "quoted deprecated registration purged" \
+     '! grep -q "ctx-search-nudge.sh" "$P2/.claude/settings.json"'
+_chk "deprecated hook file removed" \
+     '[ ! -e "$P2/.claude/hooks/ctx-search-nudge.sh" ]'
+_chk "unrelated user registration preserved" \
+     'grep -q "my-own-hook.sh" "$P2/.claude/settings.json"'
+_chk "settings.json still valid JSON" \
+     'python3 -m json.tool "$P2/.claude/settings.json" >/dev/null 2>&1'
+
 rm -rf "$T"
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
