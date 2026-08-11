@@ -289,27 +289,53 @@ _assert_exit "Grep path=Config.YAML allowed (mixed case)" 0 \
     "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"name\",\"path\":\"$PROJ/Config.YAML\"},\"cwd\":\"$PROJ\"}" \
     "$ENV_NO_GLOBAL"
 
-# --- CMM registered ONLY in the project settings.json (the default install) ---
-# setup.sh --project writes CMM registration into .claude/settings.json, NOT
-# .mcp.json. The availability cascade omitted that file, so this gate was
-# permanently fail-open on exactly the installs this stack creates.
-PROJ_SETTINGS_ONLY="$TMPDIR_ROOT/proj-settings-only"
-mkdir -p "$PROJ_SETTINGS_ONLY/src" "$PROJ_SETTINGS_ONLY/.claude"
-git -C "$PROJ_SETTINGS_ONLY" init -q 2>/dev/null
-# No .mcp.json at all — registration lives only in the project settings.json.
-echo '{"permissions":{"allow":["mcp__codebase-memory-mcp__search_graph"]}}' \
-    > "$PROJ_SETTINGS_ONLY/.claude/settings.json"
-{ for i in $(seq 1 80); do echo "def handler_$i(): pass"; done; } > "$PROJ_SETTINGS_ONLY/src/app.py"
-# Canonicalize before hashing — the hook derives REPO_ROOT via
-# `git rev-parse --show-toplevel` (macOS /var → /private/var), same as $PROJ above.
-PSO_CANON=$(cd "$PROJ_SETTINGS_ONLY" && pwd -P)
-PSO_HASH=$(_md5 "$PSO_CANON")
-PSO_SENTINEL="/tmp/cmm-session-ready-${PSO_HASH}"
-touch "$PSO_SENTINEL"
-_assert_exit "Grep blocked when CMM registered only in project settings.json" 2 \
-    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"handler\",\"path\":\"$PROJ_SETTINGS_ONLY/src\"},\"cwd\":\"$PROJ_SETTINGS_ONLY\"}" \
-    "$ENV_NO_GLOBAL"
-rm -f "$PSO_SENTINEL"
+# --- Registration is an mcpServers KEY, never a substring ---
+# A permissions allowlist ("mcp__codebase-memory-mcp__search_graph") contains
+# the string 'codebase-memory-mcp', and so does a rule DENYING those tools.
+# Treating either as registration turns a fail-open bug into a fail-CLOSED one:
+# the user is hard-blocked for merely mentioning CMM, and the remedy is a tool
+# call the block itself forbids.
+PROJ_MENTION="$TMPDIR_ROOT/proj-mention-only"
+mkdir -p "$PROJ_MENTION/src"
+git -C "$PROJ_MENTION" init -q 2>/dev/null
+{ for i in $(seq 1 80); do echo "def handler_$i(): pass"; done; } > "$PROJ_MENTION/src/app.py"
+# The deny rule must live in a location the probe actually READS, or the
+# assertion cannot fail and proves nothing. The global config settings.json is
+# probed; a project .claude/settings.json is not.
+PM_CONFIG="$TMPDIR_ROOT/pm-config"
+mkdir -p "$PM_CONFIG" "$TMPDIR_ROOT/nohome"
+cat > "$PM_CONFIG/settings.json" <<'JSON'
+{"permissions":{"deny":["mcp__codebase-memory-mcp__search_graph"],
+                "allow":["mcp__codebase-memory-mcp__search_code"]}}
+JSON
+PM_CANON=$(cd "$PROJ_MENTION" && pwd -P)
+PM_SENTINEL="/tmp/cmm-session-ready-$(_md5 "$PM_CANON")"
+touch "$PM_SENTINEL"
+_assert_exit "Grep ALLOWED when config only mentions/denies cmm (no registration)" 0 \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"handler\",\"path\":\"$PROJ_MENTION/src\"},\"cwd\":\"$PROJ_MENTION\"}" \
+    "CLAUDE_CONFIG_DIR=$PM_CONFIG HOME=$TMPDIR_ROOT/nohome"
+rm -f "$PM_SENTINEL"
+
+# --- Registration via a global .claude.json (user-scope `claude mcp add`) ---
+# setup.sh probes THREE global locations; the hooks probed one. A normal
+# install that registers CMM in .claude.json was invisible to every gate, so
+# enforcement was silently absent with no error.
+PROJ_GLOBALREG="$TMPDIR_ROOT/proj-globalreg"
+mkdir -p "$PROJ_GLOBALREG/src"
+git -C "$PROJ_GLOBALREG" init -q 2>/dev/null
+{ for i in $(seq 1 80); do echo "def handler_$i(): pass"; done; } > "$PROJ_GLOBALREG/src/app.py"
+GR_CONFIG="$TMPDIR_ROOT/gr-config"
+mkdir -p "$GR_CONFIG"
+# settings.json deliberately has NO registration; .claude.json carries it.
+echo '{}' > "$GR_CONFIG/settings.json"
+echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$GR_CONFIG/.claude.json"
+GR_CANON=$(cd "$PROJ_GLOBALREG" && pwd -P)
+GR_SENTINEL="/tmp/cmm-session-ready-$(_md5 "$GR_CANON")"
+touch "$GR_SENTINEL"
+_assert_exit "Grep blocked when CMM registered in config .claude.json" 2 \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"handler\",\"path\":\"$PROJ_GLOBALREG/src\"},\"cwd\":\"$PROJ_GLOBALREG\"}" \
+    "CLAUDE_CONFIG_DIR=$GR_CONFIG HOME=$TMPDIR_ROOT/nohome"
+rm -f "$GR_SENTINEL"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

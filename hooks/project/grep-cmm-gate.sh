@@ -87,23 +87,19 @@ if [ -n "$PATH_FIELD" ] && [ -f "$PATH_FIELD" ]; then
 fi
 
 # --- CMM availability check (.mcp.json cascade, parity with cmm-nudge.sh / cmm-grep-nudge.sh) ---
+# Shared registration probe. Resolve "<dir>/lib" (installed layout) then
+# "<dir>/../lib" (repo layout), per hooks/lib/context-mode-detect.sh's note.
+_CMMREG_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/cmm-registered.sh" ] && { _CMMREG_LIB="$_d/cmm-registered.sh"; break; }
+done
+# Cannot determine availability -> fail open. Never block on our own absence.
+[ -n "$_CMMREG_LIB" ] || exit 0
+# shellcheck disable=SC1090
+source "$_CMMREG_LIB"
+
 CMM_FOUND=false
-if [ -f "$REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$REPO_ROOT/.mcp.json" 2>/dev/null; then
-    CMM_FOUND=true
-fi
-if [ "$CMM_FOUND" = false ] && [ -f "$REPO_ROOT/.claude/settings.json" ] && \
-   grep -q 'codebase-memory-mcp' "$REPO_ROOT/.claude/settings.json" 2>/dev/null; then
-    # setup.sh --project (the DEFAULT install) registers CMM here, not in
-    # .mcp.json. Omitting it left this gate permanently fail-open on exactly
-    # the installs this stack creates.
-    CMM_FOUND=true
-fi
-if [ "$CMM_FOUND" = false ]; then
-    CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-    if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-        CMM_FOUND=true
-    fi
-fi
+cmm_is_registered "$REPO_ROOT" && CMM_FOUND=true
 # If CMM not registered anywhere, fail open
 [ "$CMM_FOUND" = false ] && exit 0
 
