@@ -55,6 +55,28 @@ echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$HOME/.claude
 _chk "~/.claude.json -> registered" 'cmm_is_registered "$T/proj"'
 rm -f "$HOME/.claude.json"
 
+echo "--- legacy layout: CLAUDE_CONFIG_DIR unset, no ~/.config/claude-code ---"
+# setup.sh's detect_config_dir() falls back to ~/.claude when neither
+# CLAUDE_CONFIG_DIR nor ~/.config/claude-code exists, and registers CMM there.
+# The probe must follow the same precedence. Not exercising this shape is
+# exactly why the divergence shipped: every other case here sets
+# CLAUDE_CONFIG_DIR, which masks the fallback branch entirely.
+_saved_ccd="$CLAUDE_CONFIG_DIR"
+unset CLAUDE_CONFIG_DIR
+LEGACY_HOME="$T/legacy"
+mkdir -p "$LEGACY_HOME/.claude"          # deliberately NO .config/claude-code
+_saved_home="$HOME"
+export HOME="$LEGACY_HOME"
+_chk "legacy layout, nothing registered -> not registered" '! cmm_is_registered "$T/proj"'
+echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$LEGACY_HOME/.claude/settings.json"
+_chk "legacy ~/.claude/settings.json -> registered" 'cmm_is_registered "$T/proj"'
+rm -f "$LEGACY_HOME/.claude/settings.json"
+echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$LEGACY_HOME/.claude/.claude.json"
+_chk "legacy ~/.claude/.claude.json -> registered" 'cmm_is_registered "$T/proj"'
+rm -f "$LEGACY_HOME/.claude/.claude.json"
+export HOME="$_saved_home"
+export CLAUDE_CONFIG_DIR="$_saved_ccd"
+
 echo "--- malformed input must not crash or fail closed ---"
 echo 'not json {{{' > "$CLAUDE_CONFIG_DIR/settings.json"
 _chk "unparseable settings.json -> not registered, no crash" '! cmm_is_registered "$T/proj"'
