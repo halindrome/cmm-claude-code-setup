@@ -48,7 +48,12 @@ echo '{}' > "$FAKE_CONFIG/settings.json"
 CANONICAL_PROJ=$(cd "$FAKE_PROJ" && git rev-parse --show-toplevel 2>/dev/null || pwd -P)
 FAKE_PROJ_HASH=$(echo "$CANONICAL_PROJ" | md5 -q 2>/dev/null || echo "$CANONICAL_PROJ" | md5sum | awk '{print $1}')
 echo "1" > "/tmp/ctx-enforcer-${FAKE_PROJ_HASH}"
-touch "/tmp/context-mode-ready-${FAKE_PROJ_HASH}"
+# "live", not a bare touch: ctx-execute-enforcer.sh arms only on a sentinel whose
+# content is "live" — written by context-mode-sentinel-writer.sh after a real
+# ctx_* call — and only while that file is fresh. An empty sentinel is not a
+# liveness verdict and correctly fails open, which would disarm every
+# enforcement assertion below.
+echo "live" > "/tmp/context-mode-ready-${FAKE_PROJ_HASH}"
 
 # Copy hooks into fake project so ctx-execute-enforcer's path integrity check passes
 cp "$CMM_NUDGE" "$FAKE_PROJ/.claude/hooks/cmm-nudge.sh" 2>/dev/null || true
@@ -58,6 +63,15 @@ cp "$WEBFETCH_NUDGE" "$FAKE_PROJ/.claude/hooks/webfetch-nudge.sh" 2>/dev/null ||
 if [ -f "$PROJECT_ROOT/hooks/project/track-hook-blocks.sh" ]; then
   cp "$PROJECT_ROOT/hooks/project/track-hook-blocks.sh" "$FAKE_PROJ/.claude/hooks/track-hook-blocks.sh"
 fi
+# hooks/lib/context-mode-detect.sh — REQUIRED, not optional. Both
+# ctx-execute-enforcer.sh and webfetch-nudge.sh resolve it via
+# "<dirname>/lib" then "<dirname>/../lib" and, when neither resolves,
+# exit 0 by design ("partial install — fail open rather than enforce
+# blindly"). Without this copy every enforcement assertion below passes
+# through a hook that disarmed itself, so they would report exit 0 and
+# fail for a reason that has nothing to do with what they test.
+mkdir -p "$FAKE_PROJ/.claude/hooks/lib"
+cp "$PROJECT_ROOT/hooks/lib/context-mode-detect.sh" "$FAKE_PROJ/.claude/hooks/lib/context-mode-detect.sh"
 
 # Second fake project WITHOUT context-mode in .mcp.json — for webfetch-nudge pass-through test
 FAKE_PROJ_NO_CTX="$TMPDIR_ROOT/proj-no-ctx"
@@ -68,6 +82,11 @@ cp "$WEBFETCH_NUDGE" "$FAKE_PROJ_NO_CTX/.claude/hooks/webfetch-nudge.sh" 2>/dev/
 if [ -f "$PROJECT_ROOT/hooks/project/track-hook-blocks.sh" ]; then
   cp "$PROJECT_ROOT/hooks/project/track-hook-blocks.sh" "$FAKE_PROJ_NO_CTX/.claude/hooks/track-hook-blocks.sh"
 fi
+# Same requirement as FAKE_PROJ above — without the lib this project's
+# pass-through assertions would hold for the wrong reason (fail-open on a
+# missing lib, not a correct "context-mode absent" verdict).
+mkdir -p "$FAKE_PROJ_NO_CTX/.claude/hooks/lib"
+cp "$PROJECT_ROOT/hooks/lib/context-mode-detect.sh" "$FAKE_PROJ_NO_CTX/.claude/hooks/lib/context-mode-detect.sh"
 CANONICAL_PROJ_NO_CTX=$(cd "$FAKE_PROJ_NO_CTX" && git rev-parse --show-toplevel 2>/dev/null || pwd -P)
 FAKE_PROJ_NO_CTX_HASH=$(echo "$CANONICAL_PROJ_NO_CTX" | md5 -q 2>/dev/null || echo "$CANONICAL_PROJ_NO_CTX" | md5sum | awk '{print $1}')
 
@@ -253,9 +272,9 @@ for entry in "${AGENT_HOOKS[@]}"; do
 done
 
 # ─── Test: webfetch-nudge.sh detection cascade coverage ──────────────────
-# Covers the two detection sources the per-agent loop does not exercise:
-#   (a) CLAUDE_CONFIG_DIR/settings.json mentions context-mode (global-only)
-#   (b) .claude/context-mode.db exists (activation marker)
+# Covers the two detection cases the per-agent loop does not exercise:
+#   (a) CLAUDE_CONFIG_DIR/settings.json mentions context-mode (global-only) → blocks
+#   (b) .claude/context-mode.db exists but nothing else does → must NOT block
 echo ""
 echo "=== webfetch-nudge.sh: detection cascade coverage ==="
 
@@ -293,13 +312,20 @@ _assert_webfetch_with_global \
   0 "$FAKE_CONFIG" \
   "{\"tool_name\":\"WebFetch\",\"tool_input\":{\"url\":\"https://docs.example.com/api\"},\"cwd\":\"$FAKE_PROJ_NO_CTX\"}"
 
-# (b) .claude/context-mode.db activation: neither .mcp.json nor global settings
-# mention context-mode, but the repo has a context-mode.db file. The hook must
-# BLOCK (exit 2).
+# (b) .claude/context-mode.db must NOT activate enforcement (exit 0).
+#
+# This assertion is inverted from its original form, which expected exit 2.
+# hooks/lib/context-mode-detect.sh deliberately dropped the context-mode.db
+# fallback: a session DB is a PERMANENT LATCH — once context-mode has ever run
+# in a repo the file remains forever, so uninstalling the plugin left every
+# blocking hook still firing, redirecting to ctx_* tools that no longer existed.
+# The marker existing is therefore no longer evidence the server is reachable,
+# and the hook must fail open. Asserting the old behaviour would re-enshrine
+# the defect the library was written to remove.
 touch "$FAKE_PROJ_NO_CTX/.claude/context-mode.db"
 _assert_webfetch_with_global \
-  "webfetch-nudge: BLOCKED via .claude/context-mode.db activation marker" \
-  2 "$FAKE_CONFIG" \
+  "webfetch-nudge: .claude/context-mode.db alone does NOT activate (no permanent latch)" \
+  0 "$FAKE_CONFIG" \
   "{\"tool_name\":\"WebFetch\",\"tool_input\":{\"url\":\"https://docs.example.com/api\"},\"cwd\":\"$FAKE_PROJ_NO_CTX\"}"
 rm -f "$FAKE_PROJ_NO_CTX/.claude/context-mode.db"
 
@@ -351,27 +377,19 @@ else
   fail "vbw-qa: write-verification.sh keyword missing (count=$_qa_count, need >=1)"
 fi
 
-# (b) vbw-dev.md: pre_existing_issues mentioned in DEVN-05 rule + Stage 3 (>=2)
-_dev_pei_count=$(grep -c 'pre_existing_issues' "$AGENTS_DIR/vbw-dev.md" || true)
-if [ "${_dev_pei_count:-0}" -ge 2 ]; then
-  pass "vbw-dev: pre_existing_issues keyword present (count=$_dev_pei_count, need >=2)"
-else
-  fail "vbw-dev: pre_existing_issues keyword underrepresented (count=$_dev_pei_count, need >=2)"
-fi
-
-# (c) <skill_no_activation> handling in each of the 6 target agents (>=1 per file)
-for _agent in vbw-dev vbw-scout vbw-lead vbw-qa vbw-debugger vbw-docs; do
-  if [ ! -f "$AGENTS_DIR/$_agent.md" ]; then
-    fail "$_agent: agent file missing (cannot check skill_no_activation)"
-    continue
-  fi
-  _sna_count=$(grep -c 'skill_no_activation' "$AGENTS_DIR/$_agent.md" || true)
-  if [ "${_sna_count:-0}" -ge 1 ]; then
-    pass "$_agent: skill_no_activation keyword present (count=$_sna_count, need >=1)"
-  else
-    fail "$_agent: skill_no_activation keyword missing (count=$_sna_count, need >=1)"
-  fi
-done
+# (b) and (c) REMOVED — superseded by Phase 49.
+#
+# They asserted `pre_existing_issues` (>=2 in vbw-dev.md) and
+# `skill_no_activation` (>=1 in each of the 6 target agents) were present in
+# $AGENTS_DIR, i.e. agents/*.md. Phase 49 moved that body content into the
+# upstream VBW base, leaving agents/*.md as a delta carrying only the
+# frontmatter patch and cmm-delta fenced sections. tests/test-phase-49-agent-sync.sh
+# now asserts the exact opposite over the very same files — that these keywords
+# are ABSENT from the delta sources — and passes. Two suites cannot both be
+# right about one file, and the Phase 49 pair is the one matching the shipped
+# design, so the stale half is deleted rather than papered over with a skip.
+# Merged-output coverage (delta + VBW base) belongs to test-phase-66-generate.sh,
+# which exercises the generator that actually performs the merge.
 
 # (d) vbw-dev.md: '## Context Mode Web Fetch' preservation (count == 1)
 _dev_cmwf_count=$(grep -c '^## Context Mode Web Fetch' "$AGENTS_DIR/vbw-dev.md" || true)
@@ -381,22 +399,12 @@ else
   fail "vbw-dev: '## Context Mode Web Fetch' heading count=$_dev_cmwf_count (expected exactly 1)"
 fi
 
-# (e) vbw-debugger.md: v1.37.0 PR #627 already_fixed semantic block present in BOTH
-# Investigation Protocol and Teammate Mode (PR #627 upstream is two separate insertions
-# in two different sections — anchor both independently so a partial mirror is detected).
-_dbg_af_inv_count=$(grep -c 'already_fixed.*fresh current evidence' "$AGENTS_DIR/vbw-debugger.md" || true)
-if [ "${_dbg_af_inv_count:-0}" -ge 1 ]; then
-  pass "vbw-debugger: v1.37.0 Investigation Protocol already_fixed prose present (count=$_dbg_af_inv_count, need >=1)"
-else
-  fail "vbw-debugger: v1.37.0 Investigation Protocol already_fixed prose missing (count=$_dbg_af_inv_count, need >=1)"
-fi
-
-_dbg_af_tm_count=$(grep -c 'Historical .accepted-process-exception. or backlog/UAT-deviation metadata alone is not fresh evidence for .already_fixed.' "$AGENTS_DIR/vbw-debugger.md" || true)
-if [ "${_dbg_af_tm_count:-0}" -ge 1 ]; then
-  pass "vbw-debugger: v1.37.0 Teammate Mode accepted-process-exception line present (count=$_dbg_af_tm_count, need >=1)"
-else
-  fail "vbw-debugger: v1.37.0 Teammate Mode accepted-process-exception line missing (count=$_dbg_af_tm_count, need >=1)"
-fi
+# (e) REMOVED — same reason as (b)/(c) above.
+#
+# It asserted the v1.37.0 PR #627 `already_fixed` prose appeared in BOTH the
+# Investigation Protocol and Teammate Mode sections of agents/vbw-debugger.md.
+# That is upstream VBW body content, so after Phase 49 it lives in the VBW base
+# and never in the delta source this assertion greps.
 
 # --- Phase 56 additions ---
 # Assert rules/cmm-rules.md upstream-behavior contract keywords introduced by Plan 56-01

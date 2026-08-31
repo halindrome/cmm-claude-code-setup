@@ -44,6 +44,21 @@ INSTALL_PROJECT=false
 SKIP_MCP_CHECK=false
 SKIP_STATUSLINE=false
 WITH_METRICS=false   # opt-in: install scripts/analyze-gate-blocks.py into <scope>/tools/
+# Uninstall mode (--uninstall): remove this stack from the requested scope instead
+# of installing. Requires an explicit --project and/or --global scope.
+UNINSTALL=false
+# --purge-mcp (uninstall only): also remove codebase-memory-mcp / context-mode
+# entries from .mcp.json. Off by default — MCP server registrations are external
+# tools the user may want to keep after removing the enforcement layer.
+PURGE_MCP=false
+# --with-vbw: treat a bare VBW dev-checkout (a source clone in ~/Sources) as an
+# installed VBW. By default only an actual plugin install — a marketplace install
+# or a --plugin-dir local symlink — counts as "VBW available"; a stray source
+# checkout does NOT, so migrating-away projects don't get VBW agents injected.
+WITH_VBW=false
+# Set by vbw_is_available(): the resolved VBW source type for messaging
+# (marketplace | local-symlink | dev-checkout | absent).
+VBW_DETECTED_TYPE="absent"
 # CMM install-scope globals (set by detect_cmm_install_scope; consumed by install_project)
 # Four-value enum: none | global | project | both
 CMM_INSTALL_SCOPE="none"
@@ -70,6 +85,377 @@ DEPRECATED_HOOKS=(
   "context-mode-pre-compact.sh"
   "ctx-annotate-nudge.sh"
 )
+
+# ---------------------------------------------------------------------------
+# Tool allowlist — single source of truth (used by detect_cmm_tools_allowed and
+# install_allowlist for both writing and merged-scope detection).
+# ---------------------------------------------------------------------------
+# Policy: "complete minus destructive" — pre-approve every CMM + context-mode
+# tool EXCEPT the irreversible / system-mutating ones, which must always prompt:
+#   - CMM   delete_project  (drops a project's index)
+#   - ctx   ctx_purge       (wipes indexed session content — rm -rf caution)
+#   - ctx   ctx_upgrade     (mutates the installed context-mode version)
+# CMM: all 13 non-destructive tools (of 14 the server exposes).
+CMM_ALLOW_TOOLS=(
+  "mcp__codebase-memory-mcp__index_repository"
+  "mcp__codebase-memory-mcp__index_status"
+  "mcp__codebase-memory-mcp__list_projects"
+  "mcp__codebase-memory-mcp__get_architecture"
+  "mcp__codebase-memory-mcp__get_graph_schema"
+  "mcp__codebase-memory-mcp__search_graph"
+  "mcp__codebase-memory-mcp__search_code"
+  "mcp__codebase-memory-mcp__query_graph"
+  "mcp__codebase-memory-mcp__get_code_snippet"
+  "mcp__codebase-memory-mcp__trace_path"
+  "mcp__codebase-memory-mcp__detect_changes"
+  "mcp__codebase-memory-mcp__manage_adr"
+  "mcp__codebase-memory-mcp__ingest_traces"
+)
+# context-mode: 9 non-destructive tools × both registration forms (plugin form
+# canonical first, legacy MCP-server form second) = 18 entries. Excludes
+# ctx_purge and ctx_upgrade per the policy above.
+CTX_ALLOW_TOOLS=(
+  "mcp__plugin_context-mode_context-mode__ctx_execute"
+  "mcp__plugin_context-mode_context-mode__ctx_execute_file"
+  "mcp__plugin_context-mode_context-mode__ctx_search"
+  "mcp__plugin_context-mode_context-mode__ctx_batch_execute"
+  "mcp__plugin_context-mode_context-mode__ctx_index"
+  "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index"
+  "mcp__plugin_context-mode_context-mode__ctx_stats"
+  "mcp__plugin_context-mode_context-mode__ctx_doctor"
+  "mcp__plugin_context-mode_context-mode__ctx_insight"
+  "mcp__context-mode__ctx_execute"
+  "mcp__context-mode__ctx_execute_file"
+  "mcp__context-mode__ctx_search"
+  "mcp__context-mode__ctx_batch_execute"
+  "mcp__context-mode__ctx_index"
+  "mcp__context-mode__ctx_fetch_and_index"
+  "mcp__context-mode__ctx_stats"
+  "mcp__context-mode__ctx_doctor"
+  "mcp__context-mode__ctx_insight"
+)
+# Count of distinct CMM tools that constitutes a complete allowlist.
+CMM_ALLOW_COUNT=${#CMM_ALLOW_TOOLS[@]}   # 13
+CTX_ALLOW_COUNT=${#CTX_ALLOW_TOOLS[@]}   # 18
+
+# _allowlist_union_count <kind: cmm|ctx> <settings_file...>
+# Print the number of distinct required tools of <kind> present across the union
+# of the given settings files' permissions.allow. Missing/invalid files count 0.
+_allowlist_union_count() {
+  local kind="$1"; shift
+  local req
+  if [ "$kind" = "ctx" ]; then req="$(printf '%s\n' "${CTX_ALLOW_TOOLS[@]}")"; else req="$(printf '%s\n' "${CMM_ALLOW_TOOLS[@]}")"; fi
+  REQ_TOOLS="$req" python3 - "$@" <<'PYEOF'
+import json, os, sys
+req = set(filter(None, os.environ.get("REQ_TOOLS", "").splitlines()))
+present = set()
+for path in sys.argv[1:]:
+    try:
+        with open(path) as f:
+            allow = json.load(f).get("permissions", {}).get("allow", [])
+    except Exception:
+        continue
+    for t in allow:
+        if t in req:
+            present.add(t)
+print(len(present))
+PYEOF
+}
+
+# ---------------------------------------------------------------------------
+# CMM setup state directory (VBW-independent)
+# ---------------------------------------------------------------------------
+# Migration sentinels and optional CMM config live under a neutral, always-present
+# directory so the stack no longer assumes VBW's .vbw-planning/ exists. Legacy
+# installs stored these under .vbw-planning/ — cmm_state_file() still reads that
+# location when a file is already there (back-compat), but new writes default to
+# the neutral CMM_STATE_DIR.
+CMM_STATE_DIR=".claude/.cmm-setup"
+LEGACY_STATE_DIR=".vbw-planning"
+
+# cmm_state_file <basename> — resolve a state file path. Prefers an existing
+# legacy .vbw-planning/ copy (so a mid-migration install keeps tracking the same
+# sentinel), otherwise returns the neutral CMM_STATE_DIR path for fresh writes.
+cmm_state_file() {
+  local name="$1"
+  if [ -f "$LEGACY_STATE_DIR/$name" ]; then
+    printf '%s\n' "$LEGACY_STATE_DIR/$name"
+  else
+    printf '%s\n' "$CMM_STATE_DIR/$name"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# VBW availability (install-time gate)
+# ---------------------------------------------------------------------------
+# vbw_is_available — return 0 only when VBW is installed as a usable plugin, and
+# set VBW_DETECTED_TYPE to the resolved source type for messaging.
+#
+# resolve_vbw_source (hooks/lib/vbw-source.sh) resolves four source types:
+#   marketplace   — published /plugin install                → counts as installed
+#   local-symlink — active `claude --plugin-dir <vbw>` mount  → counts as installed
+#   dev-checkout  — a bare source clone in ~/Sources          → NOT installed by default
+#   absent        — none of the above                         → not installed
+#
+# A dev-checkout is just source code sitting on disk, not an active plugin, so it
+# does not make VBW "available" unless --with-vbw is explicitly passed. This keeps
+# projects that are migrating away from VBW from getting VBW agents injected just
+# because a source clone happens to exist.
+vbw_is_available() {
+  VBW_DETECTED_TYPE="absent"
+  [ -f "$SCRIPT_DIR/hooks/lib/vbw-source.sh" ] || return 1
+  local _type
+  # shellcheck disable=SC1091
+  _type="$( source "$SCRIPT_DIR/hooks/lib/vbw-source.sh" && resolve_vbw_source >/dev/null 2>&1 && printf '%s' "${VBW_SOURCE_TYPE:-absent}" )"
+  [ -n "$_type" ] || _type="absent"
+  VBW_DETECTED_TYPE="$_type"
+  case "$_type" in
+    marketplace|local-symlink) return 0 ;;
+    dev-checkout)              [ "$WITH_VBW" = true ] && return 0 || return 1 ;;
+    *)                         return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Uninstall support
+# ---------------------------------------------------------------------------
+# stack_owned_hook_basenames — print (one per line) every hook filename this
+# stack installs into <base>/hooks/ and <base>/hooks/lib/. Derived from the repo
+# hook tree at runtime so it stays in sync with what install_* copies, plus the
+# generated statusline hook and the historical DEPRECATED_HOOKS. Used by
+# uninstall_stack to know exactly which files to remove.
+stack_owned_hook_basenames() {
+  local f
+  for f in "$SCRIPT_DIR"/hooks/project/*.sh "$SCRIPT_DIR"/hooks/global/*.sh "$SCRIPT_DIR"/hooks/lib/*.sh; do
+    [ -e "$f" ] && basename "$f"
+  done
+  # Generated at install time (not present in the repo hook tree):
+  printf '%s\n' "statusline-cmm.sh"
+  # Historical hook filenames superseded across versions:
+  local d
+  for d in "${DEPRECATED_HOOKS[@]}"; do printf '%s\n' "$d"; done
+}
+
+# uninstall_stack <base_dir> <scope_label>
+# Removes the installed stack from <base_dir> (e.g. .claude for project, the
+# resolved config dir for global). Files are MOVED to a timestamped backup dir
+# under <base_dir> (reversible), and settings.json / .mcp.json are backed up
+# before being edited. Honors DRY_RUN and YES_FLAG. .mcp.json MCP-server entries
+# are removed only when --purge-mcp is passed.
+uninstall_stack() {
+  local base="$1" scope="$2"
+  if [ ! -d "$base" ]; then
+    echo "  [skip] $scope: $base does not exist — nothing to uninstall"
+    return 0
+  fi
+
+  local ts backup
+  ts="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo backup)"
+  backup="$base/.cmm-setup-uninstall-$ts"
+
+  echo ""
+  echo "Uninstalling CMM stack ($scope) from: $base"
+  if [ "$DRY_RUN" != true ]; then
+    echo "  Removed files are moved to: $backup (delete it once you're satisfied)"
+  fi
+
+  # Confirmation (skipped by --yes / non-interactive / dry-run).
+  if [ "$DRY_RUN" != true ] && [ "$YES_FLAG" != true ] && [ -t 0 ]; then
+    printf "  Proceed with uninstall of %s scope? [y/N] " "$scope"
+    local _ans; read -r _ans || _ans=n
+    case "${_ans:-n}" in
+      y|Y|yes|YES) : ;;
+      *) echo "  [info] Uninstall aborted ($scope)"; return 0 ;;
+    esac
+  fi
+
+  # _rm_move <relative-path> — move a file/dir under $base into the backup tree,
+  # preserving its relative path. No-op when the target is absent.
+  _rm_move() {
+    local rel="$1" src="$base/$1"
+    [ -e "$src" ] || return 0
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would remove $base/$rel"
+      return 0
+    fi
+    mkdir -p "$backup/$(dirname "$rel")" 2>/dev/null
+    mv "$src" "$backup/$rel" 2>/dev/null && echo "  [ok] removed $rel" \
+      || echo "  [warn] could not remove $rel"
+  }
+
+  # 1. Hooks (and hooks/lib) this stack owns.
+  local h
+  while IFS= read -r h; do
+    [ -n "$h" ] || continue
+    _rm_move "hooks/$h"
+    _rm_move "hooks/lib/$h"
+  done < <(stack_owned_hook_basenames)
+  # Prune now-empty hooks/lib and hooks dirs.
+  [ "$DRY_RUN" = true ] || { rmdir "$base/hooks/lib" 2>/dev/null || true; rmdir "$base/hooks" 2>/dev/null || true; }
+
+  # 2. Rule files this stack ships.
+  local r
+  for r in "$SCRIPT_DIR"/rules/*; do
+    [ -e "$r" ] && _rm_move "rules/$(basename "$r")"
+  done
+  [ "$DRY_RUN" = true ] || rmdir "$base/rules" 2>/dev/null || true
+
+  # 3. Skills this stack ships (own subdirs only).
+  local s name
+  for s in "$SCRIPT_DIR"/skills/*/; do
+    [ -d "$s" ] || continue
+    name="$(basename "$s")"
+    _rm_move "skills/$name"
+  done
+  [ "$DRY_RUN" = true ] || rmdir "$base/skills" 2>/dev/null || true
+
+  # 4. VBW agent deltas + generated overrides.
+  local a
+  for a in "$base"/agents-delta/vbw-*.md; do
+    [ -e "$a" ] && _rm_move "agents-delta/$(basename "$a")"
+  done
+  for a in "$base"/agents/vbw-*.md; do
+    [ -e "$a" ] && _rm_move "agents/$(basename "$a")"
+  done
+  [ "$DRY_RUN" = true ] || { rmdir "$base/agents-delta" 2>/dev/null || true; rmdir "$base/agents" 2>/dev/null || true; }
+
+  # 5. Optional metrics tool + neutral state dir.
+  _rm_move "tools/analyze-gate-blocks.py"
+  [ "$DRY_RUN" = true ] || rmdir "$base/tools" 2>/dev/null || true
+  _rm_move ".cmm-setup"
+  # Per-project spawn-gate pass-through list seeded by the installer.
+  _rm_move "cmm-agent-passthrough.txt"
+
+  # 6. settings.json / settings.local.json: strip our hook registrations,
+  #    permission allowlist entries, and the statusLine block.
+  local owned_hooks_csv
+  owned_hooks_csv="$(stack_owned_hook_basenames | paste -sd, - 2>/dev/null)"
+  local sf
+  for sf in "$base/settings.json" "$base/settings.local.json"; do
+    [ -f "$sf" ] || continue
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] Would strip stack hooks / allowlist / statusLine from $sf"
+      continue
+    fi
+    cp "$sf" "$backup/$(basename "$sf")" 2>/dev/null || { mkdir -p "$backup"; cp "$sf" "$backup/$(basename "$sf")" 2>/dev/null; }
+    OWNED_HOOKS_CSV="$owned_hooks_csv" python3 - "$sf" <<'PYEOF'
+import json, os, re, sys
+path = sys.argv[1]
+owned = set(filter(None, os.environ.get("OWNED_HOOKS_CSV", "").split(",")))
+# Anchored on a path/word boundary, NOT a bare substring: several of our own
+# basenames are substrings of each other (cmm-nudge.sh is a suffix of
+# ctx-execute-cmm-nudge.sh), so an unanchored match would also delete a hook
+# entry — the user's or ours — that merely ends with an owned name.
+_OWNED_RE = [re.compile(r'(?:^|[\s/=\'"])' + re.escape(h) + r'(?:$|[\s\'"])') for h in owned if h]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+if not isinstance(data, dict):
+    sys.exit(0)
+
+def cmd_is_ours(cmd):
+    return isinstance(cmd, str) and any(r.search(cmd) for r in _OWNED_RE)
+
+# Strip hook entries whose command references one of our hook scripts.
+hooks = data.get("hooks")
+removed_hooks = 0
+if isinstance(hooks, dict):
+    for event, groups in list(hooks.items()):
+        if not isinstance(groups, list):
+            continue
+        new_groups = []
+        for g in groups:
+            inner = g.get("hooks") if isinstance(g, dict) else None
+            if isinstance(inner, list):
+                kept = [hk for hk in inner if not cmd_is_ours(hk.get("command") if isinstance(hk, dict) else None)]
+                removed_hooks += len(inner) - len(kept)
+                if kept:
+                    g["hooks"] = kept
+                    new_groups.append(g)
+            else:
+                new_groups.append(g)
+        if new_groups:
+            hooks[event] = new_groups
+        else:
+            del hooks[event]
+    if not hooks:
+        data.pop("hooks", None)
+
+# Strip our permission allowlist entries.
+removed_perms = 0
+perms = data.get("permissions")
+if isinstance(perms, dict) and isinstance(perms.get("allow"), list):
+    prefixes = ("mcp__codebase-memory-mcp__", "mcp__context-mode__", "mcp__plugin_context-mode_context-mode__")
+    before = perms["allow"]
+    perms["allow"] = [t for t in before if not (isinstance(t, str) and t.startswith(prefixes))]
+    removed_perms = len(before) - len(perms["allow"])
+    if not perms["allow"]:
+        perms.pop("allow", None)
+    if not perms:
+        data.pop("permissions", None)
+
+# Strip our statusLine block (statusline-cmm.sh).
+removed_sl = False
+sl = data.get("statusLine")
+if isinstance(sl, dict) and isinstance(sl.get("command"), str) and "statusline-cmm.sh" in sl["command"]:
+    data.pop("statusLine", None)
+    removed_sl = True
+
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+os.replace(tmp, path)
+print(f"  [ok] {os.path.basename(path)}: removed {removed_hooks} hook entr(ies), {removed_perms} allowlist entr(ies)" + (", statusLine" if removed_sl else ""))
+PYEOF
+  done
+
+  # 7. .mcp.json MCP-server entries — only with --purge-mcp.
+  #    The target is derived from the SCOPE being uninstalled, never from CWD:
+  #    .mcp.json is a project-scoped file, so global uninstall must not touch
+  #    whichever project the operator happens to be standing in.
+  if [ "$PURGE_MCP" = true ] && [ "$scope" != "project" ]; then
+    echo "  [info] .mcp.json is project-scoped — not touched by --purge-mcp on $scope uninstall"
+  elif [ "$PURGE_MCP" = true ]; then
+    local mcpf="$base/../.mcp.json"
+    if [ -f "$mcpf" ]; then
+      if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY RUN] Would remove codebase-memory-mcp / context-mode from $mcpf (--purge-mcp)"
+      else
+        cp "$mcpf" "$backup/mcp.json" 2>/dev/null || true
+        python3 - "$mcpf" <<'PYEOF'
+import json, os, sys
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+servers = data.get("mcpServers") if isinstance(data, dict) else None
+removed = []
+if isinstance(servers, dict):
+    for name in ("codebase-memory-mcp", "context-mode"):
+        if name in servers:
+            del servers[name]
+            removed.append(name)
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+os.replace(tmp, path)
+print(f"  [ok] .mcp.json: removed {', '.join(removed) if removed else 'nothing'}")
+PYEOF
+      fi
+    fi
+  elif [ "$PURGE_MCP" != true ]; then
+    echo "  [info] .mcp.json MCP-server entries left intact (pass --purge-mcp to remove codebase-memory-mcp / context-mode)"
+  fi
+
+  echo "  [ok] Uninstall ($scope) complete."
+  [ "$DRY_RUN" = true ] || echo "  Backup: $backup"
+}
 
 # Detect Claude Code config directory at runtime.
 # Priority: $CLAUDE_CONFIG_DIR (set by Claude Code) > ~/.config/claude-code (XDG) > ~/.claude (legacy)
@@ -182,20 +568,37 @@ def _last_token_basename(cmd):
     parts = cmd.split()
     if not parts:
         return ""
-    return os.path.basename(parts[-1])
+    # Strip surrounding quotes BEFORE basename. Registrations we write are
+    # quoted (bash "$CLAUDE_PROJECT_DIR/.claude/hooks/x.sh"), so the raw last
+    # token basenames to `x.sh"` — which never matches the stale list, and the
+    # deprecated entry silently survives the purge.
+    # chr(34)/chr(39): this whole program is inside a single-quoted shell
+    # string, so a literal quote here would terminate it.
+    return os.path.basename(parts[-1].strip(chr(34) + chr(39)))
 
 changed = False
 for hook_type in list(data.get("hooks", {})):
-    before = len(data["hooks"][hook_type])
-    data["hooks"][hook_type] = [
-        entry for entry in data["hooks"][hook_type]
-        if not any(
-            _last_token_basename(h.get("command", "")) in stale
-            for h in entry.get("hooks", [])
-        )
-    ]
-    if len(data["hooks"][hook_type]) < before:
-        changed = True
+    groups = data["hooks"][hook_type]
+    if not isinstance(groups, list):
+        continue
+    # Prune the individual stale HOOK, not the whole matcher group: a group can
+    # hold our retired hook alongside the user own, and dropping the group takes
+    # theirs with it. (Latent until the basename match above started working —
+    # nothing matched before, so nothing was ever over-removed.)
+    kept_groups = []
+    for entry in groups:
+        inner = entry.get("hooks") if isinstance(entry, dict) else None
+        if not isinstance(inner, list):
+            kept_groups.append(entry)
+            continue
+        kept = [h for h in inner
+                if _last_token_basename(h.get("command", "")) not in stale]
+        if len(kept) != len(inner):
+            changed = True
+        if kept:
+            entry["hooks"] = kept
+            kept_groups.append(entry)
+    data["hooks"][hook_type] = kept_groups
     if not data["hooks"][hook_type]:
         del data["hooks"][hook_type]
 if changed:
@@ -581,28 +984,23 @@ detect_cmm_tools_allowed() {
     return 0
   fi
 
-  local settings_file=".claude/settings.json"
+  # Consider the MERGED allow set. Claude Code unions permissions.allow across
+  # scopes, so a CMM allowlist written once to the global (user) settings applies
+  # to every project. We therefore count distinct required CMM tools across BOTH
+  # the project settings and the global settings — a global allowlist satisfies
+  # the check and suppresses the per-project "not allowlisted" warning.
+  local project_file=".claude/settings.json"
+  local global_file; global_file="$(detect_config_dir)/settings.json"
 
-  if [ ! -f "$settings_file" ]; then
+  if [ ! -f "$project_file" ] && [ ! -f "$global_file" ]; then
     CMM_TOOLS_STATUS="missing"
+    CMM_TOOLS_COUNT=0
     return 0
   fi
 
-  # Count mcp__codebase-memory-mcp__ entries in permissions.allow
-  CMM_TOOLS_COUNT=$(python3 - "$settings_file" <<'PYEOF'
-import json, sys
-try:
-    with open(sys.argv[1]) as f:
-        data = json.load(f)
-    allow = data.get("permissions", {}).get("allow", [])
-    count = sum(1 for t in allow if "mcp__codebase-memory-mcp__" in str(t))
-    print(count)
-except Exception:
-    print(0)
-PYEOF
-)
+  CMM_TOOLS_COUNT="$(_allowlist_union_count cmm "$project_file" "$global_file")"
 
-  if [ "$CMM_TOOLS_COUNT" -ge 13 ]; then
+  if [ "$CMM_TOOLS_COUNT" -ge "$CMM_ALLOW_COUNT" ]; then
     CMM_TOOLS_STATUS="ok"
     return 0
   fi
@@ -764,7 +1162,7 @@ sys.exit(1)
 
   # If a prior session wrote the migration sentinel and plugin form is now
   # present, clear the sentinel — the migration follow-up is complete (G1).
-  local _migration_sentinel=".vbw-planning/.context-mode-migration-pending"
+  local _migration_sentinel; _migration_sentinel="$(cmm_state_file ".context-mode-migration-pending")"
   if [ "$_plugin_form_present" = true ] && [ -f "$_migration_sentinel" ]; then
     if [ "$DRY_RUN" != true ]; then
       rm -f "$_migration_sentinel" 2>/dev/null || true
@@ -824,21 +1222,22 @@ sys.exit(1)
 # the canonical /plugin install context-mode@context-mode form. Silent `n`
 # fallback under --no-migrate or non-TTY stdin.
 #
-# Sentinel files (mirror existing project-state sentinel patterns):
-#   .vbw-planning/.context-mode-migration-pending  — created on Y, cleared once
-#                                                    plugin form is detected.
-#   .vbw-planning/.context-mode-form-preference     — written on `keep` (single
-#                                                    line: `mcp-server`).
+# Sentinel files (stored under CMM_STATE_DIR — .claude/.cmm-setup/ — with
+# back-compat reads of legacy .vbw-planning/ copies via cmm_state_file):
+#   .context-mode-migration-pending  — created on Y, cleared once plugin form is
+#                                       detected.
+#   .context-mode-form-preference     — written on `keep` (single line:
+#                                       `mcp-server`).
 maybe_offer_context_mode_migration() {
   # If user already expressed `keep` preference, do not nag again.
-  local _pref_file=".vbw-planning/.context-mode-form-preference"
+  local _pref_file; _pref_file="$(cmm_state_file ".context-mode-form-preference")"
   if [ -f "$_pref_file" ] && grep -qx "mcp-server" "$_pref_file" 2>/dev/null; then
     return 0
   fi
 
   # If sentinel already exists, user previously answered Y but hasn't yet run
   # /plugin install. Print a one-line reminder rather than re-prompting.
-  local _sentinel=".vbw-planning/.context-mode-migration-pending"
+  local _sentinel; _sentinel="$(cmm_state_file ".context-mode-migration-pending")"
   if [ -f "$_sentinel" ]; then
     echo "  [info] migration pending — run /plugin install context-mode@context-mode in your next Claude Code session"
     return 0
@@ -1088,9 +1487,9 @@ print_preflight_summary() {
 
   # CMM tools line
   case "$CMM_TOOLS_STATUS" in
-    ok)      tools_line="[ok]   All 13 CMM tools allowlisted in .claude/settings.json" ;;
-    warn)    tools_line="[warn] ${CMM_TOOLS_COUNT}/13 CMM tools in .claude/settings.json" ;;
-    missing) tools_line="[warn] .claude/settings.json not found — CMM tools not allowlisted" ;;
+    ok)      tools_line="[ok]   All ${CMM_ALLOW_COUNT} CMM tools allowlisted (project or global settings)" ;;
+    warn)    tools_line="[warn] ${CMM_TOOLS_COUNT}/${CMM_ALLOW_COUNT} CMM tools allowlisted (project + global merged)" ;;
+    missing) tools_line="[warn] no settings.json found (project or global) — CMM tools not allowlisted" ;;
     skip)    tools_line="[skip] CMM tools check (--skip-mcp-check)" ;;
     *)       tools_line="[skip] CMM tools check (not run)" ;;
   esac
@@ -1558,9 +1957,19 @@ install_global() {
   # shellcheck disable=SC2046
   scan_drift_summary "${config_dir}/rules" $( ls "$SCRIPT_DIR/rules/"*.md 2>/dev/null )
 
-  # Install shared libraries first (sourced by hooks at runtime)
+  # Install shared libraries first (sourced by hooks at runtime).
+  # vbw-source.sh is VBW-only (sourced solely by the VBW agent-override
+  # generator hook) — skip it when VBW is not available, so the zero-VBW
+  # footprint guarantee holds for --global as it does for --project.
+  # NOTE: do not name that hook's filename here; tests/test-phase-66-install-scope.sh
+  # greps this function's body for it to prove --global never registers it.
+  local _vbw_present=false
+  if vbw_is_available; then _vbw_present=true; fi
   shopt -s nullglob
   for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
+    if [ "$(basename "$file")" = "vbw-source.sh" ] && [ "$_vbw_present" != true ]; then
+      continue
+    fi
     copy_file "$file" "${config_dir}/hooks/lib/$(basename "$file")"
   done
 
@@ -1623,6 +2032,16 @@ install_project() {
     mkdir -p .claude/rules
   fi
 
+  # Determine VBW availability up front (only an installed plugin counts —
+  # marketplace or --plugin-dir symlink; a bare dev-checkout needs --with-vbw).
+  # When VBW is NOT available we install a zero-VBW footprint: the two VBW-only
+  # files — hooks/lib/vbw-source.sh (detection lib) and
+  # hooks/project/agent-override-generate.sh (SessionStart generator) — are not
+  # copied, and the generator's SessionStart registration is stripped after the
+  # settings merge below. Re-run setup.sh after installing VBW to enable it.
+  local _vbw_present=false
+  if vbw_is_available; then _vbw_present=true; fi
+
   # Pre-scan: report drift summary before per-file prompts
   # shellcheck disable=SC2046
   scan_drift_summary ".claude/hooks/lib" $( ls "$SCRIPT_DIR/hooks/lib/"*.sh 2>/dev/null )
@@ -1631,9 +2050,14 @@ install_project() {
   # shellcheck disable=SC2046
   scan_drift_summary ".claude/rules" $( ls "$SCRIPT_DIR/rules/"* 2>/dev/null )
 
-  # Install shared libraries first (sourced by hooks at runtime)
+  # Install shared libraries first (sourced by hooks at runtime).
+  # vbw-source.sh is VBW-only (sourced solely by agent-override-generate.sh) — skip
+  # it when VBW is not available for a zero-VBW footprint.
   shopt -s nullglob
   for file in "$SCRIPT_DIR/hooks/lib/"*.sh; do
+    if [ "$(basename "$file")" = "vbw-source.sh" ] && [ "$_vbw_present" != true ]; then
+      continue
+    fi
     copy_file "$file" ".claude/hooks/lib/$(basename "$file")"
   done
   shopt -u nullglob
@@ -1654,7 +2078,7 @@ install_project() {
   #   reindex-after-commit.sh — PostToolUse:Bash hook that marks CMM sentinel stale after git commits
   #   subagent-cmm-startup.sh — SubagentStart advisory hook (injects CMM state into all subagents via additionalContext)
   #   grep-cmm-gate.sh — PreToolUse:Grep hard-block for source-code search in indexed repos (phase 46)
-  #   ctx-execute-cmm-nudge.sh — PreToolUse:mcp__context-mode__ctx_execute hard-block for grep-laundered code search (phase 46)
+  #   ctx-execute-cmm-nudge.sh — PreToolUse:mcp__plugin_context-mode_context-mode__ctx_execute|mcp__context-mode__ctx_execute hard-block for grep-laundered code search (phase 46)
   #   ctx-execute-enforcer.sh — PreToolUse:Bash hard-block routing large-output Bash through ctx_execute.
   #     Source: hooks/project/ctx-execute-enforcer.sh. Wired into VBW agent frontmatter
   #     (vbw-debugger / vbw-lead / vbw-dev / vbw-qa / vbw-docs) as
@@ -1673,10 +2097,43 @@ install_project() {
   # Users installing this hook layer into their own project should create their own
   # .claude/agents/ overrides if they want agent-level hook behavior.
   for file in "$SCRIPT_DIR/hooks/project/"*.sh; do
+    # agent-override-generate.sh is VBW-only — skip it (and its SessionStart
+    # registration, stripped after the settings merge) when VBW is unavailable.
+    if [ "$(basename "$file")" = "agent-override-generate.sh" ] && [ "$_vbw_present" != true ]; then
+      continue
+    fi
     copy_file "$file" ".claude/hooks/$(basename "$file")"
     set_executable ".claude/hooks/$(basename "$file")"
   done
   shopt -u nullglob
+
+  # Seed the per-project CMM spawn-gate pass-through allow-list (create-once —
+  # never overwrite user edits). Lists agent TYPES that agent-cmm-gate.sh lets
+  # spawn WITHOUT forcing CMM/ctx keywords into their prompts. Inert by default.
+  if [ "$DRY_RUN" = true ]; then
+    [ -f ".claude/cmm-agent-passthrough.txt" ] || echo "  [DRY RUN] Would seed .claude/cmm-agent-passthrough.txt (template)"
+  elif [ ! -f ".claude/cmm-agent-passthrough.txt" ]; then
+    cat > ".claude/cmm-agent-passthrough.txt" <<'PASSTHROUGH'
+# cmm-agent-passthrough.txt — per-project CMM spawn-gate pass-through list
+#
+# agent-cmm-gate.sh (PreToolUse:Agent) blocks an Agent-tool spawn whose prompt
+# does not reference CMM/ctx tools. List agent TYPES here to exempt them from that
+# keyword check — useful for purpose-built agents that should stay tool-agnostic.
+# Exemption drops ONLY the prompt-nag: the inside-child PreToolUse hooks still
+# redirect an exempted agent's Read/Grep/Bash toward CMM/ctx where CMM is
+# installed, so behavioural enforcement is preserved.
+#
+# Format: one agent-type per line. '#' starts a comment; blank lines ignored;
+# shell glob patterns allowed. Examples:
+#   mr-qa-reviewer
+#   mr-qa-manager
+#   my-review-*
+#   vbw:*            # (if this project still uses VBW agents)
+#
+# No entries are active by default.
+PASSTHROUGH
+    echo "  [ok] Seeded .claude/cmm-agent-passthrough.txt (edit to exempt project agents)"
+  fi
 
   # Copy cmm-nudge.sh from hooks/global/ to .claude/hooks/ — needed by agent frontmatter
   # hooks (in .claude/agents/) that reference cmm-nudge.sh via project-relative paths
@@ -1762,48 +2219,85 @@ install_project() {
   # Installed path (.claude/agents-delta/) is the primary resolution location for
   # agent-override-generate.sh — it works without the cmm-claude-code-setup repo
   # checked out (curl|bash-ready install). The repo agents/ dir is a dev fallback.
-  if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would create .claude/agents-delta/"
-    shopt -s nullglob
-    for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
-      echo "  [DRY RUN] Would copy $(basename "$file") -> .claude/agents-delta/"
-    done
-    shopt -u nullglob
-  else
-    mkdir -p ".claude/agents-delta"
-    # Pre-scan: report drift before per-file prompts
-    # shellcheck disable=SC2046
-    scan_drift_summary ".claude/agents-delta" $( ls "$SCRIPT_DIR/agents/vbw-"*.md 2>/dev/null )
-    shopt -s nullglob
-    for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
-      copy_file "$file" ".claude/agents-delta/$(basename "$file")"
-    done
-    shopt -u nullglob
-  fi
+  # VBW is an OPTIONAL add-on and the delta injection is GATED on it. We detect
+  # VBW availability once, up front (only an installed plugin counts — marketplace
+  # or --plugin-dir local symlink; a bare dev-checkout does not unless --with-vbw).
+  #   - VBW available   → install the vbw-*.md delta files + generate overrides.
+  #   - VBW unavailable → do NOT inject deltas; move any VBW artifacts from a prior
+  #                       install aside so Claude Code stops loading them. Re-run
+  #                       setup.sh after installing VBW to enable it.
+  # _vbw_present + VBW_DETECTED_TYPE were resolved at the top of install_project.
 
-  # Best-effort synchronous generation: run the generator now so the first
-  # session has up-to-date override files immediately (no session-restart needed
-  # after a fresh install). Fail-open: if VBW is absent or generation fails,
-  # setup.sh succeeds anyway — SessionStart will regenerate when VBW is found.
-  mkdir -p ".claude/agents"
-  local _gen_script
-  _gen_script="$(pwd -P)/.claude/hooks/agent-override-generate.sh"
-  if [ -f "$_gen_script" ]; then
+  # .claude/agents/ is the standard user-agents location; create it regardless of
+  # VBW so the project layout is consistent (VBW overrides land here only when
+  # VBW is available; the dir stays empty otherwise).
+  [ "$DRY_RUN" = true ] || mkdir -p ".claude/agents"
+
+  if [ "$_vbw_present" = true ]; then
     if [ "$DRY_RUN" = true ]; then
-      echo "  [DRY RUN] Would run agent-override-generate.sh for initial override generation"
+      echo "  [DRY RUN] Would create .claude/agents-delta/ (VBW installed: ${VBW_DETECTED_TYPE})"
+      shopt -s nullglob
+      for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
+        echo "  [DRY RUN] Would copy $(basename "$file") -> .claude/agents-delta/"
+      done
+      shopt -u nullglob
+      echo "  [DRY RUN] Would run agent-override-generate.sh for initial override generation (VBW ${VBW_DETECTED_TYPE})"
     else
-      echo "  [ok] Running agent-override-generate.sh for initial VBW override generation..."
-      # Discard the script's stdout (the hook-only systemMessage JSON, meant for
-      # SessionStart hook consumption — not for a direct shell run); keep only the
-      # human-readable stderr advisories in the install transcript.
-      if bash "$_gen_script" 2>&1 1>/dev/null | sed 's/^/    /'; then
-        echo "  [ok] VBW agent overrides generated (or already current)"
+      mkdir -p ".claude/agents-delta" ".claude/agents"
+      # Pre-scan: report drift before per-file prompts
+      # shellcheck disable=SC2046
+      scan_drift_summary ".claude/agents-delta" $( ls "$SCRIPT_DIR/agents/vbw-"*.md 2>/dev/null )
+      shopt -s nullglob
+      for file in "$SCRIPT_DIR/agents/vbw-"*.md; do
+        copy_file "$file" ".claude/agents-delta/$(basename "$file")"
+      done
+      shopt -u nullglob
+      # Best-effort synchronous generation: run the generator now so the first
+      # session has up-to-date override files immediately. Fail-open.
+      local _gen_script
+      _gen_script="$(pwd -P)/.claude/hooks/agent-override-generate.sh"
+      if [ -f "$_gen_script" ]; then
+        echo "  [ok] VBW installed (${VBW_DETECTED_TYPE}) — running agent-override-generate.sh..."
+        # Discard the script's stdout (hook-only systemMessage JSON); keep stderr.
+        if bash "$_gen_script" 2>&1 1>/dev/null | sed 's/^/    /'; then
+          echo "  [ok] VBW agent overrides generated (or already current)"
+        else
+          echo "  [warn] agent-override-generate.sh exited non-zero — overrides will be generated at next session start"
+        fi
       else
-        echo "  [warn] agent-override-generate.sh exited non-zero — overrides will be generated at next session start"
+        echo "  [warn] agent-override-generate.sh not found at expected path — overrides will be generated at first session start"
       fi
     fi
   else
-    echo "  [warn] agent-override-generate.sh not found at expected path — overrides will be generated at first session start"
+    # VBW not installed — do not inject deltas; move any prior VBW artifacts aside.
+    local _hint=""
+    if [ "$VBW_DETECTED_TYPE" = "dev-checkout" ]; then
+      _hint=" (a VBW source checkout was found but is not treated as installed — pass --with-vbw to use it)"
+    fi
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] VBW not installed (${VBW_DETECTED_TYPE})${_hint} — would skip agents-delta injection and override generation"
+      shopt -s nullglob
+      for _stale in .claude/agents/vbw-*.md .claude/agents-delta/vbw-*.md; do
+        echo "  [DRY RUN] Would move stale VBW file aside: $_stale -> .claude/.cmm-setup/vbw-agents.bak/"
+      done
+      shopt -u nullglob
+    else
+      echo "  [info] VBW not installed (${VBW_DETECTED_TYPE})${_hint} — skipping VBW agent deltas + override generation. Install VBW and re-run setup.sh to enable."
+      # Reversible: files are MOVED to a backup dir, not deleted.
+      shopt -s nullglob
+      local _stale _moved=0 _sub
+      for _stale in .claude/agents/vbw-*.md .claude/agents-delta/vbw-*.md; do
+        _sub="$(dirname "$_stale" | sed 's#^\.claude/##')"   # agents | agents-delta
+        mkdir -p ".claude/.cmm-setup/vbw-agents.bak/$_sub"
+        if mv "$_stale" ".claude/.cmm-setup/vbw-agents.bak/$_sub/$(basename "$_stale")" 2>/dev/null; then
+          _moved=$((_moved + 1))
+        fi
+      done
+      shopt -u nullglob
+      if [ "$_moved" -gt 0 ]; then
+        echo "  [ok] Moved $_moved stale VBW file(s) to .claude/.cmm-setup/vbw-agents.bak/ (VBW not installed)"
+      fi
+    fi
   fi
 
   # Purge deprecated hook files and their settings.json entries (unconditional).
@@ -1983,6 +2477,63 @@ MCPEOF
   fi
 
   merge_settings_json ".claude/settings.json" "project"
+
+  # Zero-VBW footprint: when VBW is not installed, strip the agent-override-generate.sh
+  # SessionStart registration that merge_settings_json just merged from the example,
+  # and move aside any VBW-only files left by a prior VBW-enabled install (reversible).
+  if [ "$_vbw_present" != true ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY RUN] VBW not installed — would strip agent-override-generate.sh SessionStart registration and skip VBW-only files"
+    else
+      python3 - ".claude/settings.json" <<'PYEOF'
+import json, os, sys
+p = sys.argv[1]
+try:
+    with open(p) as f:
+        d = json.load(f)
+except Exception:
+    sys.exit(0)
+hooks = d.get("hooks")
+changed = False
+if isinstance(hooks, dict):
+    for ev, groups in list(hooks.items()):
+        if not isinstance(groups, list):
+            continue
+        ng = []
+        for g in groups:
+            inner = g.get("hooks") if isinstance(g, dict) else None
+            if isinstance(inner, list):
+                kept = [hk for hk in inner if not (isinstance(hk, dict) and "agent-override-generate.sh" in str(hk.get("command", "")))]
+                if len(kept) != len(inner):
+                    changed = True
+                if kept:
+                    g["hooks"] = kept
+                    ng.append(g)
+            else:
+                ng.append(g)
+        if ng:
+            hooks[ev] = ng
+        else:
+            del hooks[ev]; changed = True
+    if not hooks:
+        d.pop("hooks", None)
+if changed:
+    tmp = p + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=2); f.write("\n")
+    os.replace(tmp, p)
+    print("  [ok] Removed agent-override-generate.sh SessionStart registration (VBW not installed)")
+PYEOF
+      # Move aside VBW-only files from a prior install (reversible backup).
+      for _vf in ".claude/hooks/agent-override-generate.sh" ".claude/hooks/lib/vbw-source.sh"; do
+        if [ -e "$_vf" ]; then
+          mkdir -p ".claude/.cmm-setup/vbw-agents.bak/$(dirname "${_vf#.claude/}")"
+          mv "$_vf" ".claude/.cmm-setup/vbw-agents.bak/${_vf#.claude/}" 2>/dev/null && \
+            echo "  [ok] Moved ${_vf} aside (VBW not installed)"
+        fi
+      done
+    fi
+  fi
 
   # Register upstream context-mode hooks via the CLI dispatcher form.
   # Guarded by INSTALL_CONTEXT_MODE=true (flipped false by --skip-context-mode).
@@ -2530,155 +3081,131 @@ print_next_steps() {
 # Only runs for project installs. Follows the same prompt pattern as
 # install_statusline: detect current state, prompt, merge on yes.
 
-install_allowlist() {
-  if [ "$INSTALL_PROJECT" != true ]; then
-    return 0
+# _write_allowlist <settings_file> <include_ctx>
+# Merge the canonical CMM (+ optional context-mode) tool lists into
+# permissions.allow of <settings_file> (created if absent). Idempotent — only
+# missing entries are appended. Tool lists come from the CMM_ALLOW_TOOLS /
+# CTX_ALLOW_TOOLS single source of truth via env.
+_write_allowlist() {
+  local settings_file="$1" include_ctx="$2"
+  local tools cmm_list
+  cmm_list="$(printf '%s\n' "${CMM_ALLOW_TOOLS[@]}")"
+  tools="$cmm_list"
+  if [ "$include_ctx" = "true" ]; then
+    tools="$tools"$'\n'"$(printf '%s\n' "${CTX_ALLOW_TOOLS[@]}")"
   fi
-
-  echo "[ALLOWLIST]"
-
-  if [ "$DRY_RUN" = true ]; then
-    echo "  [DRY RUN] Would offer to write CMM tool allowlist to .claude/settings.json"
-    [ "$INSTALL_CONTEXT_MODE" = true ] && \
-      echo "  [DRY RUN] Would include context-mode tools (INSTALL_CONTEXT_MODE=true)"
-    echo ""
-    return 0
-  fi
-
-  local settings_file=".claude/settings.json"
-
-  # Determine if CMM tools already fully present
-  if [ "$CMM_TOOLS_STATUS" = "ok" ] && [ "$FORCE" != true ]; then
-    echo "  [ok] CMM tool allowlist already configured in $settings_file"
-    if [ "$INSTALL_CONTEXT_MODE" = true ]; then
-      # Check if context-mode tools are also present
-      local ctx_count
-      ctx_count=$(python3 - "$settings_file" <<'PYEOF'
-import json, sys
-try:
-    with open(sys.argv[1]) as f:
-        data = json.load(f)
-    allow = data.get("permissions", {}).get("allow", [])
-    count = sum(1 for t in allow if "mcp__context-mode__" in str(t) or "mcp__plugin_context-mode_context-mode__" in str(t))
-    print(count)
-except Exception:
-    print(0)
-PYEOF
-)
-      if [ "$ctx_count" -ge 14 ]; then
-        echo "  [ok] context-mode tool allowlist already configured"
-        echo ""
-        return 0
-      else
-        echo "  [warn] context-mode tools not yet allowlisted (${ctx_count}/14)"
-      fi
-    else
-      echo ""
-      return 0
-    fi
-  fi
-
-  # Build prompt describing what will be written
-  local prompt_msg="  Write CMM tool allowlist to ${settings_file}? [y/N] "
-  if [ "$INSTALL_CONTEXT_MODE" = true ]; then
-    prompt_msg="  Write CMM + context-mode tool allowlist to ${settings_file}? [y/N] "
-  fi
-  if [ "$CMM_TOOLS_STATUS" = "warn" ]; then
-    echo "  [warn] Only ${CMM_TOOLS_COUNT}/13 CMM tools currently allowlisted"
-  elif [ "$CMM_TOOLS_STATUS" = "missing" ]; then
-    echo "  [warn] ${settings_file} not found — CMM tools not allowlisted"
-  elif [ "$FORCE" = true ] && [ "$CMM_TOOLS_STATUS" = "ok" ]; then
-    echo "  [info] Overwriting existing CMM allowlist (--force)"
-  fi
-
-  printf "%s" "$prompt_msg"
-  local answer
-  read -r answer
-  if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-    echo "  [skip] Allowlist not written"
-    echo ""
-    return 0
-  fi
-
-  # Merge CMM tools (and optionally context-mode tools) into permissions.allow
-  local include_ctx="false"
-  [ "$INSTALL_CONTEXT_MODE" = true ] && include_ctx="true"
-
-  python3 - "$settings_file" "$include_ctx" <<'PYEOF'
+  ALLOW_TOOLS="$tools" CMM_LIST="$cmm_list" python3 - "$settings_file" <<'PYEOF'
 import json, os, sys
-
 settings_path = sys.argv[1]
-include_ctx = sys.argv[2] == "true"
-
-CMM_TOOLS = [
-    "mcp__codebase-memory-mcp__index_repository",
-    "mcp__codebase-memory-mcp__index_status",
-    "mcp__codebase-memory-mcp__list_projects",
-    "mcp__codebase-memory-mcp__get_architecture",
-    "mcp__codebase-memory-mcp__get_graph_schema",
-    "mcp__codebase-memory-mcp__search_graph",
-    "mcp__codebase-memory-mcp__search_code",
-    "mcp__codebase-memory-mcp__query_graph",
-    "mcp__codebase-memory-mcp__get_code_snippet",
-    "mcp__codebase-memory-mcp__trace_path",
-    "mcp__codebase-memory-mcp__detect_changes",
-    "mcp__codebase-memory-mcp__manage_adr",
-    "mcp__codebase-memory-mcp__ingest_traces",
-]
-
-CTX_TOOLS = [
-    # plugin form (canonical — mcp__plugin_context-mode_context-mode__*), listed first per
-    # the same convention used in the hook-matcher block (~lines 1340-1376)
-    "mcp__plugin_context-mode_context-mode__ctx_execute",
-    "mcp__plugin_context-mode_context-mode__ctx_execute_file",
-    "mcp__plugin_context-mode_context-mode__ctx_search",
-    "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
-    "mcp__plugin_context-mode_context-mode__ctx_index",
-    "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index",
-    "mcp__plugin_context-mode_context-mode__ctx_stats",
-    # legacy MCP-server form (mcp__context-mode__*) — retained for installs without the plugin
-    "mcp__context-mode__ctx_execute",
-    "mcp__context-mode__ctx_search",
-    "mcp__context-mode__ctx_index",
-    "mcp__context-mode__ctx_fetch_and_index",
-    "mcp__context-mode__ctx_batch_execute",
-    "mcp__context-mode__ctx_execute_file",
-    "mcp__context-mode__ctx_stats",
-]
-
+to_add = [t for t in os.environ.get("ALLOW_TOOLS", "").splitlines() if t]
+cmm_set = set(t for t in os.environ.get("CMM_LIST", "").splitlines() if t)
 try:
     with open(settings_path) as f:
         data = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
     data = {}
-
+if not isinstance(data, dict):
+    data = {}
 allow = data.setdefault("permissions", {}).setdefault("allow", [])
 existing = set(allow)
-
-to_add = CMM_TOOLS[:]
-if include_ctx:
-    to_add += CTX_TOOLS
-
 added = [t for t in to_add if t not in existing]
 allow.extend(added)
-
 tmp = settings_path + ".tmp"
-os.makedirs(os.path.dirname(settings_path) if os.path.dirname(settings_path) else ".", exist_ok=True)
+d = os.path.dirname(settings_path)
+os.makedirs(d if d else ".", exist_ok=True)
 with open(tmp, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 os.replace(tmp, settings_path)
-
-print(f"  [ok] Added {len(added)} tool(s) to permissions.allow in {os.path.basename(settings_path)}")
-if include_ctx:
-    ctx_added = [t for t in CTX_TOOLS if t in added]
-    cmm_added = [t for t in CMM_TOOLS if t in added]
-    print(f"       CMM: {len(cmm_added)} added, context-mode: {len(ctx_added)} added")
+cmm_added = sum(1 for t in added if t in cmm_set)
+ctx_added = len(added) - cmm_added
+print(f"  [ok] Added {len(added)} tool(s) to permissions.allow in {settings_path} (CMM: {cmm_added}, context-mode: {ctx_added})")
 PYEOF
-
-  # Validate written JSON
   python3 -m json.tool "$settings_file" > /dev/null 2>&1 || \
     echo "  [warn] JSON validation failed for ${settings_file}"
+}
+
+# _allowlist_confirm <prompt> — return 0 to proceed. --yes accepts; a non-TTY
+# without --yes declines (safe for CI); otherwise prompt [y/N].
+_allowlist_confirm() {
+  [ "$YES_FLAG" = true ] && return 0
+  [ -t 0 ] || return 1
+  printf "%s" "$1"
+  local a; read -r a || a=n
+  [[ "$a" =~ ^[Yy]$ ]]
+}
+
+# _allowlist_is_complete <include_ctx> <settings_file...>
+# Return 0 when the union of the given settings files already contains every
+# required CMM (and, if include_ctx, context-mode) tool.
+_allowlist_is_complete() {
+  local include_ctx="$1"; shift
+  [ "$(_allowlist_union_count cmm "$@")" -ge "$CMM_ALLOW_COUNT" ] || return 1
+  if [ "$include_ctx" = "true" ]; then
+    [ "$(_allowlist_union_count ctx "$@")" -ge "$CTX_ALLOW_COUNT" ] || return 1
+  fi
+  return 0
+}
+
+# install_allowlist — write the tool allowlist to the requested scope(s).
+#
+# Claude Code UNIONS permissions.allow across scopes, so a global (user) allowlist
+# applies to every project. Therefore:
+#   --global  → write the allowlist to the global settings.json ONCE so all
+#               projects inherit it (this is the efficient path for a global CMM).
+#   --project → write to .claude/settings.json, but SKIP when the global allowlist
+#               already covers every required tool (no per-project duplication).
+install_allowlist() {
+  if [ "$INSTALL_GLOBAL" != true ] && [ "$INSTALL_PROJECT" != true ]; then
+    return 0
+  fi
+  echo "[ALLOWLIST]"
+
+  # Include the context-mode tool allowlist unless the user opted out with
+  # --skip-context-mode. We deliberately do NOT gate this on INSTALL_CONTEXT_MODE
+  # (which is project-.mcp.json-scoped and is false for a --global-only install):
+  # ctx allow entries are inert when context-mode is absent, and pre-approving
+  # them makes the allowlist complete and ready the moment context-mode is added.
+  local include_ctx="true"
+  [ "$SKIP_CONTEXT_MODE" = true ] && include_ctx="false"
+  local kinds="CMM"; [ "$include_ctx" = "true" ] && kinds="CMM + context-mode"
+
+  local global_file project_file
+  global_file="$(detect_config_dir)/settings.json"
+  project_file=".claude/settings.json"
+
+  if [ "$DRY_RUN" = true ]; then
+    [ "$INSTALL_GLOBAL" = true ] && \
+      echo "  [DRY RUN] Would offer to write ${kinds} tool allowlist to ${global_file} (global — inherited by all projects)"
+    [ "$INSTALL_PROJECT" = true ] && \
+      echo "  [DRY RUN] Would offer to write ${kinds} tool allowlist to ${project_file} (skipped when the global allowlist already covers it)"
+    echo ""
+    return 0
+  fi
+
+  # --- Global scope ---
+  if [ "$INSTALL_GLOBAL" = true ]; then
+    if _allowlist_is_complete "$include_ctx" "$global_file" && [ "$FORCE" != true ]; then
+      echo "  [ok] ${kinds} tool allowlist already complete in ${global_file}"
+    elif _allowlist_confirm "  Write ${kinds} tool allowlist to ${global_file} (global — applies to all projects)? [y/N] "; then
+      _write_allowlist "$global_file" "$include_ctx"
+    else
+      echo "  [skip] Global allowlist not written"
+    fi
+  fi
+
+  # --- Project scope ---
+  if [ "$INSTALL_PROJECT" = true ]; then
+    if _allowlist_is_complete "$include_ctx" "$global_file" && [ "$FORCE" != true ]; then
+      echo "  [ok] ${kinds} tools already allowlisted globally (${global_file}) — skipping project allowlist; global rules apply to every project"
+    elif _allowlist_is_complete "$include_ctx" "$project_file" "$global_file" && [ "$FORCE" != true ]; then
+      echo "  [ok] ${kinds} tool allowlist already configured in ${project_file}"
+    elif _allowlist_confirm "  Write ${kinds} tool allowlist to ${project_file}? [y/N] "; then
+      _write_allowlist "$project_file" "$include_ctx"
+    else
+      echo "  [skip] Project allowlist not written"
+    fi
+  fi
 
   echo ""
 }
@@ -2699,6 +3226,9 @@ parse_args() {
       --force-local-cmm) FORCE_LOCAL_CMM=true ;;
       --skip-context-mode) SKIP_CONTEXT_MODE=true ;;
       --no-migrate)      NO_MIGRATE=true ;;
+      --uninstall)       UNINSTALL=true ;;
+      --purge-mcp)       PURGE_MCP=true ;;
+      --with-vbw)        WITH_VBW=true ;;
       --skip-statusline) SKIP_STATUSLINE=true ;;
       --with-metrics)    WITH_METRICS=true ;;
       --reconfigure-statusline) RECONFIGURE_STATUSLINE=true ;;
@@ -2716,9 +3246,13 @@ Usage:
   ./setup.sh [--global] [--project] [--all] [--force] [--dry-run] [--skip-mcp-check] [--force-local-cmm] [--skip-context-mode] [--no-migrate] [--skip-statusline] [--with-metrics] [--verify]
 
 Flags:
-  --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json
+  --global          Install global hooks and rules to ~/.claude/ and merge into ~/.claude/settings.json.
+                    Also offers to write the CMM (+ context-mode) tool allowlist to the GLOBAL
+                    settings.json — Claude Code unions permissions.allow across scopes, so a global
+                    allowlist applies to every project and you never need to allowlist per-project.
   --project         Install project hooks to .claude/hooks/, rules to .claude/rules/,
-                    create .mcp.json, and merge into .claude/settings.json
+                    create .mcp.json, and merge into .claude/settings.json. The project allowlist
+                    is skipped when the global allowlist already covers every required tool.
   --all             Install both global and project hooks
   --force           Overwrite existing files without prompting (default: detect drift and prompt)
   --dry-run         Show what would be done without making changes
@@ -2732,6 +3266,20 @@ Flags:
                     MCP-server form of context-mode to /plugin install context-mode.
                     Equivalent to answering "n" to the prompt. Useful for CI/automation.
                     Non-interactive stdin ([ ! -t 0 ]) implies --no-migrate.
+  --uninstall       Remove this stack from the requested scope instead of installing.
+                    Requires an explicit --project and/or --global (or --all). Removed
+                    files (hooks, rules, skills, VBW agent deltas/overrides, statusline,
+                    optional tools, .cmm-setup state) are MOVED to a timestamped backup
+                    dir under the target (reversible), and settings.json hook/allowlist/
+                    statusLine entries are stripped after being backed up. Honors
+                    --dry-run and --yes. MCP-server entries in .mcp.json are left intact
+                    unless --purge-mcp is also passed.
+  --purge-mcp       (with --uninstall) Also remove codebase-memory-mcp and context-mode
+                    entries from .mcp.json. Off by default.
+  --with-vbw        Treat a bare VBW dev-checkout (a source clone in ~/Sources) as an
+                    installed VBW. By default only a real plugin install (marketplace
+                    or --plugin-dir symlink) counts, so migrating-away projects don't
+                    get VBW agents injected from a stray source checkout.
   --skip-statusline Skip the CMM statusline installation offer
   --reconfigure-statusline  Re-prompt for statusline component selection (overwrite existing config)
   --with-metrics    Also install the gate-metrics tool (scripts/analyze-gate-blocks.py)
@@ -2745,7 +3293,7 @@ Flags:
 MCP pre-flight checks (run automatically unless --skip-mcp-check):
   - CMM binary       detected via PATH and common install locations
   - CMM registration checked in .mcp.json and global MCP config
-  - Tool allowlist   verified in .claude/settings.json (13 CMM tools)
+  - Tool allowlist   verified across project + global settings.json (13 CMM tools)
   - Context Mode     optional; prompts to install if not detected
 
 Context Mode hooks (context-mode-*.sh) are always installed but gracefully
@@ -2759,6 +3307,9 @@ Examples:
   bash setup.sh --dry-run --project   # Preview project install without making changes
   bash setup.sh --project --force     # Re-install everything, overwriting all existing files
   bash setup.sh --project --skip-mcp-check  # Install without MCP availability checks
+  bash setup.sh --uninstall --project --dry-run  # Preview removing the stack from a project
+  bash setup.sh --uninstall --project        # Remove the stack from this project (files backed up)
+  bash setup.sh --uninstall --all --purge-mcp --yes  # Remove everywhere, incl. .mcp.json entries
 HELP
         exit 0
         ;;
@@ -2769,6 +3320,17 @@ HELP
     esac
     shift
   done
+
+  if [ "$UNINSTALL" = true ]; then
+    # Uninstall requires an explicit scope — never guess, since removal is
+    # destructive. Do NOT fall through to interactive_prompt (which offers to
+    # install).
+    if [ "$INSTALL_GLOBAL" = false ] && [ "$INSTALL_PROJECT" = false ]; then
+      echo "--uninstall requires a scope: pass --project and/or --global (or --all)." >&2
+      exit 1
+    fi
+    return 0
+  fi
 
   if [ "$INSTALL_GLOBAL" = false ] && [ "$INSTALL_PROJECT" = false ]; then
     interactive_prompt
@@ -2812,6 +3374,20 @@ install_metrics_tool() {
 
 main() {
   parse_args "$@"
+
+  # Uninstall short-circuits the install pipeline entirely.
+  if [ "$UNINSTALL" = true ]; then
+    if [ "$INSTALL_PROJECT" = true ]; then
+      uninstall_stack ".claude" "project"
+    fi
+    if [ "$INSTALL_GLOBAL" = true ]; then
+      uninstall_stack "$(detect_config_dir)" "global"
+    fi
+    echo ""
+    echo "Uninstall finished. Restart any open Claude Code sessions for changes to take effect."
+    return 0
+  fi
+
   verify_repo_remote
   check_prerequisites
   check_mcp_availability

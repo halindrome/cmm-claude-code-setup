@@ -64,73 +64,22 @@ COMMAND=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin
 # If parsing failed or command is empty, do not block — fail open to avoid spurious hook errors
 [ -z "$COMMAND" ] && exit 0
 
-# --- Context Mode Detection (cached, dual-form per Phase 57 G3) ---
-# Cache result in /tmp/ctx-enforcer-<hash> to avoid repeated python3 JSON parsing on every Bash call.
-# Probe order: plugin-form fast-path (CLAUDE_PLUGIN_ROOT env / ~/.claude/plugins/cache scan)
-# FIRST per G3 ordering; legacy MCP-server-form probe second.
-CTX_CACHE="/tmp/ctx-enforcer-${PROJECT_HASH}"
-if [ -f "$CTX_CACHE" ]; then
-    CONTEXT_MODE_INSTALLED=$(cat "$CTX_CACHE" 2>/dev/null)
-    CONTEXT_MODE_INSTALLED="${CONTEXT_MODE_INSTALLED:-0}"
+# --- Context Mode Detection (shared library) ---
+# The probe verifies context-mode is LOADABLE, not merely present on disk:
+# a plugin whose registered installPath does not resolve here (the devcontainer
+# bind-mount case) registers no ctx_* tools, and this hook must not mandate a
+# tool that does not exist. See hooks/lib/context-mode-detect.sh.
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+    source "$_CM_LIB"
+    detect_context_mode "$PROJECT_ROOT" "/tmp/ctx-enforcer-${PROJECT_HASH}"
 else
-    CONTEXT_MODE_INSTALLED=0
-
-    # 1. Plugin-form fast-path (canonical, listed first per G3).
-    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && \
-       [ -f "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" ] && \
-       grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' \
-         "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
-        CONTEXT_MODE_INSTALLED=1
-    else
-        # Scan ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/ for an installed context-mode plugin.
-        # The real layout is <cache>/<marketplace>/<plugin>/[<version>/]/.claude-plugin/plugin.json,
-        # so a fixed-depth glob misses versioned installs. Use find to discover any nesting.
-        if [ -d "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" ]; then
-            while IFS= read -r _ctx_pl; do
-                [ -z "$_ctx_pl" ] && continue
-                if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_ctx_pl" 2>/dev/null; then
-                    CONTEXT_MODE_INSTALLED=1
-                    break
-                fi
-            done < <(find "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" \
-                -maxdepth 7 -name 'plugin.json' -path '*/.claude-plugin/*' 2>/dev/null)
-        fi
-    fi
-
-    # 2. MCP-server-form probe (legacy, listed second per G3) — plus enabledPlugins fallback.
-    # context-mode can be installed as a Claude Code plugin without registering an mcpServers entry;
-    # enabledPlugins entries take the form "<plugin>@<marketplace>: true".
-    if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
-        if python3 -c "
-import json, os, sys
-# 1. Project .mcp.json
-try:
-    with open('${PROJECT_ROOT}/.mcp.json') as f:
-        if 'context-mode' in json.load(f).get('mcpServers', {}):
-            sys.exit(0)
-except Exception: pass
-# 2. Global Claude Code settings — mcpServers OR enabledPlugins
-for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
-    if not d: continue
-    try:
-        with open(os.path.join(d, 'settings.json')) as f:
-            cfg = json.load(f)
-            if 'context-mode' in cfg.get('mcpServers', {}):
-                sys.exit(0)
-            for key, enabled in cfg.get('enabledPlugins', {}).items():
-                if enabled and key.split('@', 1)[0] == 'context-mode':
-                    sys.exit(0)
-    except Exception: pass
-sys.exit(1)
-" 2>/dev/null; then
-            CONTEXT_MODE_INSTALLED=1
-        fi
-    fi
-
-    # Also activate if a session DB already exists (context-mode was used here before)
-    [ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
-    # Write cache
-    echo "$CONTEXT_MODE_INSTALLED" > "$CTX_CACHE" 2>/dev/null || true
+    # Partial install (lib missing) — fail open rather than enforce blindly.
+    # Re-run: bash setup.sh --project --force
+    exit 0
 fi
 
 # No-op if Context Mode is not installed
@@ -138,13 +87,31 @@ if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
     exit 0
 fi
 
-# --- Context Mode Sentinel Check (deadlock prevention) ---
-# If ctx_execute is not ready yet, allowing Bash through avoids a catch-22 where
-# Claude cannot call ctx_execute to initialize Context Mode.
+# --- Context Mode Liveness Check (deadlock prevention + dead-server fail-open) ---
+# The sentinel carries a VERDICT, not merely existence. Two writers, two meanings:
+#
+#   "ready" — cmm-session-start.sh, from detect_context_mode's on-disk check.
+#             OPTIMISTIC. Presence on disk is NOT proof the MCP registered: while
+#             Claude Code re-extracts the plugin cache, installPath exists but the
+#             server never starts. Enforcing on "ready" is what wedged a session
+#             for 24 minutes — every Bash call blocked, redirected to ctx_* tools
+#             that were never registered, with no escape hatch.
+#
+#   "live"  — context-mode-sentinel-writer.sh, PostToolUse on a real ctx_* call.
+#             The server answered, so the tools provably exist.
+#
+# Enforce only on "live", and only while it is fresh. Every ctx_* call rewrites
+# the file, so a server that dies mid-session goes stale and enforcement lifts
+# within the TTL instead of wedging the session until restart.
+#
+# Trade-off, stated plainly: enforcement does not arm until the first successful
+# ctx_* call of a session. That is the point — a hook must not mandate a tool it
+# has never seen work. Same rule as hooks/lib/context-mode-detect.sh.
 CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
-if [ ! -f "$CONTEXT_MODE_SENTINEL" ]; then
-    exit 0
-fi
+CONTEXT_MODE_TTL_MIN="${CTX_ENFORCER_TTL_MIN:-30}"
+[ -f "$CONTEXT_MODE_SENTINEL" ] || exit 0
+grep -q '^live$' "$CONTEXT_MODE_SENTINEL" 2>/dev/null || exit 0
+[ -n "$(find "$CONTEXT_MODE_SENTINEL" -mmin "-${CONTEXT_MODE_TTL_MIN}" 2>/dev/null)" ] || exit 0
 
 # --- Bypass Marker ---
 # Internal bypass marker — undocumented, for operator use only.
@@ -219,8 +186,46 @@ _track_exempt() {
   bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-exempt" "$1" 2>/dev/null || true
 }
 
+# --- Git global-flag normalization ---
+# The git exemptions below anchor on `git ` followed immediately by the
+# subcommand, so any global flag in between defeats every one of them. That
+# silently contradicts cwd-guard.sh, which tells the agent to prefer
+# `git -C apps/rest-api status` over `cd apps/rest-api && git status` — and in
+# a submodule/monorepo checkout it left NO unblocked path to commit, since the
+# `cd … &&` alternative is rejected by the compound check above.
+#
+# Peel leading repo-selection flags into _EXEMPT_CMD so the exemption patterns
+# match on the effective subcommand. Only _EXEMPT_CMD is normalized; $COMMAND
+# stays intact for the block messages below.
+#
+# Deliberately narrow: only flags that select WHICH repo/config git acts on.
+# Anything else (notably `-c alias.x=!cmd`) is left in place, so it fails to
+# match any exemption and falls through to the default block.
+#
+# Known limitation: word-splitting is quote-blind, so `-C "my dir"` peels only
+# the first token and the leftover fails to match — blocked, not wrongly
+# exempted. Fail-closed is the correct direction here.
+_EXEMPT_CMD="$COMMAND"
+if [[ "$_EXEMPT_CMD" =~ ^[[:space:]]*git([[:space:]]|$) ]]; then
+  read -ra _GTOK <<< "$_EXEMPT_CMD"
+  _gi=1
+  while [ "$_gi" -lt "${#_GTOK[@]}" ]; do
+    case "${_GTOK[$_gi]}" in
+      # flag + separate value → skip two tokens
+      -C|--git-dir|--work-tree|--namespace)          _gi=$((_gi + 2)) ;;
+      # self-contained flag → skip one token
+      --git-dir=*|--work-tree=*|--namespace=*)       _gi=$((_gi + 1)) ;;
+      --no-pager|--no-replace-objects|--bare)        _gi=$((_gi + 1)) ;;
+      *) break ;;
+    esac
+  done
+  if [ "$_gi" -gt 1 ] && [ "$_gi" -lt "${#_GTOK[@]}" ]; then
+    _EXEMPT_CMD="git ${_GTOK[*]:$_gi}"
+  fi
+fi
+
 # Git write operations (state-changing, bounded output, required for workflow)
-case "$COMMAND" in
+case "$_EXEMPT_CMD" in
   git\ commit*|git\ add*|git\ push*|git\ pull*|git\ fetch*)  _track_exempt git-write; exit 0 ;;
   git\ checkout*|git\ switch*|git\ branch*|git\ tag*)         _track_exempt git-write; exit 0 ;;
   git\ rebase*|git\ merge*|git\ cherry-pick*|git\ reset*)     _track_exempt git-write; exit 0 ;;
@@ -229,7 +234,7 @@ case "$COMMAND" in
 esac
 
 # Git bounded read operations (output is short and predictable)
-case "$COMMAND" in
+case "$_EXEMPT_CMD" in
   git\ status|git\ status\ *)                                                _track_exempt git-bounded-read; exit 0 ;;
   git\ diff\ --stat*|git\ log\ --oneline\ -*)                                _track_exempt git-bounded-read; exit 0 ;;
   git\ log\ --name-only*|git\ log\ --stat*|git\ show\ --name-only*)          _track_exempt git-bounded-read; exit 0 ;;
@@ -272,9 +277,29 @@ case "$COMMAND" in
   bash\ */.vbw-planning/*|bash\ */tmp/.vbw-plugin-root-link-*)                _track_exempt vbw-planning; exit 0 ;;
 esac
 
-# Package version queries (bounded output)
+# Package/tool version queries (bounded output) — narrowly scoped.
+# The long form --version is unambiguous, so exempt it anywhere it appears.
 case "$COMMAND" in
-  *--version|*\ -v|*\ -V)   _track_exempt version; exit 0 ;;
+  *--version)   _track_exempt version; exit 0 ;;
+esac
+# The short forms -v / -V are OVERLOADED with "verbose": a blanket `* -v` match
+# wrongly exempts verbose test runs (e.g. `pytest -v`, `pytest tests/ -v`) and
+# leaks the full log to context as plain Bash. Exempt only a BARE version query —
+# exactly two tokens `<tool> -v|-V` — and never when the tool is a known
+# test/build/lint runner (whose -v means verbose). A real version check carries
+# no other arguments; a test run does.
+case "$COMMAND" in
+  *\ -v|*\ -V)
+    read -ra _VTOK <<< "$COMMAND"
+    if [ "${#_VTOK[@]}" -eq 2 ]; then
+      case "${_VTOK[0]}" in
+        pytest|py.test|prove|jest|mocha|vitest|jasmine|ava|tap|phpunit|pest|rspec|minitest|tox|nose2|nosetests|behave|cucumber|bats|go|cargo|make|gmake|npm|npx|yarn|pnpm|gradle|gradlew|mvn|ctest|rake|playwright|cypress|dotnet|ninja)
+          : ;;  # verbose flag on a runner — fall through to the default block
+        *)
+          _track_exempt version; exit 0 ;;
+      esac
+    fi
+    ;;
 esac
 
 # --- Default: block everything not explicitly exempt ---

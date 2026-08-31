@@ -5,13 +5,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-HOOK="$SCRIPT_DIR/../hooks/project/ctx-execute-enforcer.sh"
+SRC_HOOK="$SCRIPT_DIR/../hooks/project/ctx-execute-enforcer.sh"
 
 PASS=0; FAIL=0
 _assert_exit() {
     local label="$1" expected="$2" json="$3"
     local actual=0
-    echo "$json" | bash "$HOOK" >/dev/null 2>&1 || actual=$?
+    # cwd must be the isolated fake repo: the hook derives PROJECT_ROOT from
+    # `git rev-parse --show-toplevel` at the cwd, and that is what keeps this
+    # suite off the real session's sentinel. See the setup block below.
+    echo "$json" | (cd "$FAKE_PROJ" && bash "$HOOK") >/dev/null 2>&1 || actual=$?
     if [ "$actual" -eq "$expected" ]; then
         echo "PASS: $label"
         PASS=$((PASS+1))
@@ -21,35 +24,62 @@ _assert_exit() {
     fi
 }
 
-# --- Sentinel simulation setup ---
-# Compute the same PROJECT_HASH the hook uses: md5 of canonical project root path
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
-if command -v md5 >/dev/null 2>&1; then
-    PROJECT_HASH="$(echo "$PROJECT_ROOT" | md5 -q)"
-else
-    PROJECT_HASH="$(echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')"
-fi
-
-CM_CACHE="/tmp/ctx-enforcer-${PROJECT_HASH}"
-CM_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
-
-# Register cleanup on exit
-trap 'rm -f "$CM_CACHE" "$CM_SENTINEL"' EXIT
-
-# Create sentinels to simulate Context Mode installed and ready
-echo "1" > "$CM_CACHE"
-touch "$CM_SENTINEL"
-
-# Bail out early with a clear message if hook doesn't exist yet
-if [ ! -f "$HOOK" ]; then
+# --- Sentinel simulation setup (isolated fake repo) ---
+# This suite USED TO drive the hook against the REAL project hash, so $CM_CACHE
+# and $CM_SENTINEL were the same files a live Claude Code session in this repo
+# is using. That was a race, not just an inconvenience: the four assertions
+# below that require the sentinel absent / "ready" / empty / stale are destroyed
+# whenever context-mode-sentinel-writer.sh refreshes it to "live" mid-run (it
+# fires on every ctx_* PostToolUse). The suite then reported a pass or a failure
+# depending on timing, so a green run proved nothing.
+#
+# Fix: give the hook its own git repo to resolve. The hook takes PROJECT_ROOT
+# from `git rev-parse --show-toplevel` at the cwd and checks it against its own
+# location (path-integrity check), so the hook is copied into the fake repo at
+# the same relative layout — the pattern tests/test-agent-hook-enforcement.sh
+# already uses. Nothing here touches the real session's sentinel.
+if [ ! -f "$SRC_HOOK" ]; then
     echo ""
-    echo "NOTE: $HOOK does not exist yet."
+    echo "NOTE: $SRC_HOOK does not exist yet."
     echo "This test suite is complete but requires Plan 32-01 to be merged first."
     echo "Run again after hooks/project/ctx-execute-enforcer.sh is created."
     echo ""
     echo "Results: $PASS passed, $FAIL failed (hook not yet available)"
     exit 0
 fi
+
+FAKE_ROOT="$(mktemp -d)"
+FAKE_PROJ="$(cd "$FAKE_ROOT" && pwd -P)/proj"
+mkdir -p "$FAKE_PROJ/hooks/project" "$FAKE_PROJ/hooks/lib"
+git -C "$FAKE_PROJ" init -q
+cp "$SRC_HOOK" "$FAKE_PROJ/hooks/project/ctx-execute-enforcer.sh"
+cp "$SCRIPT_DIR/../hooks/lib/"*.sh "$FAKE_PROJ/hooks/lib/" 2>/dev/null || true
+HOOK="$FAKE_PROJ/hooks/project/ctx-execute-enforcer.sh"
+
+# Resolve the hash the same way the hook will, from inside the fake repo.
+FAKE_ROOT_CANON="$(cd "$FAKE_PROJ" && git rev-parse --show-toplevel 2>/dev/null || echo "$FAKE_PROJ")"
+if command -v md5 >/dev/null 2>&1; then
+    PROJECT_HASH="$(echo "$FAKE_ROOT_CANON" | md5 -q)"
+else
+    PROJECT_HASH="$(echo "$FAKE_ROOT_CANON" | md5sum | awk '{print $1}')"
+fi
+
+CM_CACHE="/tmp/ctx-enforcer-${PROJECT_HASH}"
+CM_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
+
+_cleanup_fake() {
+    rm -rf "$FAKE_ROOT"
+    rm -f "$CM_CACHE" "$CM_SENTINEL"
+    rm -f "/tmp/cmm-project-root-$(echo "$FAKE_PROJ" | md5 -q 2>/dev/null || echo "$FAKE_PROJ" | md5sum | awk '{print $1}')"
+}
+trap _cleanup_fake EXIT
+
+# Create sentinels to simulate Context Mode installed and PROVEN LIVE.
+# "live" (not a bare touch) is required: the enforcer arms only on a sentinel
+# whose content is "live" — written by context-mode-sentinel-writer.sh after a
+# real ctx_* call — and only while that file is fresh.
+echo "1" > "$CM_CACHE"
+echo "live" > "$CM_SENTINEL"
 
 # --- Blocked command tests (expect exit 2, sentinels present) ---
 echo "--- Blocked command tests (sentinels present, expect exit 2) ---"
@@ -139,6 +169,83 @@ _assert_exit "unquoted git status && cat blocked" 2 \
 
 _assert_exit "git status exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
+
+# --- Git global-flag normalization (submodule / monorepo targeting) ---
+# cwd-guard.sh instructs the agent to prefer `git -C <subrepo> <cmd>` over
+# `cd <subrepo> && <cmd>`. The exemptions must therefore match past leading
+# repo-selection flags, or the stack recommends a form it then blocks — and
+# with `cd … &&` also blocked by the compound check, submodule commits had no
+# unblocked path at all.
+echo ""
+echo "--- Git global-flag normalization (expect same verdict as unprefixed form) ---"
+
+_assert_exit "git -C <path> status exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api status"}}'
+
+_assert_exit "git -C <path> commit exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api commit -m wip"}}'
+
+_assert_exit "git -C <path> rev-parse exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api rev-parse HEAD"}}'
+
+_assert_exit "git -C <path> log --oneline -N exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api log --oneline -5"}}'
+
+_assert_exit "git --git-dir=<p> --work-tree=<p> status exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git --git-dir=/r/.git --work-tree=/r status"}}'
+
+_assert_exit "git --no-pager status exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git --no-pager status"}}'
+
+# Normalization must not manufacture exemptions the bare form never had.
+_assert_exit "git -C <path> bare log still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api log"}}'
+
+_assert_exit "git -C <path> diff (unbounded) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api diff"}}'
+
+# `-c` is NOT peeled: it can carry arbitrary aliases, so it must fall through.
+_assert_exit "git -c alias injection still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -c alias.x=!id x"}}'
+
+# Compound detection still runs on the full command, before normalization.
+_assert_exit "git -C <path> status && cat blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api status && cat /etc/passwd"}}'
+
+# Flag with no subcommand after it must not be treated as exempt.
+_assert_exit "git -C <path> alone blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/api"}}'
+
+# --- Version-flag disambiguation (-v/-V overloaded with "verbose") ---
+echo ""
+echo "--- Version-flag disambiguation (bare version query exempt; verbose test runs blocked) ---"
+
+# Unambiguous long form --version is always exempt (bounded output).
+_assert_exit "node --version exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"node --version"}}'
+_assert_exit "pytest --version exempt (long form is unambiguous)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"pytest --version"}}'
+
+# Bare two-token -v/-V version query on a non-runner: exempt.
+_assert_exit "node -v exempt (bare version query)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"node -v"}}'
+_assert_exit "python -V exempt (bare version query)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"python -V"}}'
+
+# Verbose test runs must be BLOCKED (the bug this fixes): a runner with -v, and
+# any -v that is not the sole argument.
+_assert_exit "pytest -v blocked (verbose, not a version query)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"pytest -v"}}'
+_assert_exit "pytest tests/ -v blocked (>2 tokens)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"pytest tests/ -v"}}'
+_assert_exit "prove -v blocked (verbose test run)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"prove -v"}}'
+_assert_exit "cargo test -v blocked (>2 tokens)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cargo test -v"}}'
+_assert_exit "make test -v blocked (>2 tokens)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"make test -v"}}'
+_assert_exit "some_tool --config x -v blocked (>2 tokens)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"foo --config x -v"}}'
 
 # --- Allowlist: previously-unblocked commands now blocked (expect exit 2) ---
 echo ""
@@ -244,8 +351,39 @@ rm -f "$CM_SENTINEL"
 _assert_exit "missing sentinel allows npm test" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
 
+# --- Liveness regression tests ---
+# Both cases below reproduce the 2026-08-05 incident: Claude Code re-extracted the
+# plugin cache while a session was starting, so installPath existed (cache says
+# "1", detect_context_mode says installed) but the MCP server never registered and
+# no ctx_* tool existed. The enforcer must NOT mandate tools it has not seen work.
+echo ""
+echo "--- Sentinel liveness tests (expect exit 0, dead-server fail-open) ---"
+
+# "ready" = cmm-session-start.sh's optimistic on-disk verdict, never confirmed by
+# a real ctx_* call. This is the exact state that wedged the session for 24 min.
+echo "ready" > "$CM_SENTINEL"
+_assert_exit "unconfirmed 'ready' sentinel allows npm test" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+
+# A bare touch (empty file) is not a liveness verdict either.
+: > "$CM_SENTINEL"
+_assert_exit "empty sentinel allows npm test" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+
+# "live" but stale — the server answered once, then died mid-session. Enforcement
+# must lift on its own rather than wedging until restart.
+echo "live" > "$CM_SENTINEL"
+touch -t "$(date -v-2H '+%Y%m%d%H%M' 2>/dev/null || date -d '2 hours ago' '+%Y%m%d%H%M')" "$CM_SENTINEL"
+_assert_exit "stale 'live' sentinel allows npm test" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+
+# Fresh "live" re-arms enforcement — the positive control for the three above.
+echo "live" > "$CM_SENTINEL"
+_assert_exit "fresh 'live' sentinel still blocks npm test" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+
 # Restore sentinel for remaining tests
-touch "$CM_SENTINEL"
+echo "live" > "$CM_SENTINEL"
 
 # --- Context Mode not installed test (expect exit 0) ---
 echo ""

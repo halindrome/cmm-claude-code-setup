@@ -47,6 +47,17 @@ cd "$SCRATCH"
 git init -q
 git commit --allow-empty -q -m "init"
 
+# VBW agent-override install is gated on VBW being installed as a plugin. Set up a
+# fake marketplace VBW via CLAUDE_CONFIG_DIR so this test (which verifies the VBW
+# override-install path) is deterministic regardless of the machine's VBW state.
+FAKE_CFG="$SCRATCH/claude-config"
+FAKE_VBW="$FAKE_CFG/plugins/cache/vbw-marketplace/vbw/1.99.0"
+mkdir -p "$FAKE_VBW/agents" "$FAKE_CFG/plugins"
+cat >"$FAKE_CFG/plugins/installed_plugins.json" <<JSON
+{"version":2,"plugins":{"vbw@vbw-marketplace":[{"installPath":"$FAKE_VBW","version":"1.99.0","scope":"user"}]},"enabledPlugins":{"vbw@vbw-marketplace":true}}
+JSON
+export CLAUDE_CONFIG_DIR="$FAKE_CFG"
+
 # Run install (non-interactive, skip MCP availability check).
 echo "n" | bash "$REPO_ROOT/setup.sh" --project --yes --skip-mcp-check >/dev/null 2>&1 || {
     echo "FAIL: setup.sh --project first run exited non-zero"

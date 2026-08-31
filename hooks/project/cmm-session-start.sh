@@ -78,31 +78,22 @@ touch "/tmp/cmm-indexing-${PROJECT_HASH}"
 # delete-then-recreate pattern (lines 55-56 delete, lines 87-89 recreate)
 # is safe because no PreToolUse hook can interleave between them.
 CONTEXT_MODE_INSTALLED=0
-if python3 -c "
-import json, os, sys
-# 1. Project .mcp.json
-try:
-    with open('${PROJECT_ROOT}/.mcp.json') as f:
-        if 'context-mode' in json.load(f).get('mcpServers', {}):
-            sys.exit(0)
-except Exception: pass
-# 2. Global Claude Code settings
-for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
-    if not d: continue
-    try:
-        with open(os.path.join(d, 'settings.json')) as f:
-            if 'context-mode' in json.load(f).get('mcpServers', {}):
-                sys.exit(0)
-    except Exception: pass
-sys.exit(1)
-" 2>/dev/null; then
-  CONTEXT_MODE_INSTALLED=1
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+  [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+  source "$_CM_LIB"
+  detect_context_mode "$PROJECT_ROOT"
 fi
-# Also activate if a session DB already exists (context-mode was used here before)
-[ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
+# Only pre-arm the sentinel when context-mode is genuinely loadable. Writing it
+# for an unloadable plugin is what let the blocking hooks enforce ctx_* tools
+# that were never registered — see hooks/lib/context-mode-detect.sh.
 if [ "$CONTEXT_MODE_INSTALLED" -eq 1 ]; then
   echo "ready" > "/tmp/context-mode-ready-${PROJECT_HASH}"
+else
+  rm -f "/tmp/context-mode-ready-${PROJECT_HASH}" 2>/dev/null || true
 fi
 
 # --- Session Type Detection ---
@@ -145,11 +136,24 @@ You do NOT need to call `ctx_stats` manually — the gate is already open.
 
 **If the Context Mode MCP server is unavailable** (sentinel missing despite auto-init):
   touch "/tmp/context-mode-ready-${PROJECT_HASH}"
+PROMPT
+
+  # --- Optional VBW task-location guidance ---
+  # VBW is an optional add-on. Only surface planning-file guidance when a VBW
+  # planning directory actually exists in this project; a CMM-only or
+  # CMM+context-mode project has no .vbw-planning/ and should not be told to
+  # read files that do not exist.
+  if [ -n "$PROJECT_ROOT" ] && [ -d "$PROJECT_ROOT/.vbw-planning" ]; then
+    cat <<'PROMPT'
 
 ## Finding Your Task
 
 Check `.vbw-planning/STATE.md` to find the active phase and current plan, then read the
 corresponding `.vbw-planning/phases/<phase>/<plan>.md` file for your task list.
+PROMPT
+  fi
+
+  cat <<'PROMPT'
 
 ## CMM Tool Decision Table
 

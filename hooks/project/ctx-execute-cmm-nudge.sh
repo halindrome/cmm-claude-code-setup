@@ -47,7 +47,7 @@ cwd = d.get('cwd','') or ''
 
 # Phase 57 G3: accept both install-form prefixes for ctx_execute. The install
 # matcher (see header doc-line) routes only ctx_execute today, and the shell
-# `case "$TOOL_NAME"` block at the bottom of this file dispatches only those
+# 'case \$TOOL_NAME' block at the bottom of this file dispatches only those
 # two names — keep this python set in lockstep with that shell case to avoid
 # the F-06 divergence where python classified ctx_execute_file/_batch_execute
 # but shell silently no-op'd. If the install matcher is ever widened to also
@@ -343,16 +343,17 @@ fi
 [ -z "$REPO_ROOT" ] && exit 0
 
 # --- CMM availability check (.mcp.json cascade) ---
+_CMMREG_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/cmm-registered.sh" ] && { _CMMREG_LIB="$_d/cmm-registered.sh"; break; }
+done
+# Cannot determine availability -> fail open. Never block on our own absence.
+[ -n "$_CMMREG_LIB" ] || exit 0
+# shellcheck disable=SC1090
+source "$_CMMREG_LIB"
+
 CMM_FOUND=false
-if [ -f "$REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$REPO_ROOT/.mcp.json" 2>/dev/null; then
-    CMM_FOUND=true
-fi
-if [ "$CMM_FOUND" = false ]; then
-    CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-    if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-        CMM_FOUND=true
-    fi
-fi
+cmm_is_registered "$REPO_ROOT" && CMM_FOUND=true
 # If CMM not registered anywhere, fail open
 [ "$CMM_FOUND" = false ] && exit 0
 

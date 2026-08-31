@@ -1,21 +1,25 @@
-# codebase-memory-mcp allowed tools
-# Add these 14 tools to your .claude/settings.local.json under "permissions.allow"
+# codebase-memory-mcp + Context Mode allowed tools
+#
+# Policy: "complete minus destructive" — pre-approve every non-destructive tool;
+# leave irreversible / system-mutating ones OUT so they always prompt:
+#   - CMM  delete_project  (drops a project's index)
+#   - ctx  ctx_purge       (wipes indexed session content — rm -rf caution)
+#   - ctx  ctx_upgrade     (mutates the installed context-mode version)
+#
+# setup.sh writes these into permissions.allow for you (project or global scope);
+# this file is the human-readable reference / manual-install list.
 #
 # Example JSON structure:
 # {
 #   "permissions": {
-#     "allow": [
-#       "mcp__codebase-memory-mcp__index_repository",
-#       "mcp__codebase-memory-mcp__index_status",
-#       ... (add all 14 below)
-#     ]
+#     "allow": [ "mcp__codebase-memory-mcp__index_repository", ... ]
 #   }
 # }
 
+# --- codebase-memory-mcp (CMM) — 13 tools ---
 mcp__codebase-memory-mcp__index_repository
 mcp__codebase-memory-mcp__index_status
 mcp__codebase-memory-mcp__list_projects
-mcp__codebase-memory-mcp__delete_project
 mcp__codebase-memory-mcp__get_architecture
 mcp__codebase-memory-mcp__get_graph_schema
 mcp__codebase-memory-mcp__search_graph
@@ -26,14 +30,27 @@ mcp__codebase-memory-mcp__trace_path
 mcp__codebase-memory-mcp__detect_changes
 mcp__codebase-memory-mcp__manage_adr
 mcp__codebase-memory-mcp__ingest_traces
+# Excluded (destructive): mcp__codebase-memory-mcp__delete_project
 
-# Context Mode MCP tools (optional add-on)
+# --- Context Mode (optional) — 9 tools × both registration forms ---
+# plugin form (canonical)
+mcp__plugin_context-mode_context-mode__ctx_execute
+mcp__plugin_context-mode_context-mode__ctx_execute_file
+mcp__plugin_context-mode_context-mode__ctx_search
+mcp__plugin_context-mode_context-mode__ctx_batch_execute
+mcp__plugin_context-mode_context-mode__ctx_index
+mcp__plugin_context-mode_context-mode__ctx_fetch_and_index
+mcp__plugin_context-mode_context-mode__ctx_stats
+mcp__plugin_context-mode_context-mode__ctx_doctor
+mcp__plugin_context-mode_context-mode__ctx_insight
+# legacy MCP-server form
 mcp__context-mode__ctx_execute
-mcp__context-mode__ctx_batch_execute
 mcp__context-mode__ctx_execute_file
-mcp__context-mode__ctx_index
 mcp__context-mode__ctx_search
+mcp__context-mode__ctx_batch_execute
+mcp__context-mode__ctx_index
 mcp__context-mode__ctx_fetch_and_index
 mcp__context-mode__ctx_stats
 mcp__context-mode__ctx_doctor
-mcp__context-mode__ctx_upgrade
+mcp__context-mode__ctx_insight
+# Excluded (destructive/operator): ctx_purge, ctx_upgrade

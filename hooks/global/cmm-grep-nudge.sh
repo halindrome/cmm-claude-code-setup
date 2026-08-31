@@ -10,6 +10,20 @@
 #     { "matcher": "Bash", "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-grep-nudge.sh"}] }
 #   ]}
 
+# --- Shared registration probe ---
+# Sourced ONCE here because this hook has TWO availability cascades (the Bash
+# branch below and the Grep branch further down). They previously drifted: the
+# Bash one never received a fix the Grep one got, leaving Bash navigation
+# fail-open while Grep blocked — a half-armed gate.
+_CMMREG_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+  [ -f "$_d/cmm-registered.sh" ] && { _CMMREG_LIB="$_d/cmm-registered.sh"; break; }
+done
+# Cannot determine availability -> fail open. Never block on our own absence.
+[ -n "$_CMMREG_LIB" ] || exit 0
+# shellcheck disable=SC1090
+source "$_CMMREG_LIB"
+
 # --- Input Parsing ---
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | python3 -c "
@@ -62,15 +76,7 @@ print(d.get('tool_input',{}).get('command','') or '')
     # Normalize path to resolve symlinks (macOS /var/folders -> /private/var/folders)
     BASH_REPO_ROOT=$(cd "${BASH_CWD:-.}" 2>/dev/null && pwd -P) || BASH_REPO_ROOT="${BASH_CWD:-.}"
     BASH_CMM_FOUND=false
-    if [ -f "$BASH_REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$BASH_REPO_ROOT/.mcp.json" 2>/dev/null; then
-      BASH_CMM_FOUND=true
-    fi
-    if [ "$BASH_CMM_FOUND" = false ]; then
-      CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-      if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-        BASH_CMM_FOUND=true
-      fi
-    fi
+    cmm_is_registered "$BASH_REPO_ROOT" && BASH_CMM_FOUND=true
 
     # Only block when CMM sentinel is present (index is ready)
     BASH_PROJECT_HASH=$(echo "$BASH_REPO_ROOT" | md5 -q 2>/dev/null || echo "$BASH_REPO_ROOT" | md5sum | awk '{print $1}')
@@ -128,17 +134,7 @@ if [ -z "$REPO_ROOT" ]; then
 fi
 
 CMM_FOUND=false
-# Check project .mcp.json
-if [ -f "$REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$REPO_ROOT/.mcp.json" 2>/dev/null; then
-  CMM_FOUND=true
-fi
-# Check global settings.json as fallback
-if [ "$CMM_FOUND" = false ]; then
-  CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-  if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-    CMM_FOUND=true
-  fi
-fi
+cmm_is_registered "$REPO_ROOT" && CMM_FOUND=true
 # If CMM not found anywhere, allow Grep (fail open)
 [ "$CMM_FOUND" = false ] && exit 0
 

@@ -124,21 +124,29 @@ _grep_assert "setup.sh writer block still has legacy mcp__context-mode__ctx_exec
 _assert "setup.sh has no syntax errors" bash -n setup.sh
 
 echo ""
-echo "--- setup.sh: plugin-before-legacy ordering, operator-tool exclusion, thresholds ---"
-_ctx_arr=$(awk '/^CTX_TOOLS = \[/{f=1} f{print} f&&/^\]/{exit}' setup.sh)
-_plug_ln=$(printf '%s\n' "$_ctx_arr" | grep -n 'mcp__plugin_context-mode_context-mode__ctx_execute' | head -1 | cut -d: -f1)
+echo "--- setup.sh: plugin-before-legacy ordering, tool policy, counts ---"
+# CTX_ALLOW_TOOLS is the single source of truth (bash array) used by the writer.
+_ctx_arr=$(awk '/^CTX_ALLOW_TOOLS=\(/{f=1} f{print} f&&/^\)/{exit}' setup.sh)
+_plug_ln=$(printf '%s\n' "$_ctx_arr" | grep -n '"mcp__plugin_context-mode_context-mode__ctx_execute"' | head -1 | cut -d: -f1)
 _leg_ln=$(printf '%s\n' "$_ctx_arr" | grep -n '"mcp__context-mode__ctx_execute"' | head -1 | cut -d: -f1)
 if [ -n "$_plug_ln" ] && [ -n "$_leg_ln" ] && [ "$_plug_ln" -lt "$_leg_ln" ]; then
   _pass "setup.sh writer lists plugin-form ctx_execute before legacy form"
 else
   _fail "setup.sh writer plugin-form not before legacy (plugin=$_plug_ln legacy=$_leg_ln)"
 fi
-_assert "setup.sh writer excludes destructive delete_project" bash -c '! grep -q "codebase-memory-mcp__delete_project" setup.sh'
-_assert "setup.sh writer excludes operator ctx_doctor" bash -c '! grep -q "context-mode__ctx_doctor" setup.sh'
-_assert "setup.sh writer excludes operator ctx_upgrade" bash -c '! grep -q "context-mode__ctx_upgrade" setup.sh'
-_assert "setup.sh writer excludes destructive ctx_purge" bash -c '! grep -q "context-mode__ctx_purge" setup.sh'
-if grep -qF '"$CMM_TOOLS_COUNT" -ge 13' setup.sh; then _pass "setup.sh CMM detection threshold is 13"; else _fail "setup.sh CMM detection threshold not 13"; fi
-if grep -qF '"$ctx_count" -ge 14' setup.sh; then _pass "setup.sh ctx detection threshold is 14"; else _fail "setup.sh ctx detection threshold not 14"; fi
+# Policy: "complete minus destructive" — delete_project, ctx_purge, ctx_upgrade
+# are excluded from the writer arrays; ctx_doctor and ctx_insight are included.
+_cmm_n=$(awk '/^CMM_ALLOW_TOOLS=\(/{f=1;next} f&&/^\)/{f=0} f&&/"mcp__codebase-memory-mcp__/{c++} END{print c+0}' setup.sh)
+_ctx_n=$(awk '/^CTX_ALLOW_TOOLS=\(/{f=1;next} f&&/^\)/{f=0} f&&/"mcp__/{c++} END{print c+0}' setup.sh)
+[ "$_cmm_n" -eq 13 ] && _pass "CMM_ALLOW_TOOLS has 13 tools" || _fail "CMM_ALLOW_TOOLS has $_cmm_n (expected 13)"
+[ "$_ctx_n" -eq 18 ] && _pass "CTX_ALLOW_TOOLS has 18 entries (9 tools x 2 forms)" || _fail "CTX_ALLOW_TOOLS has $_ctx_n (expected 18)"
+_assert "writer excludes destructive delete_project" bash -c '! grep -q "\"mcp__codebase-memory-mcp__delete_project\"" setup.sh'
+_assert "writer excludes destructive ctx_purge" bash -c '! grep -q "\"mcp__context-mode__ctx_purge\"" setup.sh'
+_assert "writer excludes operator ctx_upgrade" bash -c '! grep -q "\"mcp__context-mode__ctx_upgrade\"" setup.sh'
+_grep_assert "writer includes ctx_doctor (both forms)" "mcp__context-mode__ctx_doctor" "setup.sh"
+_grep_assert "writer includes ctx_insight (both forms)" "mcp__context-mode__ctx_insight" "setup.sh"
+_grep_assert "detection references CMM_ALLOW_COUNT threshold" "CMM_ALLOW_COUNT" "setup.sh"
+_grep_assert "detection references CTX_ALLOW_COUNT threshold" "CTX_ALLOW_COUNT" "setup.sh"
 
 echo ""
 echo "--- vbw-lead / vbw-debugger: full CMM tool set ---"

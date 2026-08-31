@@ -1,11 +1,11 @@
 # cmm-claude-code-setup
 
-**Core value:** Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from Shachar Bard's jmunch-claude-code-setup.
+**Core value:** Hook-based enforcement layer that makes Claude Code use codebase-memory-mcp (CMM) as the core code-intelligence tool, adapted from Shachar Bard's jmunch-claude-code-setup. Context Mode and VBW are optional, auto-detected add-ons — CMM is the thing this repo exists to enforce.
 
-This project uses VBW (Vibe Better with Claude Code) for structured development.
+VBW (Vibe Better with Claude Code) is **optional/legacy** for this repo's own workflow. Historical development used VBW; it is no longer required. Use it if a VBW plugin tree is available, otherwise develop directly following the rules below.
 
 ## State
-- Planning directory: `.vbw-planning/`
+- Planning directory (VBW, optional/legacy): `.vbw-planning/` if present. Non-VBW setup state lives under `.claude/.cmm-setup/`.
 - 17 phases complete (3 milestones shipped)
 - Reference: `../jmunch-claude-code-setup` (Shachar Bard's jmunch work, MIT license)
 - Reference: `../codebase-memory-mcp` (DeusData CMM source)
@@ -13,17 +13,24 @@ This project uses VBW (Vibe Better with Claude Code) for structured development.
 ## Active Context
 
 **Milestone 03 shipped:** Benchmark Context Mode, Statusline Setup Offer, Context Mode Bootstrap, Statusline Token Savings, Fix Statusline Relative Path, Single Gate + Monorepo Path Fix, jmunch Security Hardening, Git Branching Strategy (phases 10-17)
-**Next action:** `/vbw:vibe --add` to define new work
+**Next action:** define new work — via `/vbw:vibe --add` if VBW is in use, otherwise plan directly.
 
-## VBW Rules
+## Development Rules
 
-- **Always use VBW commands** for project work. Do not manually edit files in `.vbw-planning/`.
+These apply to all work in this repo, VBW or not.
+
 - **Commit format:** `{type}({scope}): {description}` — types: feat, fix, test, refactor, perf, docs, style, chore.
-- **One commit per task.** Each task in a plan gets exactly one atomic commit.
+- **One commit per task.** Each task gets exactly one atomic commit.
 - **Never commit secrets.** Do not stage .env, .pem, .key, credentials, or token files.
-- **Plan before building.** Use /vbw:vibe for all lifecycle actions. Plans are the source of truth.
-- **Do not fabricate content.** Only use what the user explicitly states in project-defining flows.
-- **Do not bump version or push until asked.** Never run `scripts/bump-version.sh` or `git push` unless the user explicitly requests it, except when `.vbw-planning/config.json` intentionally sets `auto_push` to `always` or `after_phase`.
+- **Do not fabricate content.** Only use what the user explicitly states.
+- **Do not bump version or push until asked.** Never run `scripts/bump-version.sh` or `git push` unless the user explicitly requests it, except when a VBW `config.json` intentionally sets `auto_push` to `always` or `after_phase`.
+
+### VBW workflow (optional/legacy)
+
+When VBW is in use for this repo:
+
+- Prefer VBW commands (`/vbw:vibe`) for lifecycle actions; plans are the source of truth. Do not manually edit files in `.vbw-planning/`.
+- Without VBW, develop directly — there is no requirement to route work through VBW commands.
 
 ## Installed Skills
 
@@ -65,9 +72,11 @@ Before marking any PR ready for review, follow the QA cycle defined in `CONTRIBU
 
 ## Commands
 
-Run /vbw:status for current progress.
-Run /vbw:help for all available commands.
+If VBW is in use: run /vbw:status for current progress and /vbw:help for all available commands. These commands are unavailable (and unnecessary) when VBW is not installed.
+
 ## Plugin Isolation
+
+Applies only when VBW and/or GSD plugins are active; ignore if neither is installed.
 
 - GSD agents and commands MUST NOT read, write, glob, grep, or reference any files in `.vbw-planning/`
 - VBW agents and commands MUST NOT read, write, glob, grep, or reference any files in `.planning/`

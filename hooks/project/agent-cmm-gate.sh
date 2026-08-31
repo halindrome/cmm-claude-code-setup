@@ -12,14 +12,42 @@ INPUT=$(cat)
 SUBAGENT_TYPE=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('subagent_type',''))" 2>/dev/null || echo "")
 PROMPT=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('prompt',''))" 2>/dev/null || echo "")
 
-# --- Subagent Type Exemption ---
-# Built-in Claude Code skills and non-coding agents are exempt from the keyword gate.
+# --- Subagent Type Exemption (built-in) ---
+# Claude Code's own utility agents never need the CMM keyword gate.
 case "$SUBAGENT_TYPE" in
-  claude-code-guide|statusline-setup|vbw:*)
+  claude-code-guide|statusline-setup)
     echo "CMM note: agent type '$SUBAGENT_TYPE' exempted from keyword gate."
     exit 0
     ;;
 esac
+
+# --- Per-project pass-through allow-list ---
+# A project may exempt purpose-built agent types (e.g. a review panel's reviewer
+# or manager) from the keyword gate WITHOUT forcing CMM/ctx keywords into their
+# prompts, by listing them in .claude/cmm-agent-passthrough.txt (sibling of the
+# installed hooks dir). This drops ONLY the prompt-nag: the inside-child PreToolUse
+# hooks still redirect an exempted agent's Read/Grep/Bash toward CMM/ctx where CMM
+# is installed, so behavioural enforcement is preserved. Format: one agent-type
+# per line; '#' comments and blank lines ignored; shell glob patterns allowed
+# (e.g. 'mr-qa-*', or 'vbw:*' for a project that still uses VBW agents).
+if [ -n "$SUBAGENT_TYPE" ]; then
+  _GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+  _PASSTHROUGH="$_GATE_DIR/../cmm-agent-passthrough.txt"
+  if [ -f "$_PASSTHROUGH" ]; then
+    while IFS= read -r _line || [ -n "$_line" ]; do
+      _pat="${_line%%#*}"                                   # strip trailing comment
+      _pat="$(printf '%s' "$_pat" | tr -d '[:space:]')"     # drop surrounding whitespace
+      [ -z "$_pat" ] && continue
+      # shellcheck disable=SC2254 — glob match against the pattern is intentional
+      case "$SUBAGENT_TYPE" in
+        $_pat)
+          echo "CMM note: agent type '$SUBAGENT_TYPE' exempted via .claude/cmm-agent-passthrough.txt."
+          exit 0
+          ;;
+      esac
+    done < "$_PASSTHROUGH"
+  fi
+fi
 
 # --- Explicit bypass marker ---
 # Add "# cmm-exempt" anywhere in the prompt to skip the gate for non-code tasks.
@@ -43,11 +71,37 @@ if echo "$PROMPT" | grep -qiE "$KEYWORDS"; then
 fi
 
 # --- Keywords missing: block and provide full instructions ---
+# Prefer the canonical, installed preamble asset (rules/cmm-agent-preamble.md ->
+# .claude/rules/cmm-agent-preamble.md) as the single source of truth. Fall back
+# to the inline block for pre-asset installs. Emit everything to stderr, exit 2.
+_HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+_PREAMBLE="$_HOOK_DIR/../rules/cmm-agent-preamble.md"
+if [ -f "$_PREAMBLE" ]; then
+  {
+    echo "BLOCKED: Agent prompt does not reference codebase-memory-mcp tools."
+    echo
+    echo "Agents MUST use the codebase-memory-mcp (CMM) graph tools for code exploration"
+    echo "instead of reading files directly. Paste the block below into your agent prompt."
+    echo "NOTE: Workflow agent() prompts bypass this gate — paste it into every agent()"
+    echo "call and every .claude/agents/*.md agentType definition, since hooks do not"
+    echo "reach inside a running subagent."
+    echo
+    echo "--- Copy-paste the following into your agent prompt ---"
+    # Extract only the region between the asset's copy markers (DRY).
+    awk '/^--- copy from here ---$/{f=1;next} /^--- copy to here ---$/{f=0} f' "$_PREAMBLE"
+    echo "--- End of copy-paste instructions ---"
+  } >&2
+  exit 2
+fi
+
 cat >&2 <<'BLOCKED'
 BLOCKED: Agent prompt does not reference codebase-memory-mcp tools.
 
 Agents MUST use the codebase-memory-mcp (CMM) graph tools for code exploration
-instead of reading files directly. Add these instructions to your agent prompt:
+instead of reading files directly. Add these instructions to your agent prompt.
+NOTE: Workflow agent() prompts bypass this gate — paste the block into every
+agent() call and .claude/agents/*.md definition, since hooks do not reach inside
+a running subagent.
 
 --- Copy-paste the following into your agent prompt ---
 

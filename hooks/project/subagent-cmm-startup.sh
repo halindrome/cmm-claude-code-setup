@@ -49,10 +49,17 @@ fi
 # Both cmm-rules and ctx-rules are emitted in one block so the model does not
 # skip a second Skill() call from a separate hook turn (multi-block skip observed
 # in Phase 61 field test: 8/10 cmm-rules activations, 0/10 ctx-rules activations).
+# Concrete tool-preference mandate (not just a Skill nudge): prefer CMM graph
+# tools over Read/grep for code, and route large output through ctx_* — the soft
+# "invoke Skill" advisory alone was empirically ignored by subagents whose own
+# prompts told them to grep/read. NOTE: this SubagentStart injection is best-effort
+# only; hooks do not reliably steer subagent behavior (see rules/cmm-agent-preamble.md),
+# so the durable lever is baking that preamble into the subagent's PROMPT.
+MANDATE="Prefer CMM graph tools (search_graph / get_code_snippet / trace_path / get_architecture) over Read/grep for code exploration; cite definition sites from get_code_snippet, not grep hits. Route large diffs, whole-file reads, and command output through ctx_execute / ctx_batch_execute / ctx_search to keep bytes out of context."
 if [ ! -f "$CMM_SENTINEL" ] || grep -q '^stale$' "$CMM_SENTINEL"; then
-    ADVISORY="⚠ CMM index is stale. Call index_repository before graph tools. Invoke Skill('cmm-rules') via the Skill tool now, then Invoke Skill('ctx-rules') via the Skill tool now."
+    ADVISORY="⚠ CMM index is stale. Call index_repository before graph tools. $MANDATE Invoke Skill('cmm-rules') via the Skill tool now, then Invoke Skill('ctx-rules') via the Skill tool now."
 else
-    ADVISORY="CMM index is ready. Invoke Skill('cmm-rules') via the Skill tool now, then Invoke Skill('ctx-rules') via the Skill tool now."
+    ADVISORY="CMM index is ready. $MANDATE Invoke Skill('cmm-rules') via the Skill tool now, then Invoke Skill('ctx-rules') via the Skill tool now."
 fi
 
 # JSON-encode via python3 json.dumps so embedded quotes, backslashes, and

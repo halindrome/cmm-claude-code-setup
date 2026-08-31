@@ -1,19 +1,20 @@
-# CMM + Context Mode Setup for Claude Code
+# CMM Setup for Claude Code
 
-Hooks, rules, and enforcement layer for two complementary MCP servers:
+**codebase-memory-mcp (CMM) is the core.** This repo is the hook-based enforcement and tracking layer that makes Claude Code actually use CMM's persistent code knowledge graph instead of re-reading files — saving ~99% of tokens on code exploration. Two add-ons are **optional** and **auto-detected** at install time; each layers on top only when present, and CMM works fully without either:
 
-- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)** (by [DeusData](https://github.com/DeusData)) — persistent code knowledge graph across 155 languages with cross-repo intelligence and gRPC/GraphQL/tRPC service detection; replaces file-reading with precise graph queries, saving ~99% of tokens on code exploration
-- **[Context Mode MCP](https://github.com/mksglu/context-mode)** *(optional)* — execution sandboxing + SQLite session persistence; routes tool outputs through isolated subprocesses to keep large outputs out of the context window (~98% context reduction)
+- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)** (by [DeusData](https://github.com/DeusData)) — **core, always installed.** Persistent code knowledge graph across 158 languages with cross-repo intelligence and gRPC/GraphQL/tRPC service detection; replaces file-reading with precise graph queries, saving ~99% of tokens on code exploration.
+- **[Context Mode MCP](https://github.com/mksglu/context-mode)** *(optional, auto-detected)* — execution sandboxing + SQLite session persistence; routes tool outputs through isolated subprocesses to keep large outputs out of the context window (~98% context reduction). Registered automatically when detected; pass `--skip-context-mode` to opt out. Its hooks no-op gracefully when it is absent.
+- **VBW (Vibe Better with Claude Code)** *(optional, auto-detected)* — a structured planning/agent workflow. When a VBW plugin tree is resolvable, setup generates CMM-aware agent overrides; without VBW the bundled agent delta files stay inert and CMM runs on its own.
 
-Together they eliminate the two main token sinks in long Claude Code sessions: redundant file reads (CMM) and bloated tool output (Context Mode).
+CMM alone eliminates the biggest token sink in long Claude Code sessions — redundant file reads. Context Mode adds a second layer for bloated tool output; VBW adds structured planning. Neither add-on is required.
 
-> **Credit where it's due:** The hook-based enforcement approach and repository structure are adapted from [jmunch-claude-code-setup](https://github.com/shacharbard/jmunch-claude-code-setup) by [Shachar Bard](https://github.com/shacharbard). This repo does not contain either MCP server — it provides the enforcement and tracking layer that makes Claude actually use them. All the clever indexing, knowledge graph construction, and execution sandboxing is the MCP authors' work.
+> **Credit where it's due:** The hook-based enforcement approach and repository structure are adapted from [jmunch-claude-code-setup](https://github.com/shacharbard/jmunch-claude-code-setup) by [Shachar Bard](https://github.com/shacharbard). This repo does not contain the MCP servers — it provides the enforcement and tracking layer that makes Claude actually use them. All the clever indexing, knowledge graph construction, and execution sandboxing is the MCP authors' work.
 
 ## What Each MCP Does
 
 ### codebase-memory-mcp (CMM)
 
-Indexes your codebase into a persistent knowledge graph so Claude fetches precise structural results — functions, call chains, architecture overviews — instead of reading entire files. Supports 155 languages (vendored tree-sitter grammars), Cypher-like queries, dead code detection, cross-service HTTP/gRPC/GraphQL/tRPC linking, channel detection (`EMITS`/`LISTENS_ON`) across 8 languages, infrastructure-as-code indexing (Dockerfile, Kubernetes), cross-repo `CROSS_*` edges, LSP-style hybrid type resolution for Go/C/C++, and git diff impact analysis. A single graph query returns what would take dozens of Grep/Read calls.
+Indexes your codebase into a persistent knowledge graph so Claude fetches precise structural results — functions, call chains, architecture overviews — instead of reading entire files. Supports 158 languages (vendored tree-sitter grammars), Cypher-like queries, dead code detection, cross-service HTTP/gRPC/GraphQL/tRPC linking, channel detection (`EMITS`/`LISTENS_ON`) across 8 languages, infrastructure-as-code indexing (Dockerfile, Kubernetes), cross-repo `CROSS_*` edges, Hybrid LSP type resolution (Python, TS/JS/JSX/TSX, PHP, C#, Go, C/C++, Java, Kotlin, Rust, Perl), and git diff impact analysis. A single graph query returns what would take dozens of Grep/Read calls.
 
 ### Context Mode MCP *(optional)*
 
@@ -42,7 +43,7 @@ CMM and Context Mode are complementary, not competing:
 | CLAUDE.md rules | Instructions | Tells Claude when to use CMM and ctx_* tools |
 | Session gate (CMM) | Blocking (PreToolUse) | Blocks ALL tools until CMM index is refreshed at session start |
 | Session gate (Context Mode) | Blocking (PreToolUse) | Gates tool calls until Context Mode is initialized *(if installed)* |
-| Agent spawn gate | Blocking (PreToolUse) | Blocks subagent spawning without MCP instructions in prompt |
+| Agent spawn gate | Blocking (PreToolUse) | Blocks `Agent` spawns whose prompt lacks MCP instructions — **Workflow `agent()` spawns bypass it**; per-project exempt list in `.claude/cmm-agent-passthrough.txt` (see [Subagent Instructions Template](#subagent-instructions-template)) |
 | PreToolUse nudge | Non-blocking | Reminds Claude when it tries `Read` on indexed code files |
 | PostToolUse logger | Passive | Logs tool calls to SQLite for session resume *(if Context Mode installed)* |
 | PostToolUse tracker | Passive | Tracks CMM call counts per tool |
@@ -67,7 +68,22 @@ cd /path/to/your-project
 bash /path/to/cmm-claude-code-setup/setup.sh --all
 ```
 
-Setup handles the rest automatically: it installs global hooks and rules (to `$CLAUDE_CONFIG_DIR/` or `~/.claude/`), project hooks and rules (to `.claude/`), detects whether CMM is registered with Claude Code and creates `.mcp.json` if needed, adds all 14 CMM tool names to `.claude/settings.json` (the tool allowlist), and optionally sets up Context Mode — all interactively with prompts at each step.
+Setup handles the rest automatically: it installs global hooks and rules (to `$CLAUDE_CONFIG_DIR/` or `~/.claude/`), project hooks and rules (to `.claude/`), detects whether CMM is registered with Claude Code and creates `.mcp.json` if needed, writes the CMM (+ Context Mode) tool allowlist to `settings.json`, and optionally sets up Context Mode — all interactively with prompts at each step.
+
+**Tool allowlist (and where it lives):**
+
+The allowlist pre-approves the MCP tool calls so Claude Code doesn't prompt on each use (important for the hooks and subagents that auto-call CMM). It is **not** required for the tools to function — without it they still work, just with a permission prompt.
+
+- **Policy — "complete minus destructive":** every CMM + Context Mode tool is pre-approved **except** the irreversible/system-mutating ones, which must always prompt: CMM `delete_project`, Context Mode `ctx_purge` and `ctx_upgrade`. That's **13** CMM tools and **9** Context Mode tools (written in both the plugin and legacy registration forms). `--skip-context-mode` omits the Context Mode entries.
+- **Scope:** Claude Code unions `permissions.allow` across scopes, so `--global` writes the allowlist **once to the global `settings.json`** and every project inherits it — you never need to re-allowlist per project. `--project` writes to `.claude/settings.json`, and is **skipped automatically when the global allowlist already covers every tool** (no duplication). Detection is likewise merged (project + global), so a global allowlist suppresses the per-project "not allowlisted" warning.
+
+**Core vs. optional at install time:**
+
+- **CMM (core)** — hooks, rules, statusline, and the tool allowlist are always installed. This is the enforcement layer's reason for being.
+- **Context Mode (optional, auto-detected)** — registered automatically when detected via `detect_context_mode()`; pass `--skip-context-mode` to opt out. Its hooks are installed unconditionally and no-op gracefully when Context Mode is absent, so you can enable it later without re-running setup.
+- **VBW (optional, auto-detected)** — setup resolves an active VBW plugin tree (`hooks/lib/vbw-source.sh`) and generates CMM-aware agent overrides only when one is found. The bundled `agents/vbw-*.md` delta files are installed either way but stay inert without VBW; the SessionStart hook self-heals and generates the overrides automatically if VBW is added later.
+
+Non-VBW setup state (Context Mode migration sentinels, optional CMM config) lives under `.claude/.cmm-setup/`, so a CMM-only project needs no `.vbw-planning/` directory (legacy `.vbw-planning/` copies are still read for back-compat).
 
 ```bash
 # setup.sh options
@@ -223,19 +239,25 @@ Register in `~/.claude/settings.json`:
 
 ## Subagent Instructions Template
 
-When spawning subagents, include these instructions to ensure they use CMM:
+When spawning subagents, include CMM/ctx instructions in the prompt to ensure they use CMM. The canonical, installable block lives in [`rules/cmm-agent-preamble.md`](rules/cmm-agent-preamble.md) (installed to `.claude/rules/cmm-agent-preamble.md`) — paste the region between its copy markers into every subagent prompt. Abbreviated:
 
 ```
 **Code navigation (MANDATORY):** Use codebase-memory-mcp MCP tools for all code exploration.
-- Use mcp__codebase-memory-mcp__search_graph to find functions/classes by name pattern — NEVER grep through files to find definitions
-- Use mcp__codebase-memory-mcp__get_code_snippet to fetch specific function source code by qualified name
-- Use mcp__codebase-memory-mcp__trace_path to understand call chains and dependencies
-- Use mcp__codebase-memory-mcp__get_architecture for codebase orientation (languages, packages, hotspots, routes)
-- Use mcp__codebase-memory-mcp__detect_changes to assess impact of your modifications
-- Full Read only when: editing 6+ functions in same file, need imports/globals, file <50 lines, non-code files
+- Use search_graph to find functions/classes by name pattern — NEVER grep through files to find definitions
+- Use get_code_snippet to fetch specific function source code by qualified name
+- Use trace_path to understand call chains and dependencies (downstream-consumer checks)
+- Use get_architecture for codebase orientation (languages, packages, hotspots, routes)
+- Full Read only when: file <50 lines, need imports/globals, or non-code files
+**Large output (when Context Mode is available):** route large diffs / test runs / multi-file scans
+through ctx_execute / ctx_batch_execute / ctx_search so findings — not raw bytes — enter context.
 ```
 
-The `agent-cmm-gate.sh` hook enforces this — spawning is blocked if these instructions (or equivalent `ctx_*` keywords) are missing.
+**The two subagent execution models behave very differently — measured, not assumed.** The `agent-cmm-gate.sh` hook (`PreToolUse:Agent`) blocks a **main-thread or nested `Agent`** spawn whose prompt lacks CMM/ctx keywords. But the spawn-gate is the *author-facing* lever; the *behavioural* enforcement is the inside-child hooks — and whether those fire depends on how the child was spawned:
+
+- **Agent-tool subagents (including a manager's nested lens grandchildren):** project `PreToolUse` hooks **do** fire on their `Read`/`Grep`/`Bash` (verified to depth 2), so `cmm-nudge` / `grep-cmm-gate` / `ctx-execute-enforcer` redirect them toward CMM/ctx **even if their prompt never mentions CMM**. Here the spawn-gate is mostly a proactive nudge, not the enforcement.
+- **Workflow-spawned workers** (`agent()` / `parallel()` / `pipeline()` lenses): project `PreToolUse` hooks do **not** fire inside them, and they **bypass** the spawn-gate entirely. Their only guidance is the (ignorable) `SubagentStart` injection plus whatever you bake into the `agent()` prompt.
+
+So: for a **Workflow** panel, bake the preamble into the `agent()` prompt (`rules/cmm-agent-preamble.md`) — it's the only lever that lands. For **Agent-tool** panels you can instead **exempt purpose-built agent types** from the spawn-gate via `.claude/cmm-agent-passthrough.txt` (one agent-type per line, `#` comments and shell globs allowed) — the inside-child hooks keep enforcing, so you drop only the prompt-nag. This is the tool-agnostic path: a skill lists its reviewer/manager types and never has to mention CMM.
 
 ## Context Mode MCP — Optional Add-on
 
@@ -332,6 +354,32 @@ Our own project hooks (`session-gate`, `ctx-execute-enforcer`, `cmm-nudge`, etc.
 
 > **Matcher-drift heal (overwrites user matcher edits on upstream entries).**
 > On every `setup.sh --project` run, the merge finds each upstream entry by substring match on either `hook claude-code <event>` (legacy/npx form) or `context-mode-hook-dispatch.sh <event>` (current form). It rewrites the `matcher` field back to the upstream default if the two diverge; this keeps all installs on the same tool-coverage contract. **User customizations to the `matcher` field on these five entries are overwritten.** User customizations appended to the dispatcher command (e.g. `bash /path/dispatch.sh posttooluse --verbose`) are preserved — the heal only rewrites the command when `context-mode-hook-dispatch.sh <event>` is absent. Early phase-51 installs using the bare-form or npx-launcher commands are rewritten in-place to the dispatcher form on re-run. Matchers on your other (non-upstream) hook entries — including the CMM enforcement hooks and anything you added by hand — are never touched.
+
+## VBW (Vibe Better with Claude Code) — Optional Add-on
+
+VBW is a structured planning/agent workflow. It is **optional and auto-detected** — CMM is fully functional without it. When VBW is present, this repo makes its agents CMM-aware; when it is absent, nothing about VBW is required and the bundled agent deltas stay inert.
+
+- **Auto-detection (installed plugins only).** `setup.sh` uses `hooks/lib/vbw-source.sh` (`resolve_vbw_source`) to locate VBW, but only an actual **plugin install** counts as "available": a marketplace install or an active `--plugin-dir` local symlink. A bare **dev-checkout** (a VBW source clone sitting in `~/Sources`) does **not** count — so a project migrating away from VBW isn't handed VBW agents just because source happens to be on disk. Pass `--with-vbw` to opt a dev-checkout back in.
+- **Zero VBW footprint when absent.** When VBW is not installed, a `--project` install writes **no VBW files at all**: the `agents/vbw-*.md` deltas are not injected, and the two VBW-only files — `hooks/lib/vbw-source.sh` (the detection library) and `hooks/project/agent-override-generate.sh` (the SessionStart generator) — are not copied and its SessionStart registration is not written. Any VBW artifacts from a prior install (deltas, generated overrides, the two infra files) are moved aside into `.claude/.cmm-setup/vbw-agents.bak/` (reversible). Install VBW (or pass `--with-vbw` for a dev-checkout) and re-run `setup.sh` to enable the overrides.
+- **No planning directory required.** A CMM-only project has no `.vbw-planning/`. Setup state that used to live there (Context Mode migration sentinels, optional CMM config) now lives under `.claude/.cmm-setup/`; legacy `.vbw-planning/` copies are still read for back-compat.
+- **Migrating an existing install off VBW.** If a project was previously set up with VBW and you re-run `setup.sh --project` on a machine where VBW is no longer resolvable, setup moves any stale generated `.claude/agents/vbw-*.md` overrides aside into `.claude/.cmm-setup/vbw-agents.bak/` (reversible — files are moved, not deleted) so Claude Code stops loading them. The inert delta files and hooks stay in place, so the stack self-heals if VBW returns.
+
+## Uninstalling
+
+Remove the whole stack from a project or globally with `--uninstall` (requires an explicit scope):
+
+```bash
+bash setup.sh --uninstall --project --dry-run   # preview what would be removed
+bash setup.sh --uninstall --project             # remove from this project
+bash setup.sh --uninstall --global              # remove global install
+bash setup.sh --uninstall --all --yes           # remove both, no prompt
+```
+
+- **What it removes:** the hooks, `hooks/lib/` helpers, rules, skills, VBW agent deltas + generated overrides, the statusline hook, the optional metrics tool, and `.claude/.cmm-setup/` — plus the stack's hook registrations, permission-allowlist entries, and `statusLine` block from `settings.json` / `settings.local.json`.
+- **What it preserves:** user-owned hooks, agents, skills, and any other `settings.json` entries the stack did not add are left untouched.
+- **Reversible:** removed files are **moved** into a timestamped `.cmm-setup-uninstall-<ts>/` backup dir under the target, and edited JSON files are backed up there first. Delete the backup once you're satisfied.
+- **MCP servers:** `.mcp.json` entries for `codebase-memory-mcp` and `context-mode` are **left intact** by default (they're external tools you may want to keep). Pass `--purge-mcp` to remove them too.
+- Honors `--dry-run` and `--yes`. Restart any open Claude Code sessions afterward.
 
 ## Diagnostics & problem reports
 

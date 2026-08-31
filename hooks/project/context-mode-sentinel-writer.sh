@@ -50,33 +50,31 @@ if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PR
     echo "Project was moved or cloned. Re-run: bash setup.sh --project --force" >&2
 fi
 
-# --- Context Mode Presence Check ---
-CONTEXT_MODE_INSTALLED=0
-if python3 -c "
-import json, os, sys
-try:
-    with open('${PROJECT_ROOT}/.mcp.json') as f:
-        if 'context-mode' in json.load(f).get('mcpServers', {}):
-            sys.exit(0)
-except Exception: pass
-for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
-    if not d: continue
-    try:
-        with open(os.path.join(d, 'settings.json')) as f:
-            if 'context-mode' in json.load(f).get('mcpServers', {}):
-                sys.exit(0)
-    except Exception: pass
-sys.exit(1)
-" 2>/dev/null; then
-  CONTEXT_MODE_INSTALLED=1
+# --- Context Mode Presence Check (shared library) ---
+# Uncached: this hook runs only after a ctx_* tool call, so the probe cost is
+# negligible and a fresh read avoids writing a sentinel from stale state.
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+  [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+  source "$_CM_LIB"
+  detect_context_mode "$PROJECT_ROOT"
+else
+  exit 0
 fi
-[ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
 if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
   exit 0
 fi
 
-# Write sentinel to unblock session gate
-echo "ready" > "/tmp/context-mode-ready-${PROJECT_HASH}"
+# Write sentinel to unblock session gate.
+#
+# "live", not "ready": this hook is PostToolUse on a real ctx_* call, so reaching
+# this line means the MCP server answered — proof of life, not merely proof the
+# plugin is on disk. ctx-execute-enforcer.sh arms only on "live" and only while
+# this file stays fresh, so every ctx_* call is also the enforcer's heartbeat.
+# session-gate.sh checks existence only, so either verdict still opens that gate.
+echo "live" > "/tmp/context-mode-ready-${PROJECT_HASH}"
 
 exit 0

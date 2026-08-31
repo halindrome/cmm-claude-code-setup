@@ -110,7 +110,7 @@
         ]
       },
       {
-        "matcher": "mcp__context-mode__ctx_execute",
+        "matcher": "mcp__plugin_context-mode_context-mode__ctx_execute|mcp__context-mode__ctx_execute",
         "hooks": [
           {
             "type": "command",
