@@ -1,5 +1,13 @@
 #!/bin/bash
-# test-scout-context-mode.sh — Verify Scout agent body contains Context Mode integration sections
+# test-scout-context-mode.sh — Verify the Scout agent DELTA carries the Context Mode
+# integration this repo adds on top of upstream VBW.
+#
+# SCOPE: agents/vbw-scout.md is a DELTA over the upstream VBW agent body (since
+# 8abfefe), not a standalone agent definition. Assert only what this repo owns:
+# the Context Mode sections and tool references it injects, plus the read-only
+# guarantees that must survive an upstream sync. Do NOT assert on upstream base
+# content — it is not in this file, and doing so is what left this suite red.
+#
 # Usage: bash tests/test-scout-context-mode.sh
 # Exit: 0 = all pass, 1 = any failure
 set -euo pipefail
@@ -11,7 +19,7 @@ PASS=0; FAIL=0
 
 _assert_contains() {
     local label="$1" pattern="$2"
-    if grep -q "$pattern" "$SCOUT_FILE" 2>/dev/null; then
+    if grep -Eq "$pattern" "$SCOUT_FILE" 2>/dev/null; then
         echo "PASS: $label"
         PASS=$((PASS+1))
     else
@@ -22,7 +30,7 @@ _assert_contains() {
 
 _assert_not_contains() {
     local label="$1" pattern="$2"
-    if grep -q "$pattern" "$SCOUT_FILE" 2>/dev/null; then
+    if grep -Eq "$pattern" "$SCOUT_FILE" 2>/dev/null; then
         echo "FAIL: $label (pattern should NOT be present: $pattern)"
         FAIL=$((FAIL+1))
     else
@@ -69,37 +77,58 @@ _assert_contains "fully-qualified ctx_index tool name" \
 _assert_contains "ctx_search referenced for querying indexed content" \
     "ctx_search"
 
-# --- Positive content tests: fallback and delimiters ---
+# --- Positive content tests: fallback ---
 echo ""
-echo "--- Fallback language and delimiter comments ---"
+echo "--- Fallback language ---"
 
 _assert_contains "WebFetch fallback language present" \
     "WebFetch"
 
-_assert_contains "Extension start delimiter comment" \
-    "cmm-claude-code-setup: Context Mode extensions"
+_assert_contains "Context Mode Capture section header exists" \
+    "## Context Mode Capture"
 
-_assert_contains "Extension end delimiter comment" \
-    "end cmm-claude-code-setup extensions"
-
-# --- Negative and structural tests ---
+# --- Structural tests: the file is a DELTA, not a full agent body ---
+#
+# This block replaces five assertions that encoded the PRE-delta contract and had
+# been failing since the file was restructured. Two upstream commits changed it:
+#
+#   17a3302  align vbw-scout.md with upstream v1.36.2
+#            disallowedTools: "Bash, Edit, NotebookEdit, Task"
+#                          -> "Edit, NotebookEdit, Task, TaskCreate, Agent, ..."
+#            i.e. Scout was deliberately GRANTED Bash. The old
+#            `disallowedTools:.*Bash` assertion, and the two negative assertions
+#            forbidding ctx_execute/ctx_batch_execute "because they require Bash",
+#            all rest on a premise that no longer holds.
+#
+#   8abfefe  apply delta-only format to vbw-lead, vbw-qa, vbw-scout
+#            226 -> 90 lines. "## MCP Tool Usage" and "## External Data
+#            Validation" now live in the UPSTREAM BASE, and the extension
+#            delimiter comments went away with the merge format. Asserting on
+#            base content from the delta is wrong by construction.
+#
+# So assert what the delta actually owns, and assert the delta SHAPE — which is
+# what would really regress if someone re-inlined the full upstream body.
 echo ""
-echo "--- Negative and structural tests ---"
+echo "--- Delta-only structure ---"
 
-_assert_contains "disallowedTools includes Bash" \
-    "disallowedTools:.*Bash"
+_assert_not_contains "delta does NOT re-inline the upstream MCP Tool Usage section" \
+    "^## MCP Tool Usage"
 
-_assert_not_contains "ctx_execute should NOT be in Scout body" \
-    "ctx_execute"
+_assert_not_contains "delta does NOT re-inline the upstream External Data Validation section" \
+    "^## External Data Validation"
 
-_assert_not_contains "ctx_batch_execute should NOT be in Scout body (requires Bash)" \
-    "ctx_batch_execute"
+# Scout is a research agent: read-only guarantees must survive any upstream sync.
+# Bash is deliberately NOT asserted here — 17a3302 granted it on purpose.
+_assert_contains "frontmatter declares disallowedTools" \
+    "^disallowedTools:"
 
-_assert_contains "MCP Tool Usage section still exists" \
-    "## MCP Tool Usage"
+# Match Edit as a LIST ITEM, not a substring: "disallowedTools:.*Edit" is
+# satisfied by "NotebookEdit", so dropping Edit alone could never fail the test.
+_assert_contains "Edit remains disallowed (read-only research agent)" \
+    "^disallowedTools:( *|.*, )Edit(,|\$)"
 
-_assert_contains "External Data Validation section still exists" \
-    "## External Data Validation"
+_assert_contains "NotebookEdit remains disallowed" \
+    "^disallowedTools:( *|.*, )NotebookEdit(,|\$)"
 
 # --- Summary ---
 echo ""
