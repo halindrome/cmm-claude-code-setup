@@ -5,13 +5,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-HOOK="$SCRIPT_DIR/../hooks/project/ctx-execute-enforcer.sh"
+SRC_HOOK="$SCRIPT_DIR/../hooks/project/ctx-execute-enforcer.sh"
 
 PASS=0; FAIL=0
 _assert_exit() {
     local label="$1" expected="$2" json="$3"
     local actual=0
-    echo "$json" | bash "$HOOK" >/dev/null 2>&1 || actual=$?
+    # cwd must be the isolated fake repo: the hook derives PROJECT_ROOT from
+    # `git rev-parse --show-toplevel` at the cwd, and that is what keeps this
+    # suite off the real session's sentinel. See the setup block below.
+    echo "$json" | (cd "$FAKE_PROJ" && bash "$HOOK") >/dev/null 2>&1 || actual=$?
     if [ "$actual" -eq "$expected" ]; then
         echo "PASS: $label"
         PASS=$((PASS+1))
@@ -21,33 +24,55 @@ _assert_exit() {
     fi
 }
 
-# --- Sentinel simulation setup ---
-# Compute the same PROJECT_HASH the hook uses: md5 of canonical project root path
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+# --- Sentinel simulation setup (isolated fake repo) ---
+# This suite USED TO drive the hook against the REAL project hash, so $CM_CACHE
+# and $CM_SENTINEL were the same files a live Claude Code session in this repo
+# is using. That was a race, not just an inconvenience: the four assertions
+# below that require the sentinel absent / "ready" / empty / stale are destroyed
+# whenever context-mode-sentinel-writer.sh refreshes it to "live" mid-run (it
+# fires on every ctx_* PostToolUse). The suite then reported a pass or a failure
+# depending on timing, so a green run proved nothing.
+#
+# Fix: give the hook its own git repo to resolve. The hook takes PROJECT_ROOT
+# from `git rev-parse --show-toplevel` at the cwd and checks it against its own
+# location (path-integrity check), so the hook is copied into the fake repo at
+# the same relative layout — the pattern tests/test-agent-hook-enforcement.sh
+# already uses. Nothing here touches the real session's sentinel.
+if [ ! -f "$SRC_HOOK" ]; then
+    echo ""
+    echo "NOTE: $SRC_HOOK does not exist yet."
+    echo "This test suite is complete but requires Plan 32-01 to be merged first."
+    echo "Run again after hooks/project/ctx-execute-enforcer.sh is created."
+    echo ""
+    echo "Results: $PASS passed, $FAIL failed (hook not yet available)"
+    exit 0
+fi
+
+FAKE_ROOT="$(mktemp -d)"
+FAKE_PROJ="$(cd "$FAKE_ROOT" && pwd -P)/proj"
+mkdir -p "$FAKE_PROJ/hooks/project" "$FAKE_PROJ/hooks/lib"
+git -C "$FAKE_PROJ" init -q
+cp "$SRC_HOOK" "$FAKE_PROJ/hooks/project/ctx-execute-enforcer.sh"
+cp "$SCRIPT_DIR/../hooks/lib/"*.sh "$FAKE_PROJ/hooks/lib/" 2>/dev/null || true
+HOOK="$FAKE_PROJ/hooks/project/ctx-execute-enforcer.sh"
+
+# Resolve the hash the same way the hook will, from inside the fake repo.
+FAKE_ROOT_CANON="$(cd "$FAKE_PROJ" && git rev-parse --show-toplevel 2>/dev/null || echo "$FAKE_PROJ")"
 if command -v md5 >/dev/null 2>&1; then
-    PROJECT_HASH="$(echo "$PROJECT_ROOT" | md5 -q)"
+    PROJECT_HASH="$(echo "$FAKE_ROOT_CANON" | md5 -q)"
 else
-    PROJECT_HASH="$(echo "$PROJECT_ROOT" | md5sum | awk '{print $1}')"
+    PROJECT_HASH="$(echo "$FAKE_ROOT_CANON" | md5sum | awk '{print $1}')"
 fi
 
 CM_CACHE="/tmp/ctx-enforcer-${PROJECT_HASH}"
 CM_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
 
-# This suite drives the hook against the REAL project hash, so $CM_CACHE and
-# $CM_SENTINEL are the same files a live Claude Code session in this repo is
-# using. Blindly rm-ing them on exit revoked the running session's Context Mode
-# sentinel and wedged it mid-task. Snapshot whatever was there and put it back.
-_CM_CACHE_BAK="$(mktemp)"; _CM_CACHE_EXISTED=false
-_CM_SENT_BAK="$(mktemp)";  _CM_SENT_EXISTED=false
-[ -f "$CM_CACHE" ]    && { cp "$CM_CACHE" "$_CM_CACHE_BAK";   _CM_CACHE_EXISTED=true; }
-[ -f "$CM_SENTINEL" ] && { cp "$CM_SENTINEL" "$_CM_SENT_BAK"; _CM_SENT_EXISTED=true; }
-
-_restore_sentinels() {
-    if [ "$_CM_CACHE_EXISTED" = true ]; then cp "$_CM_CACHE_BAK" "$CM_CACHE"; else rm -f "$CM_CACHE"; fi
-    if [ "$_CM_SENT_EXISTED" = true ];  then cp "$_CM_SENT_BAK" "$CM_SENTINEL"; else rm -f "$CM_SENTINEL"; fi
-    rm -f "$_CM_CACHE_BAK" "$_CM_SENT_BAK"
+_cleanup_fake() {
+    rm -rf "$FAKE_ROOT"
+    rm -f "$CM_CACHE" "$CM_SENTINEL"
+    rm -f "/tmp/cmm-project-root-$(echo "$FAKE_PROJ" | md5 -q 2>/dev/null || echo "$FAKE_PROJ" | md5sum | awk '{print $1}')"
 }
-trap _restore_sentinels EXIT
+trap _cleanup_fake EXIT
 
 # Create sentinels to simulate Context Mode installed and PROVEN LIVE.
 # "live" (not a bare touch) is required: the enforcer arms only on a sentinel
@@ -55,17 +80,6 @@ trap _restore_sentinels EXIT
 # real ctx_* call — and only while that file is fresh.
 echo "1" > "$CM_CACHE"
 echo "live" > "$CM_SENTINEL"
-
-# Bail out early with a clear message if hook doesn't exist yet
-if [ ! -f "$HOOK" ]; then
-    echo ""
-    echo "NOTE: $HOOK does not exist yet."
-    echo "This test suite is complete but requires Plan 32-01 to be merged first."
-    echo "Run again after hooks/project/ctx-execute-enforcer.sh is created."
-    echo ""
-    echo "Results: $PASS passed, $FAIL failed (hook not yet available)"
-    exit 0
-fi
 
 # --- Blocked command tests (expect exit 2, sentinels present) ---
 echo "--- Blocked command tests (sentinels present, expect exit 2) ---"

@@ -3,8 +3,11 @@
 
 TESTS := $(sort $(wildcard tests/test-*.sh))
 
+# An empty TESTS would run nothing and exit 0 — a partial checkout or a `make -C`
+# from the wrong root would report clean having verified nothing. Fail loudly instead.
 .PHONY: test
 test:
+	$(if $(TESTS),,$(error no tests/test-*.sh found — run make from the repository root))
 	@fail=0; \
 	for t in $(TESTS); do \
 	  if bash "$$t" >/dev/null 2>&1; then \
