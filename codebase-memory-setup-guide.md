@@ -23,7 +23,7 @@ This lets Claude navigate code by relationships (who calls what, what implements
 - **Infrastructure-as-code** — Dockerfiles, Kubernetes manifests, and Kustomize overlays indexed as graph nodes
 - **LSP-style hybrid type resolution** for Go, C, and C++ (more languages coming)
 - **Team-shared persistent artifact** — the graph database is a single SQLite file that can be committed or shared so teammates skip the local index step
-- **155 languages** — vendored tree-sitter grammars compiled into the binary; covers mainstream (Python, Go, TypeScript, Rust, Java, C++, ...) plus newer/niche grammars (Solidity, GDScript, Gleam, PowerShell, Move, Cairo, Pkl, Bicep, ...)
+- **158 languages** — vendored tree-sitter grammars compiled into the binary; covers mainstream (Python, Go, TypeScript, Rust, Java, C++, Perl, ...) plus newer/niche grammars (Solidity, GDScript, Gleam, PowerShell, Move, Cairo, Pkl, Bicep, ...)
 
 ---
 

@@ -20,11 +20,15 @@ Use codebase-memory-mcp tools as the primary method for code exploration.
 
 Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do not jump straight to reading files.
 
-### Behavior notes (upstream v0.6.1+)
+### Behavior notes (upstream v0.10.8)
 
-- `search_graph` returns at most **200 rows** by default (upstream cap as of v0.6.1+); pass `offset` to page or use `query_graph` with Cypher for full scans.
+- `search_graph` returns at most **200 rows** by default (upstream cap as of v0.10.8); pass `offset` to page or use `query_graph` with Cypher for full scans.
+- `search_graph`: use **`name_pattern`** to find a symbol by name. `qn_pattern` matches the whole qualified name — which includes path segments — so in a monorepo it drags in `.scss` variables, vendored `.min.js`, OpenAPI `$ref`s, and anything whose *path* contains the string. A `qn_pattern` search returning rows of unrelated noise means *wrong argument*, not *symbol absent*, and never means *language unsupported*. Re-run with `name_pattern` before concluding anything.
 - `search_code` auto-converts multi-word input to a regex (`foo bar` → `foo.*bar`); pass an explicit single-token regex if you need different semantics.
 - `list_projects` now returns all registered projects, including those with `/tmp/`-rooted paths (prior versions filtered tmp paths silently). Useful when triaging multiple indexed scratch projects during QA.
+- The call graph is LSP-resolved (accurate) via Hybrid LSP for Python, TS/JS/JSX/TSX, PHP, C#, Go, C/C++/CUDA, Java, Kotlin, Rust, and **Perl**. Prefer the graph tools over manual grep for all of them.
+- **Perl is a first-class Hybrid LSP language, not a fallback language.** `.pl` and `.pm` are indexed by extension (a `#!…perl` shebang also maps an extensionless file to Perl); packages, `@ISA` / `use parent` / `use base` inheritance with MRO dispatch, `SUPER::` calls, Exporter (`use Foo qw(...)`) import maps, `bless` / `ref($class)||$class` self-type inference, and qualified `Pkg::sub` static calls all resolve, with a zero-edge guarantee on unresolved receivers. Use `search_graph` / `trace_path` / `get_code_snippet` on Perl exactly as on Go or Python.
+- **Never infer that a language is unsupported from its absence in a list here.** CMM ships 158 vendored tree-sitter grammars; everything it parses is graph-queryable. When unsure, ask the graph (`get_architecture`, or `search_graph` for a known symbol) — do not fall back to grep on a pessimistic assumption.
 
 `Read` is correct for: non-code files (JSON, YAML, config, Markdown), full-file context (imports, globals), files under 50 lines, and files not yet indexed.
 

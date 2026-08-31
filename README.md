@@ -2,7 +2,7 @@
 
 **codebase-memory-mcp (CMM) is the core.** This repo is the hook-based enforcement and tracking layer that makes Claude Code actually use CMM's persistent code knowledge graph instead of re-reading files — saving ~99% of tokens on code exploration. Two add-ons are **optional** and **auto-detected** at install time; each layers on top only when present, and CMM works fully without either:
 
-- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)** (by [DeusData](https://github.com/DeusData)) — **core, always installed.** Persistent code knowledge graph across 155 languages with cross-repo intelligence and gRPC/GraphQL/tRPC service detection; replaces file-reading with precise graph queries, saving ~99% of tokens on code exploration.
+- **[codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)** (by [DeusData](https://github.com/DeusData)) — **core, always installed.** Persistent code knowledge graph across 158 languages with cross-repo intelligence and gRPC/GraphQL/tRPC service detection; replaces file-reading with precise graph queries, saving ~99% of tokens on code exploration.
 - **[Context Mode MCP](https://github.com/mksglu/context-mode)** *(optional, auto-detected)* — execution sandboxing + SQLite session persistence; routes tool outputs through isolated subprocesses to keep large outputs out of the context window (~98% context reduction). Registered automatically when detected; pass `--skip-context-mode` to opt out. Its hooks no-op gracefully when it is absent.
 - **VBW (Vibe Better with Claude Code)** *(optional, auto-detected)* — a structured planning/agent workflow. When a VBW plugin tree is resolvable, setup generates CMM-aware agent overrides; without VBW the bundled agent delta files stay inert and CMM runs on its own.
 
@@ -14,7 +14,7 @@ CMM alone eliminates the biggest token sink in long Claude Code sessions — red
 
 ### codebase-memory-mcp (CMM)
 
-Indexes your codebase into a persistent knowledge graph so Claude fetches precise structural results — functions, call chains, architecture overviews — instead of reading entire files. Supports 155 languages (vendored tree-sitter grammars), Cypher-like queries, dead code detection, cross-service HTTP/gRPC/GraphQL/tRPC linking, channel detection (`EMITS`/`LISTENS_ON`) across 8 languages, infrastructure-as-code indexing (Dockerfile, Kubernetes), cross-repo `CROSS_*` edges, LSP-style hybrid type resolution for Go/C/C++, and git diff impact analysis. A single graph query returns what would take dozens of Grep/Read calls.
+Indexes your codebase into a persistent knowledge graph so Claude fetches precise structural results — functions, call chains, architecture overviews — instead of reading entire files. Supports 158 languages (vendored tree-sitter grammars), Cypher-like queries, dead code detection, cross-service HTTP/gRPC/GraphQL/tRPC linking, channel detection (`EMITS`/`LISTENS_ON`) across 8 languages, infrastructure-as-code indexing (Dockerfile, Kubernetes), cross-repo `CROSS_*` edges, Hybrid LSP type resolution (Python, TS/JS/JSX/TSX, PHP, C#, Go, C/C++, Java, Kotlin, Rust, Perl), and git diff impact analysis. A single graph query returns what would take dozens of Grep/Read calls.
 
 ### Context Mode MCP *(optional)*
 
