@@ -112,6 +112,14 @@ def scrub(s):
     return "\n".join(res)
 
 
+# A redirect whose left-hand command only emits literal content is file
+# AUTHORING, not output capture: `echo '{...}' > config.json` discards nothing,
+# because nothing was going to be printed for the index. Same category as the
+# heredoc case below. Found by dogfooding -- the guard blocked a test fixture
+# being written, which is friction with no alternative to offer.
+AUTHORING = re.compile(r"(?:^|[;&|]|\|\||&&|\n)\s*(?:echo|printf)\b[^;&|\n]*$")
+
+
 def redirect_hit(scrubbed, raw):
     """Return (match, target) if stdout goes to a file, else None."""
     # Heredoc lines are file AUTHORING (`cat > script.sh <<EOF`), not output
@@ -119,6 +127,8 @@ def redirect_hit(scrubbed, raw):
     heredoc = set(i for i, ln in enumerate(raw.split("\n")) if HEREDOC_LINE.search(ln))
     for m in REDIR.finditer(scrubbed):
         if scrubbed.count("\n", 0, m.start()) in heredoc:
+            continue
+        if AUTHORING.search(scrubbed[:m.start()]):
             continue
         fd, op, target = m.group("fd"), m.group("op"), m.group("target")
         if "&" in op and op not in ("&>", "&>>"):
@@ -192,7 +202,13 @@ for label, lang, text in payloads:
     if kind == "EXEMPT":
         saw_exempt = True
         continue
-    sys.stdout.write("BLOCK\t%s\t%s\t%s\t%s\t%s\n" % (kind, label, token, tool, target))
+    # One field per line, and whitespace in the token collapsed. A tab-delimited
+    # record broke when a multi-line payload put a newline inside the token: the
+    # shell's `cut -f5` then read past the end of line 1 and rendered a message
+    # with an empty tool name.
+    token = " ".join(token.split())
+    target = " ".join(target.split())
+    sys.stdout.write("BLOCK\n%s\n%s\n%s\n%s\n%s\n" % (kind, label, token, tool, target))
     sys.stdout.write("---PAYLOAD---\n")
     sys.stdout.write(suggested)
     sys.exit(0)
@@ -213,15 +229,15 @@ case "$VERDICT" in
     bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "ctx_payload_exempt" 2>/dev/null || true
     exit 0
     ;;
-  BLOCK*) ;;
+  BLOCK) ;;
   *) exit 0 ;;
 esac
 
-KIND=$(printf   '%s' "$VERDICT" | cut -f2)
-LABEL=$(printf  '%s' "$VERDICT" | cut -f3)
-TOKEN=$(printf  '%s' "$VERDICT" | cut -f4)
-TOOL=$(printf   '%s' "$VERDICT" | cut -f5)
-TARGET=$(printf '%s' "$VERDICT" | cut -f6)
+KIND=$(printf   '%s' "$RESULT" | sed -n '2p')
+LABEL=$(printf  '%s' "$RESULT" | sed -n '3p')
+TOKEN=$(printf  '%s' "$RESULT" | sed -n '4p')
+TOOL=$(printf   '%s' "$RESULT" | sed -n '5p')
+TARGET=$(printf '%s' "$RESULT" | sed -n '6p')
 SUGGESTED=$(printf '%s' "$RESULT" | sed -n '/^---PAYLOAD---$/,$p' | sed '1d')
 
 # ctx_batch_execute has no intent=; its equivalent is the queries= array.

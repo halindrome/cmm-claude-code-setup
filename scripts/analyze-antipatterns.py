@@ -48,6 +48,9 @@ SHELLY = {"shell", "bash", "sh", "zsh", "", None}
 
 RE_PIPE_TRUNC = re.compile(r"(?<!\|)\|(?!\|)\s*(?:head|tail)\b")
 RE_TEE = re.compile(r"\|\s*tee\b")
+# `echo '{...}' > config.json` is file AUTHORING: nothing was going to be printed
+# for the index, so nothing is discarded. Same category as a heredoc.
+RE_AUTHORING = re.compile(r"(?:^|[;&|]|\|\||&&|\n)\s*(?:echo|printf)\b[^;&|\n]*$")
 # A redirect token, capturing any fd digit immediately before it and the target.
 RE_REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?&?)\s*(?P<target>[^\s;|&()]+)")
 
@@ -138,6 +141,8 @@ def redirect_hit(scrubbed, raw):
     for m in RE_REDIR.finditer(scrubbed):
         if scrubbed.count("\n", 0, m.start()) in heredoc_lines:
             continue
+        if RE_AUTHORING.search(scrubbed[:m.start()]):
+            continue                      # echo/printf > file is authoring
         fd, op, target = m.group("fd"), m.group("op"), m.group("target")
         if "&" in op and op != "&>" and op != "&>>":
             continue                      # >&2, >&1 — duplicating, not a file
@@ -221,6 +226,10 @@ SELFTEST = [
     # the rest of the payload, or later truncations go undetected.
     ("read -ra a <<< x\ncmd | head -5", "shell", True),
     ("cmd <<< x > out.log", "shell", True),
+    # echo/printf into a file is authoring, not output capture.
+    ("echo hi > /tmp/out.log", "shell", False),
+    ('printf "%s" x > /tmp/out.json', "shell", False),
+    ("grep -rn foo src/ > /tmp/hits.log", "shell", True),
     ("const a = b > c ? 1 : 2", "javascript", False),
     ("x = y >> 1", "python", False),
     ("print $fh > 5", "perl", False),

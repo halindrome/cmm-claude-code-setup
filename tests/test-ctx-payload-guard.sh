@@ -138,6 +138,34 @@ _blocks "redirect on a here-string line is still caught" \
   "$(_json "$PLUGIN" shell 'cmd <<< x > out.log')"
 
 echo ""
+echo "--- PASS: writing a file with literal content is authoring, not truncation ---"
+# Found by dogfooding: the guard blocked a test fixture being written. `echo x >
+# f` discards no captured output because nothing was going to print, so there is
+# no alternative to offer -- the same category as the heredoc case.
+_allows "allows 'echo ... > file'"   "$(_json "$PLUGIN" shell "echo hi > /tmp/out.log")"
+_allows "allows 'printf ... > file'" "$(_json "$PLUGIN" shell 'printf "%s" x > /tmp/out.json')"
+_allows "allows authoring inside a loop" \
+  "$(_json "$PLUGIN" shell 'for i in 1 2 3; do echo x > "/tmp/p$i.cgi"; done')"
+# But a real command's output redirected to a file still blocks.
+_blocks "still blocks 'grep ... > file'" \
+  "$(_json "$PLUGIN" shell 'grep -rn foo src/ > /tmp/hits.log')"
+
+echo ""
+echo "--- multi-line payloads render a well-formed message ---"
+# A tab-delimited record broke when a newline landed inside the token: `cut -f5`
+# read past the end of line 1 and the message lost its tool name.
+_ML="$(_json "$PLUGIN" shell "$(printf 'cd /tmp\nls -la \\\n  > /tmp/listing.log')")"
+_blocks "blocks a multi-line redirect" "$_ML"
+_stderr_has "multi-line block still names the tool" "$_ML" "$PLUGIN"
+_stderr_has "multi-line block still offers intent="  "$_ML" 'intent='
+_run "$_ML" >/dev/null
+if grep -qE '^\s+\(language=' "/tmp/ctxpg-err.$$"; then
+  fail "message lost the tool name (empty field before the paren)"
+else
+  pass "message has no empty tool-name field"
+fi
+
+echo ""
 echo "--- PASS: non-shell languages are never scanned ---"
 # '>' is a comparison operator outside shell.
 _allows "allows javascript comparison" "$(_json "$PLUGIN" javascript 'const a = b > c ? 1 : 2')"
