@@ -50,9 +50,14 @@ RE_PIPE_TRUNC = re.compile(r"(?<!\|)\|(?!\|)\s*(?:head|tail)\b")
 RE_TEE = re.compile(r"\|\s*tee\b")
 # `echo '{...}' > config.json` is file AUTHORING: nothing was going to be printed
 # for the index, so nothing is discarded. Same category as a heredoc.
-RE_AUTHORING = re.compile(r"(?:^|[;&|]|\|\||&&|\n)\s*(?:echo|printf)\b[^;&|\n]*$")
+# `(?:do|then|else)?` because authoring appears inside control flow at least as
+# often as at top level: `for i in 1 2; do echo x > "f$i"; done`.
+RE_AUTHORING = re.compile(
+    r"(?:^|[;&|]|\n)\s*(?:(?:do|then|else)\s+)?(?:echo|printf)\b[^;&|\n]*$")
 # A redirect token, capturing any fd digit immediately before it and the target.
-RE_REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?&?)\s*(?P<target>[^\s;|&()]+)")
+# `[ \t]*` and NOT `\s*`: `\s` crosses a newline, so `cmd >` ending one line
+# would take the next line's first word as its redirect target.
+RE_REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?&?)[ \t]*(?P<target>[^\s;|&()]+)")
 
 # `(?<!<)<<(?!<)` so a here-STRING (`<<< word`) is not mistaken for a here-DOC.
 # Without the guards this matched `<<< x`, took "x" as the terminator, and blanked
@@ -92,9 +97,25 @@ def strip_quoted(s):
             j = i + 1
             while j < n and s[j] != c:
                 j += 1
+            # `_`, not a space: `cmd > "out.log"` must still present a redirect
+            # TARGET to RE_REDIR, and a span of spaces presents none -- which
+            # silently dropped every quoted-target redirect from the counts.
+            # `_` is inert to every operator scan. Length-preserving, so the raw
+            # target stays recoverable by offset.
             for k in range(i, min(j + 1, n)):
-                out[k] = " "
+                out[k] = "_"
             i = j + 1
+        elif c == "#" and (i == 0 or s[i - 1] in " \t\n"):
+            # A shell comment is prose, not a pipeline: `# ... -> isolates the
+            # fix` otherwise counts as a redirect to a file named "isolates",
+            # and `# see cmd | head` as a truncation. Quoted spans are consumed
+            # above, so a `#` inside quotes never reaches here; `$#` and
+            # `${#v}` are not preceded by whitespace.
+            j = s.find("\n", i)
+            j = n if j < 0 else j
+            for k in range(i, j):
+                out[k] = " "
+            i = j
         elif c == "`":
             j = i + 1
             while j < n and s[j] != "`":
@@ -143,7 +164,13 @@ def redirect_hit(scrubbed, raw):
             continue
         if RE_AUTHORING.search(scrubbed[:m.start()]):
             continue                      # echo/printf > file is authoring
-        fd, op, target = m.group("fd"), m.group("op"), m.group("target")
+        fd, op = m.group("fd"), m.group("op")
+        # From `raw`, not `scrubbed`: scrub fills quoted spans with `_`, so the
+        # scrubbed target of `> "out.log"` is `_________`. Only the raw text can
+        # say whether the target is /dev/null or is read back by a later command.
+        target = raw[m.start("target"):m.end("target")].strip("'\"")
+        if not target:
+            continue
         if "&" in op and op != "&>" and op != "&>>":
             continue                      # >&2, >&1 — duplicating, not a file
         if op in ("&>", "&>>"):
@@ -230,6 +257,24 @@ SELFTEST = [
     ("echo hi > /tmp/out.log", "shell", False),
     ('printf "%s" x > /tmp/out.json', "shell", False),
     ("grep -rn foo src/ > /tmp/hits.log", "shell", True),
+    # A QUOTED redirect target is the form agents actually write, and it was
+    # invisible until scrub() started filling quoted spans with `_` instead of
+    # spaces -- a blanked target matched no REDIR at all, so these all scored
+    # clean. Every row below is a real form from the corpus.
+    ('grep -rn foo src/ > "/tmp/hits.log"', "shell", True),
+    ('cmd > "$F"', "shell", True),
+    ("cmd > '/tmp/out.log'", "shell", True),
+    ('cmd 2> "err.log"', "shell", False),          # stderr split, stdout intact
+    ('cmd > "out.log" && grep x "out.log"', "shell", False),   # read back later
+    ('echo hi > "f.txt"', "shell", False),         # authoring, quoted target
+    ('for i in 1 2; do echo x > "f$i"; done', "shell", False),  # authoring in a loop
+    ('cmd > "/dev/null"', "shell", False),
+    # A shell comment is prose. Found by dogfooding: the guard blocked its own
+    # author's payload over `-> isolates` inside a `#` comment.
+    ("# this -> isolates the fix\ngit status", "shell", False),
+    ("# see: cmd | head -5\ngit status", "shell", False),
+    ("echo $# ; cmd | head -5", "shell", True),   # $# is not a comment
+    ("git log\n# note > here\ncmd > out.log", "shell", True),  # real one still caught
     ("const a = b > c ? 1 : 2", "javascript", False),
     ("x = y >> 1", "python", False),
     ("print $fh > 5", "perl", False),

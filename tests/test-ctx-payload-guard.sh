@@ -151,6 +151,48 @@ _blocks "still blocks 'grep ... > file'" \
   "$(_json "$PLUGIN" shell 'grep -rn foo src/ > /tmp/hits.log')"
 
 echo ""
+echo "--- QUOTED redirect targets (the form agents actually write) ---"
+# These were ALL silently allowed until scrub() started filling quoted spans with
+# `_` instead of spaces: a blanked span presents no TARGET to REDIR, so the
+# redirect matched nothing at all and scored clean. `> "$F"` and `> "/tmp/x.log"`
+# are the common forms, so the gap covered most real stdout-to-file payloads.
+_blocks "blocks '> \"/tmp/hits.log\"'" \
+  "$(_json "$PLUGIN" shell 'grep -rn foo src/ > "/tmp/hits.log"')"
+_blocks "blocks '> \"\$F\"'"          "$(_json "$PLUGIN" shell 'cmd > "$F"')"
+_blocks "blocks single-quoted target" "$(_json "$PLUGIN" shell "cmd > '/tmp/out.log'")"
+# The stream rule and every exclusion must survive quoting.
+_allows "allows quoted '2> \"err.log\"'" "$(_json "$PLUGIN" shell 'cmd 2> "err.log"')"
+_allows "allows quoted '> \"/dev/null\"'" "$(_json "$PLUGIN" shell 'cmd > "/dev/null"')"
+_allows "allows quoted target read back later" \
+  "$(_json "$PLUGIN" shell 'cmd > "out.log" && grep x "out.log"')"
+_allows "allows quoted authoring target" "$(_json "$PLUGIN" shell 'echo hi > "f.txt"')"
+echo ""
+echo "--- a shell comment is prose, not a pipeline ---"
+# Found by dogfooding: the guard blocked its own author's payload because a
+# comment contained `-> isolates`, which read as a redirect to a file named
+# "isolates". `# see cmd | head -5` would have blocked the same way.
+_allows "allows '->' inside a comment" \
+  "$(_json "$PLUGIN" shell '# this -> isolates the fix
+git status')"
+_allows "allows '| head' inside a comment" \
+  "$(_json "$PLUGIN" shell '# see: cmd | head -5
+git status')"
+_allows "allows a shebang line" "$(_json "$PLUGIN" shell '#!/bin/bash
+git status')"
+# But `$#` is a positional-count expansion, not a comment, and a real
+# truncation on another line is still caught.
+_blocks "'\$#' does not start a comment" \
+  "$(_json "$PLUGIN" shell 'echo $# ; cmd | head -5')"
+_blocks "real redirect below a comment still blocks" \
+  "$(_json "$PLUGIN" shell 'git log
+# note > here
+cmd > out.log')"
+
+# The block message must name the file, not the `___` placeholder scrub leaves.
+_stderr_has "quoted-target message names the real file" \
+  "$(_json "$PLUGIN" shell 'grep -rn foo src/ > "/tmp/hits.log"')" '/tmp/hits.log'
+
+echo ""
 echo "--- multi-line payloads render a well-formed message ---"
 # A tab-delimited record broke when a newline landed inside the token: `cut -f5`
 # read past the end of line 1 and the message lost its tool name.

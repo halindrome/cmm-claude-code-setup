@@ -52,7 +52,9 @@ SHELLY = {"shell", "bash", "sh", "zsh", "", None}
 EXEMPT = re.compile(r"#\s*ctx-truncate-ok\b")
 PIPE_TRUNC = re.compile(r"(?<!\|)\|(?!\|)\s*(?:head|tail)\b[^|;&\n]*")
 TEE = re.compile(r"\|\s*tee\b")
-REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?&?)\s*(?P<target>[^\s;|&()]+)")
+# `[ \t]*` and NOT `\s*`: `\s` crosses a newline, so `cmd >` at the end of one
+# line would take the next line's first word as its redirect target.
+REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?&?)[ \t]*(?P<target>[^\s;|&()]+)")
 # `(?<!<)<<(?!<)` so a here-STRING (`<<< word`) is not mistaken for a here-DOC.
 # Without the guards this matched `<<< x`, took "x" as the terminator, and blanked
 # every following line until one equalled "x" -- scrubbing away real truncations
@@ -64,7 +66,14 @@ HEREDOC_LINE = re.compile(r"(?<!<)<<(?!<)")
 def scrub(s):
     """Blank quoted spans, $( ), backticks and heredoc bodies with same-length
     placeholders so operator scanning never fires on text inside them. Whole-string,
-    not line-based: a multi-line `git commit -m "..."` crosses newlines."""
+    not line-based: a multi-line `git commit -m "..."` crosses newlines.
+
+    Quoted spans are filled with `_`, everything else with a space. The
+    distinction is load-bearing: `cmd > "out.log"` must still present a redirect
+    TARGET to REDIR, and a span of spaces presents none -- which silently let
+    every quoted-target redirect through. `_` is inert to every operator scan
+    (it can never spell `head`, `tail`, `|` or `>`) but keeps the token intact.
+    scrub() is length-preserving, so the raw target is recoverable by offset."""
     out = list(s)
     i, n = 0, len(s)
     while i < n:
@@ -74,8 +83,19 @@ def scrub(s):
             while j < n and s[j] != c:
                 j += 1
             for k in range(i, min(j + 1, n)):
-                out[k] = " "
+                out[k] = "_"
             i = j + 1
+        elif c == "#" and (i == 0 or s[i - 1] in " \t\n"):
+            # A shell comment is prose, not a pipeline. Found by dogfooding:
+            # `# ... -> isolates the fix` blocked as a redirect to a file named
+            # "isolates", and `# see cmd | head` would block as a truncation.
+            # Quoted spans are consumed above, so a `#` inside quotes never
+            # reaches here; `$#` and `${#v}` are not preceded by whitespace.
+            j = s.find("\n", i)
+            j = n if j < 0 else j
+            for k in range(i, j):
+                out[k] = " "
+            i = j
         elif c == "`":
             j = i + 1
             while j < n and s[j] != "`":
@@ -117,11 +137,19 @@ def scrub(s):
 # because nothing was going to be printed for the index. Same category as the
 # heredoc case below. Found by dogfooding -- the guard blocked a test fixture
 # being written, which is friction with no alternative to offer.
-AUTHORING = re.compile(r"(?:^|[;&|]|\|\||&&|\n)\s*(?:echo|printf)\b[^;&|\n]*$")
+# `(?:do|then|else)?` because the authoring case appears inside control flow at
+# least as often as at top level: `for i in 1 2; do echo x > "f$i"; done`.
+AUTHORING = re.compile(
+    r"(?:^|[;&|]|\n)\s*(?:(?:do|then|else)\s+)?(?:echo|printf)\b[^;&|\n]*$")
 
 
 def redirect_hit(scrubbed, raw):
-    """Return (match, target) if stdout goes to a file, else None."""
+    """Return (match, target) if stdout goes to a file, else None.
+
+    Targets are read back out of `raw` by offset, not taken from `scrubbed`:
+    scrub() fills quoted spans with `_`, so the scrubbed target of
+    `> "out.log"` is `_________`. Only the raw text can answer whether the
+    target is /dev/null or is read back by a later command."""
     # Heredoc lines are file AUTHORING (`cat > script.sh <<EOF`), not output
     # truncation: nothing is discarded because nothing was going to print.
     heredoc = set(i for i, ln in enumerate(raw.split("\n")) if HEREDOC_LINE.search(ln))
@@ -130,7 +158,10 @@ def redirect_hit(scrubbed, raw):
             continue
         if AUTHORING.search(scrubbed[:m.start()]):
             continue
-        fd, op, target = m.group("fd"), m.group("op"), m.group("target")
+        fd, op = m.group("fd"), m.group("op")
+        target = raw[m.start("target"):m.end("target")].strip("'\"")
+        if not target:
+            continue
         if "&" in op and op not in ("&>", "&>>"):
             continue                                   # >&2 duplicates an fd
         if op in ("&>", "&>>"):

@@ -208,27 +208,49 @@ often a legitimate computed excerpt).
 
 | surface | shell payloads | STRONG | caught by a hook | WEAK |
 |---|---:|---:|---:|---:|
-| `Bash` | 8,683 | 20.8% | **32.5%** | 5.0% |
-| `ctx_execute` | 21,326 | **27.8%** | **0.0%** (1 of 5,927) | 16.8% |
+| `Bash` | 8,720 | 19.0% | **28.6%** | 5.0% |
+| `ctx_execute` | 21,436 | **24.3%** | **0.1%** (7 of 5,214) | 16.8% |
 | `ctx_execute_file` | 86 | 20.9% | 0.0% | 16.3% |
-| `ctx_batch_execute` | 19,607 | 7.5% | 0.0% | 13.9% |
+| `ctx_batch_execute` | 19,607 | 7.4% | 0.0% | 13.9% |
 
-`intent=` is on 31.8% of shell `ctx_execute` calls, and truncation is essentially as likely with it
-(26.4%) as without (28.4%) — the intended alternative is not displacing the anti-pattern.
+`intent=` is on 32.1% of shell `ctx_execute` calls, and truncation is essentially as likely with it
+(25.3%) as without (23.9%) — the intended alternative is not displacing the anti-pattern.
 
 Bash-only syntax in `language="shell"` payloads, which run `$SHELL` (zsh here), not bash:
 `${!var}` 141, unquoted word-split `for` 38, `mapfile`/`readarray` 4, `read -a` 2,
 `declare -n` 1, `${var^^}` 1.
 
 **Reading the after-shot:** success is STRONG falling **without** WEAK rising to absorb it. Once
-`| head` is gated, the cheapest evasion is `sed -n '1,60p'`, and WEAK is already 3,141 occurrences
+`| head` is gated, the cheapest evasion is `sed -n '1,60p'`, and WEAK is already 3,147 occurrences
 in `ctx_execute` — a migration would look like a win in the STRONG column alone.
 
-> These figures are tighter than the ones quoted in this session's earlier drafts (which read 34.1%
-> for `ctx_execute`). The shipped detector scrubs quoted spans, `$( )`, backticks and heredoc bodies
-> before scanning for STRONG operators, and applies a file-descriptor rule so `2> err.log`,
-> `2>/dev/null`, `2>&1` and `>&2` are not counted while `1> out.log` is. The earlier numbers
-> included those false positives. Direction and conclusions are unchanged.
+> **Detector revisions — read this before comparing to an earlier draft.** These figures are tighter
+> than this session's first drafts (34.1% for `ctx_execute`) because the shipped detector scrubs
+> quoted spans, `$( )`, backticks and heredoc bodies before scanning, and applies a file-descriptor
+> rule so `2> err.log`, `2>/dev/null`, `2>&1` and `>&2` are not counted while `1> out.log` is.
+>
+> They are tighter again than the **first committed** baseline (27.8%), which was measured with a
+> `stdout-to-file` detector carrying three defects. Re-running both detectors over the *same* corpus
+> isolates each one — `stdout-to-file` on `ctx_execute`, 492 → 330:
+>
+> | change | Δ | why |
+> |---|---:|---|
+> | quoted spans filled with `_`, not spaces | **−136** | the dominant defect, and it cut **both** ways |
+> | redirect target may not cross a newline | 0 | correct, but no payload in the corpus hit it |
+> | shell `#` comments scrubbed | −18 | `# note -> here` read as a redirect to a file `here` |
+> | `echo` after `do`/`then`/`else` is authoring | −8 | `for i in …; do echo x > "f$i"; done` |
+>
+> The first row is worth stating precisely, because "quoted targets were invisible" is the natural
+> guess and it is wrong. Blanking a quoted span to **spaces** did not remove the redirect — it
+> removed the *target*, and `\s*` in the target pattern then skipped the blanks and bound the **next
+> word** instead. `: > "$tmp/empty"; mkdir "$tmp/dir"` bound `mkdir`. So the old count both missed
+> real quoted-target redirects and invented phantom ones against whatever token followed; the net
+> was an overcount of 162. Filling with `_` keeps the token intact, so the `/dev/null`,
+> target-reused-later and authoring exclusions finally evaluate the file the payload actually names.
+>
+> Direction and conclusions are unchanged: `ctx_execute` remains the largest anti-pattern surface
+> and is still essentially ungated (0.1%). `make measure` after WS1 must be compared against **this**
+> table, not the 27.8% one — the detector, not just the behaviour, changed underneath it.
 
 ## Caveats
 
