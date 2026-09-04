@@ -189,6 +189,84 @@ echo "--- Test c13: real 'wc' verb against src/ still -> exit 2 (BLOCKED) ---"
 _assert_exit "c13: real wc verb still blocked" 2 \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"wc -l src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
 
+# --- A verb in PIPE-SINK position is not navigation ---
+# Measured 2026-09-03: `git log --oneline | cat` and `git diff --stat | cat` were
+# blocked as "code search". CMM has no replacement for them, and a block with no
+# usable alternative sends 90-95% of attempts straight back to raw tools.
+echo "--- Test c14: 'git log --oneline | cat' under a source path -> exit 0 (ALLOW) ---"
+_assert_exit "c14: git log piped to cat not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $PROJ_REAL/src && git log --oneline | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c15: 'git diff --stat | cat' -> exit 0 (ALLOW) ---"
+_assert_exit "c15: git diff piped to cat not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $PROJ_REAL/src && git diff --stat | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c16: pipeline HEAD naming a source path still -> exit 2 (BLOCKED) ---"
+# The fix must not disarm the gate: `cat` here reads a file, it is not a sink.
+_assert_exit "c16: cat of src/ piped onward still blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat src/main.py | wc -l\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c17: quoted pipe in a grep pattern still -> exit 2 (BLOCKED) ---"
+_assert_exit "c17: quoted alternation does not disarm the gate" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -n 'foo|cat' src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
+
+# --- Block messages must name a concrete call, not a placeholder ---
+# Measured: gates naming a specific replacement convert 36-50% of blocks; a "..."
+# template converts 13-25%; naming no alternative at all converts ~0%.
+_msg_of() { echo "$1" | bash "$HOOK" 2>&1 >/dev/null || true; }
+
+echo "--- Test c18: Grep block echoes the real search term ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"handleRequest\",\"glob\":\"*.ts\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -qF 'search_graph(name_pattern="handleRequest")'; then
+    echo "PASS: c18: block names the concrete search_graph call"; PASS=$((PASS+1))
+else
+    echo "FAIL: c18: block still prints a placeholder"; FAIL=$((FAIL+1))
+fi
+
+echo "--- Test c19: regex-shaped term leads with search_code ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"foo.*bar\",\"glob\":\"*.py\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -m1 -q 'search_code'; then
+    echo "PASS: c19: regex term leads with search_code"; PASS=$((PASS+1))
+else
+    echo "FAIL: c19: regex term did not lead with search_code"; FAIL=$((FAIL+1))
+fi
+
+# --- Perl reassurance at the moment of blocking ---
+# Observed failure: an agent blocked on a *.pm grep concludes CMM cannot search
+# Perl and falls back to Read. Perl IS a Hybrid LSP language here.
+echo "--- Test c20: Perl target gets the 'fully indexed' line ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"ApTest::SQLiteFile\",\"glob\":\"*.pm\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -qF 'Perl is fully indexed'; then
+    echo "PASS: c20: Perl block states Perl is indexed"; PASS=$((PASS+1))
+else
+    echo "FAIL: c20: Perl block omits the Perl reassurance"; FAIL=$((FAIL+1))
+fi
+
+echo "--- Test c21: non-Perl target does NOT get the Perl line ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"handleRequest\",\"glob\":\"*.ts\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -qF 'Perl is fully indexed'; then
+    echo "FAIL: c21: Perl line leaked onto a TypeScript block"; FAIL=$((FAIL+1))
+else
+    echo "PASS: c21: Perl line correctly absent"; PASS=$((PASS+1))
+fi
+
+# --- extra_extensions cache must follow the config, not outlive it ---
+# .cgi is known to neither the built-in list nor CMM; both learn it only from
+# extra_extensions in .codebase-memory.json. Keying the cache on REPO_ROOT alone
+# made the first read permanent, so adding an extension had no effect until the
+# /tmp file was deleted by hand.
+echo "--- Test c22: .cgi not blocked before it is declared ---"
+_assert_exit "c22: undeclared .cgi allowed" 0 \
+    "{\"tool_input\":{\"pattern\":\"handler\",\"glob\":\"*.cgi\",\"path\":\"$PROJ\"}}"
+
+echo "--- Test c23: .cgi blocked once declared in extra_extensions ---"
+echo '{"extra_extensions":{".cgi":"perl"}}' > "$PROJ/.codebase-memory.json"
+# No cache clearing here on purpose: if the key ignored the config mtime, the
+# stale entry from c22 would still be in effect and this assertion would fail.
+_assert_exit "c23: declared .cgi blocked without clearing the cache" 2 \
+    "{\"tool_input\":{\"pattern\":\"handler\",\"glob\":\"*.cgi\",\"path\":\"$PROJ\"}}"
+rm -f "$PROJ/.codebase-memory.json"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

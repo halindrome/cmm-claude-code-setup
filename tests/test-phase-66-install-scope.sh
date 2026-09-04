@@ -68,6 +68,14 @@ _body_of() {
     awk "NR>=$start && NR<=$end" "$SETUP"
 }
 
+# NOTE: match against these bodies with `grep -q PAT <<<"$body"`, never
+# `echo "$body" | grep -q PAT`. Under `set -o pipefail` (set above), grep -q
+# exits on its first match and closes the pipe while echo is still writing;
+# echo takes SIGPIPE and the pipeline reports 141, so a SUCCESSFUL match is
+# read as a failure. It is invisible while the body fits in the 64KB pipe
+# buffer and starts flapping the moment setup.sh grows past it — which is
+# exactly how it was found (install_project body reached 68,097 bytes).
+
 ip_body=$(_body_of "$ip_start" "$ip_end")
 ig_body=$(_body_of "$ig_start" "$ig_end")
 
@@ -81,7 +89,7 @@ echo ""
 # 1. install_project body DOES register agent-override-generate.sh
 # -----------------------------------------------------------------------
 echo "--- 1: install_project registers agent-override-generate.sh ---"
-if echo "$ip_body" | grep -q 'agent-override-generate'; then
+if grep -q 'agent-override-generate' <<<"$ip_body"; then
     _pass "install_project: references agent-override-generate.sh"
 else
     _fail "install_project: references agent-override-generate.sh" \
@@ -89,7 +97,7 @@ else
 fi
 
 # Also verify it's in the SessionStart context (hook registration)
-if echo "$ip_body" | grep -qE 'agent-override-generate|SessionStart'; then
+if grep -qE 'agent-override-generate|SessionStart' <<<"$ip_body"; then
     _pass "install_project: SessionStart or agent-override-generate registration present"
 else
     _fail "install_project: SessionStart or agent-override-generate registration present" \
@@ -100,7 +108,7 @@ fi
 # 2. install_global body does NOT reference agent-override-generate.sh
 # -----------------------------------------------------------------------
 echo "--- 2: install_global does NOT reference agent-override-generate.sh ---"
-if echo "$ig_body" | grep -q 'agent-override-generate'; then
+if grep -q 'agent-override-generate' <<<"$ig_body"; then
     _fail "install_global: no agent-override-generate reference" \
         "unexpected agent-override-generate found in install_global"
 else
@@ -112,14 +120,14 @@ fi
 #    (no .claude/agents mkdir or copy in that function)
 # -----------------------------------------------------------------------
 echo "--- 3: install_global does NOT write .claude/agents/ ---"
-if echo "$ig_body" | grep -qE '\.claude/agents'; then
+if grep -qE '\.claude/agents' <<<"$ig_body"; then
     _fail "install_global: no .claude/agents write" \
         "unexpected .claude/agents reference found in install_global"
 else
     _pass "install_global: no .claude/agents reference"
 fi
 
-if echo "$ig_body" | grep -qE 'agents/\*\.md|agents/vbw'; then
+if grep -qE 'agents/\*\.md|agents/vbw' <<<"$ig_body"; then
     _fail "install_global: no agents/*.md copy loop" \
         "unexpected agents/*.md or agents/vbw reference in install_global"
 else
@@ -132,7 +140,7 @@ fi
 echo "--- 4: agents/ copy/install loop only in install_project ---"
 
 # Check install_project has the agent install section
-if echo "$ip_body" | grep -qE '\.claude/agents|agent-override-generate|agents/.*\.md'; then
+if grep -qE '\.claude/agents|agent-override-generate|agents/.*\.md' <<<"$ip_body"; then
     _pass "install_project: has agent install section"
 else
     _fail "install_project: has agent install section" \
@@ -140,7 +148,7 @@ else
 fi
 
 # Confirm global scope has zero agent copy operations
-if echo "$ig_body" | grep -qE '\.claude/agents|agents/\*\.md'; then
+if grep -qE '\.claude/agents|agents/\*\.md' <<<"$ig_body"; then
     _fail "install_global: zero .claude/agents or agents/*.md operations" \
         "unexpected match found in install_global body"
 else
@@ -163,7 +171,7 @@ fi
 # 6. install_project installs delta files into .claude/agents-delta/
 # -----------------------------------------------------------------------
 echo "--- 6: install_project installs .claude/agents-delta/ ---"
-if echo "$ip_body" | grep -q 'agents-delta'; then
+if grep -q 'agents-delta' <<<"$ip_body"; then
     _pass "install_project: references agents-delta install"
 else
     _fail "install_project: references agents-delta install" \
@@ -174,7 +182,7 @@ fi
 # 7. install_global does NOT install agents-delta
 # -----------------------------------------------------------------------
 echo "--- 7: install_global does NOT reference agents-delta ---"
-if echo "$ig_body" | grep -q 'agents-delta'; then
+if grep -q 'agents-delta' <<<"$ig_body"; then
     _fail "install_global: no agents-delta reference" \
         "unexpected agents-delta found in install_global body"
 else

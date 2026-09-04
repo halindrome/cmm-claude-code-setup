@@ -3055,7 +3055,91 @@ PYEOF
     echo "[STATUSLINE — project]"
     _run_install_statusline_for_target "${project_root}/.claude" "project"
     echo ""
+    report_unindexed_extensions "$project_root"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# report_unindexed_extensions
+#
+# CMM and the grep gate both learn repo-specific source extensions ONLY from
+# `extra_extensions` in a repo-root .codebase-memory.json. They agree, so a repo
+# without that file fails open consistently — but it fails open silently: the
+# code is there and CMM is blind to it, with nothing in the output to say so.
+# .cgi is the motivating case (neither CMM's own source nor the gate's built-in
+# list mentions it).
+#
+# Advisory only: prints what is undeclared and lets the operator decide. It does
+# not write .codebase-memory.json, because guessing that a `.inc` or `.tpl` file
+# is source — and which language it is — is exactly the judgement call a human
+# should make once per repo.
+# ---------------------------------------------------------------------------
+
+report_unindexed_extensions() {
+  local root="$1"
+  [ -d "$root" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+
+  local report
+  report=$(ROOT="$root" python3 - <<'PY' 2>/dev/null
+import json, os, collections
+
+root = os.environ["ROOT"]
+# Mirrors _is_code_file() in hooks/global/cmm-grep-nudge.sh.
+KNOWN = set(""".py .go .js .jsx .ts .tsx .rs .java .cpp .cc .cxx .c .h .hpp .cs .php
+.lua .scala .kt .rb .sh .bash .zsh .zig .ex .exs .hs .swift .dart .pl .pm .groovy
+.erl .r .R .clj .fs .jl .el .cu .sql .vue .svelte .graphql .proto .ml .m .mm .nix
+.elm .lean .f90 .f95 .f03 .f08 .cuh .v .sv .glsl .frag .vert""".split())
+# Extensions worth flagging when they appear in bulk but are not declared.
+CANDIDATES = {".cgi", ".pl6", ".psgi", ".t", ".inc", ".tpl", ".phtml", ".rake",
+              ".gemspec", ".mjs", ".cjs", ".tsv", ".asm", ".s", ".f", ".for",
+              ".pas", ".d", ".nim", ".cr", ".rkt", ".scm", ".lisp", ".tcl"}
+SKIP_DIRS = {".git", "node_modules", "dist", "build", "vendor", "target",
+             ".venv", "venv", "__pycache__", ".codebase-memory"}
+
+declared = set()
+cfg = os.path.join(root, ".codebase-memory.json")
+has_cfg = os.path.isfile(cfg)
+if has_cfg:
+    try:
+        declared = set(json.load(open(cfg)).get("extra_extensions", {}))
+    except Exception:
+        pass
+
+counts = collections.Counter()
+for dirpath, dirnames, filenames in os.walk(root):
+    dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+    for fn in filenames:
+        ext = os.path.splitext(fn)[1]
+        if ext and ext in CANDIDATES and ext not in KNOWN and ext not in declared:
+            counts[ext] += 1
+
+rows = [(e, n) for e, n in counts.items() if n >= 3]
+if not rows:
+    raise SystemExit(0)
+rows.sort(key=lambda r: -r[1])
+print("has_cfg=%s" % ("1" if has_cfg else "0"))
+for e, n in rows[:8]:
+    print("%s %d" % (e, n))
+PY
+)
+  [ -z "$report" ] && return 0
+
+  echo "[CMM COVERAGE]"
+  local has_cfg
+  has_cfg=$(printf '%s\n' "$report" | sed -n 's/^has_cfg=//p')
+  printf '%s\n' "$report" | sed '1d' | while read -r ext count; do
+    echo "  [warn] ${count} ${ext} files are not indexed by CMM (not a known source extension)"
+  done
+  if [ "$has_cfg" = "1" ]; then
+    echo "  Add them to \"extra_extensions\" in .codebase-memory.json, e.g. {\".cgi\": \"perl\"}"
+  else
+    echo "  No .codebase-memory.json in this repo. Create one to index them:"
+    echo "    {\"extra_extensions\": {\".cgi\": \"perl\"}}"
+  fi
+  echo "  Then re-run index_repository. Until then CMM cannot see these files, and"
+  echo "  the grep gate will not claim them either (both read the same setting)."
+  echo ""
 }
 
 # ---------------------------------------------------------------------------

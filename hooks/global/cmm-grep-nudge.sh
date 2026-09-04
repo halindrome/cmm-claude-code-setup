@@ -46,6 +46,66 @@ print(d.get('tool_input',{}).get('command','') or '')
   if echo "$BASH_CMD" | grep -q '# cmm-exempt'; then
     exit 0
   fi
+fi
+
+# --- Recovery-message helpers (shared by the Bash and Grep branches) ---
+# The block message is the whole product of a gate. A gate that names the exact
+# call to run converts far better than one that prints a "..." placeholder, so
+# these substitute the real search term wherever it can be recovered.
+
+# _extract_term <command-or-pattern> -> a best-effort search term, possibly empty.
+# Prefers the first quoted string (grep -n "reqStatus" foo.pl), else the first
+# non-flag, non-path token after the navigation verb.
+_extract_term() {
+  local s="$1" t=""
+  t=$(printf '%s' "$s" | sed -nE "s/.*'([^']{2,64})'.*/\1/p" | head -1)
+  [ -z "$t" ] && t=$(printf '%s' "$s" | sed -nE 's/.*"([^"]{2,64})".*/\1/p' | head -1)
+  if [ -z "$t" ]; then
+    t=$(printf '%s' "$s" | sed -nE 's/.*(^|[[:space:]|;&(])(grep|rg)[[:space:]]+((-[^[:space:]]+[[:space:]]+)*)([^-[:space:]][^[:space:]]*).*/\5/p' | head -1)
+    case "$t" in */*) t="" ;; esac   # a path, not a search term
+  fi
+  printf '%s' "$t"
+}
+
+# _cmm_recovery_lines <term> -> the two-or-three CMM call lines for the message.
+# An identifier-shaped term goes to search_graph first (it resolves definitions);
+# anything with regex metacharacters goes to search_code first.
+_cmm_recovery_lines() {
+  local term="$1"
+  if [ -z "$term" ]; then
+    printf '%s\n%s\n%s' \
+      '  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern="...")' \
+      '  - Text search:    mcp__codebase-memory-mcp__search_code(query="...")' \
+      '  - Fetch source:   mcp__codebase-memory-mcp__get_code_snippet(qualified_name="...")'
+    return
+  fi
+  local is_ident=false
+  if printf '%s' "$term" | grep -qE '^[A-Za-z_][A-Za-z0-9_:]{1,63}$'; then is_ident=true; fi
+  if [ "$is_ident" = true ]; then
+    printf '%s\n%s' \
+      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\")" \
+      "  - Text search:    mcp__codebase-memory-mcp__search_code(query=\"${term}\")"
+  else
+    printf '%s\n%s' \
+      "  - Text search:    mcp__codebase-memory-mcp__search_code(query=\"${term}\")" \
+      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\")"
+  fi
+}
+
+# _perl_note <text> -> a Perl reassurance line when the blocked target is Perl.
+# Observed failure mode: an agent blocked on `grep --include='*.pm' Foo::Bar .`
+# reads a generic message, concludes CMM cannot search Perl, and falls back to
+# Read. Perl IS a Hybrid LSP language here; say so at the moment of blocking,
+# because that is the only moment the agent is asking the question.
+_perl_note() {
+  case "$1" in
+    *.pl*|*.pm*|*perl*|*Perl*)
+      printf '\n%s' "  Perl is fully indexed (Hybrid LSP): packages, @ISA / use parent inheritance,
+  Exporter import maps and bless self-type inference all resolve. Use the graph." ;;
+  esac
+}
+
+if [ "$TOOL_NAME" = "Bash" ]; then
 
   # Only block when command is a navigation verb against a source path.
   # Inspect only the command HEAD, dropping the two constructs whose trailing text
@@ -69,7 +129,17 @@ print(d.get('tool_input',{}).get('command','') or '')
   # the filename, and "headers"/"catalog" would match head/cat), false-positiving
   # on commands that merely name such a file. The path regex stays substring-based
   # (path fragments legitimately appear mid-argument).
-  if echo "$BNAV_HEAD" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
+  # A verb in PIPE-SINK position consumes upstream stdout; it is not navigation
+  # against a path, and CMM has no replacement to offer for it. Measured
+  # 2026-09-03: `git log --oneline | cat` and `git diff --stat | cat` were blocked
+  # as "code search" because the character before `cat` is a SPACE, which the
+  # separator class below matches — dropping `|` from that class would fix
+  # nothing. Neutralize the sink occurrence first. The pipeline HEAD, which is
+  # what actually names paths (`cat src/a.py | grep foo`), still matches normally.
+  # Quoted pipes are safe: `grep 'a|b' src/x` leaves `b` unmatched, and
+  # `grep 'a|cat' src/x` fails the trailing-whitespace requirement.
+  BNAV_SCAN=$(printf '%s ' "$BNAV_HEAD" | sed -E 's/\|[[:space:]]*(grep|rg|find|cat|head|tail|wc)[[:space:]]/| _sink_ /g')
+  if echo "$BNAV_SCAN" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)
     BASH_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
@@ -82,11 +152,14 @@ print(d.get('tool_input',{}).get('command','') or '')
     BASH_PROJECT_HASH=$(echo "$BASH_REPO_ROOT" | md5 -q 2>/dev/null || echo "$BASH_REPO_ROOT" | md5sum | awk '{print $1}')
     BASH_SENTINEL="/tmp/cmm-session-ready-${BASH_PROJECT_HASH}"
     if [ "$BASH_CMM_FOUND" = true ] && [ -f "$BASH_SENTINEL" ] && ! grep -q '^stale$' "$BASH_SENTINEL" 2>/dev/null; then
+      # Name the CONCRETE call, not a template. Measured 2026-09-03: gates that
+      # name a specific replacement convert 36-50% of blocks; gates that leave a
+      # "..." placeholder convert 13-25%, and gates naming no alternative ~0%,
+      # sending 90-95% of blocks straight back to Read/Bash.
+      _TERM=$(_extract_term "$BASH_CMD")
       cat >&2 <<EOF
 BLOCKED: Use CMM tools instead of Bash navigation for code search.
-  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern="...")
-  - Text search:    mcp__codebase-memory-mcp__search_code(query="...")
-  - Fetch source:   mcp__codebase-memory-mcp__get_code_snippet(qualified_name="...")
+$(_cmm_recovery_lines "$_TERM")$(_perl_note "$BASH_CMD")
 Add # cmm-exempt to the command to bypass this gate.
 See skill \`cmm-rules\` for the full protocol.
 EOF
@@ -139,9 +212,21 @@ cmm_is_registered "$REPO_ROOT" && CMM_FOUND=true
 [ "$CMM_FOUND" = false ] && exit 0
 
 # --- Extra extensions cache (from .codebase-memory.json) ---
+# Repo-specific source extensions (.cgi is the motivating case) are known to
+# neither this hook's built-in list nor CMM itself; both learn them only from
+# `extra_extensions` in a repo-root .codebase-memory.json. The two therefore
+# agree, and a repo without that file fails open consistently — CMM does not
+# index those files and the gate does not claim them.
+#
+# The cache key includes the config's mtime. Keying on REPO_ROOT alone made the
+# first read permanent: adding .cgi to .codebase-memory.json had no effect until
+# the /tmp file was manually deleted, so the gate kept using a months-old
+# extension list while CMM used the new one.
 _EXT_CACHE=""
 if [ -n "$REPO_ROOT" ]; then
-  _EXT_CACHE="/tmp/cmm-user-ext-$(echo -n "$REPO_ROOT" | md5 -q 2>/dev/null || echo -n "$REPO_ROOT" | md5sum 2>/dev/null | cut -d' ' -f1)"
+  _CMM_CFG="${REPO_ROOT}/.codebase-memory.json"
+  _CFG_MTIME=$(stat -f %m "$_CMM_CFG" 2>/dev/null || stat -c %Y "$_CMM_CFG" 2>/dev/null || echo 0)
+  _EXT_CACHE="/tmp/cmm-user-ext-$(echo -n "$REPO_ROOT" | md5 -q 2>/dev/null || echo -n "$REPO_ROOT" | md5sum 2>/dev/null | cut -d' ' -f1)-${_CFG_MTIME}"
   if [ ! -f "$_EXT_CACHE" ]; then
     python3 -c "
 import json, os
@@ -226,11 +311,13 @@ fi
 [ "$SHOULD_BLOCK" = false ] && exit 0
 
 # --- Block: Redirect to CMM search tools (stderr, exit 2) ---
+# PATTERN_FIELD is the term the agent was actually looking for; substituting it
+# turns a form to fill in into a call to run. Perl targets get an extra line --
+# see _perl_note.
 cat >&2 <<EOF
 BLOCKED: Use CMM tools instead of Grep for code search on $BLOCK_TARGET.
-  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern="...")
-  - Text search:    mcp__codebase-memory-mcp__search_code(query="...")
-  - Trace callers:  mcp__codebase-memory-mcp__trace_path
+$(_cmm_recovery_lines "$PATTERN_FIELD")
+  - Trace callers:  mcp__codebase-memory-mcp__trace_path$(_perl_note "$GLOB_FIELD $TYPE_FIELD $PATH_FIELD")
   Grep is allowed for: non-code files (JSON, YAML, Markdown, config, env)
 See skill \`cmm-rules\` for the full protocol.
 EOF
