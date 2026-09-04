@@ -110,12 +110,12 @@
         ]
       },
       {
-        "matcher": "mcp__plugin_context-mode_context-mode__ctx_execute|mcp__context-mode__ctx_execute",
+        "matcher": "mcp__plugin_context-mode_context-mode__ctx_execute|mcp__plugin_context-mode_context-mode__ctx_execute_file|mcp__plugin_context-mode_context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
         "hooks": [
           {
             "type": "command",
             "command": "bash .claude/hooks/ctx-execute-cmm-nudge.sh",
-            "_comment": "Hard-blocks ctx_execute(code=\"grep/rg/find ... src/\") on indexed source code; redirects to CMM (no-ops if CMM not installed)"
+            "_comment": "Hard-blocks ctx_execute/_file/_batch_execute(code=\"grep/rg/find ... src/\") on indexed source code; redirects to CMM (no-ops if CMM not installed). ctx_batch_execute was previously unmatched, so a blocked Bash grep re-issued as a batch command bypassed the gate entirely."
           }
         ]
       },

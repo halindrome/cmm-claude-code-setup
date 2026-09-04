@@ -212,6 +212,44 @@ _assert_exit "git --git-dir=... grep blocks" 2 \
 _assert_exit "git -c foo=bar log still allowed" 0 \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git -c foo.bar=baz log --oneline\"},\"cwd\":\"$FIX\"}"
 
+# --- Registration-gap regression (2026-09-04) ---
+# ctx-execute-cmm-nudge was registered for ctx_execute ONLY, so a blocked Bash
+# grep re-issued as ctx_batch_execute(grep ...) bypassed the gate entirely --
+# reported by a live session as "the two hooks compose into a hole rather than a
+# fence". Three layers must agree: the setup.sh matcher, the python _ACCEPTED
+# set, and the shell TOOL_NAME case. These pin all three.
+echo ""
+echo "--- Registration gap: all three ctx tools must gate a source search ---"
+
+_assert_exit "ctx_execute gates a source grep" 2 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn MyFunc src/\"},\"cwd\":\"$FIX\"}"
+
+_assert_exit "ctx_execute_file gates a source grep" 2 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_execute_file\",\"tool_input\":{\"path\":\"src/a.ts\",\"code\":\"grep -rn MyFunc src/\"},\"cwd\":\"$FIX\"}"
+
+_assert_exit "ctx_batch_execute gates a source grep (THE hole)" 2 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"f\",\"command\":\"grep -rn MyFunc src/\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+_assert_exit "legacy-form ctx_batch_execute gates too" 2 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"f\",\"command\":\"grep -rn MyFunc src/\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+# One grep hidden among innocuous commands must still be caught -- otherwise the
+# bypass is just "put git status first".
+_assert_exit "grep buried mid-batch still caught" 2 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"git status\"},{\"label\":\"b\",\"command\":\"grep -rn MyFunc src/\"},{\"label\":\"c\",\"command\":\"date\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+_assert_exit "batch with no code search passes" 0 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"git status\"},{\"label\":\"b\",\"command\":\"date\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+_assert_exit "cmm-exempt honoured inside a batch" 0 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"grep -rn MyFunc src/  # cmm-exempt\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+_assert_exit "non-code dir in a batch still passes" 0 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"grep -rn MyFunc node_modules/lib/\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+_assert_exit "non-indexed repo still fails open on batch" 0 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"grep -rn MyFunc src/\"}],\"queries\":[\"q\"]},\"cwd\":\"$NONIDX\"}"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

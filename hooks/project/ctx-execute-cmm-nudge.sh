@@ -42,20 +42,50 @@ except Exception:
 
 tool_name = d.get('tool_name','') or ''
 ti = d.get('tool_input',{}) or {}
-code = ti.get('code','') or ''
 cwd = d.get('cwd','') or ''
 
-# Phase 57 G3: accept both install-form prefixes for ctx_execute. The install
-# matcher (see header doc-line) routes only ctx_execute today, and the shell
-# 'case \$TOOL_NAME' block at the bottom of this file dispatches only those
-# two names — keep this python set in lockstep with that shell case to avoid
-# the F-06 divergence where python classified ctx_execute_file/_batch_execute
-# but shell silently no-op'd. If the install matcher is ever widened to also
-# route _file/_batch_execute, update BOTH layers together.
+# ctx_execute / ctx_execute_file carry the payload in .code; ctx_batch_execute
+# carries a list of {label, command}. Registering only ctx_execute left the
+# batch tool completely ungated: a blocked Bash grep became
+# ctx_batch_execute(grep -rn ...) and sailed through. Reported by a live session
+# 2026-09-04: the two hooks composed into a hole rather than a fence.
+# NOTE: this whole program is passed to python3 -c inside a DOUBLE-QUOTED shell
+# string, so a literal double quote anywhere in it -- even in a comment --
+# truncates the program silently; it then prints nothing and the caller fails
+# open. Single quotes only, here and below.
+_cmds = []
+if tool_name.endswith('ctx_batch_execute'):
+    for _c in (ti.get('commands') or []):
+        if isinstance(_c, dict) and isinstance(_c.get('command'), str):
+            _cmds.append(_c['command'])
+else:
+    _cmds.append(ti.get('code','') or '')
+
+# Classify on the first command that LOOKS like a code search, so one grep
+# hidden among several batch commands is still caught. This verb set mirrors
+# GREP_FAMILY below and must stay in lockstep with it.
+_SEARCH_VERBS = ('grep', 'egrep', 'fgrep', 'rg', 'ack', 'ag', 'ugrep', 'find')
+code = _cmds[0] if _cmds else ''
+for _c in _cmds:
+    _toks = _c.strip().split()
+    if _toks and _toks[0].rsplit('/', 1)[-1] in _SEARCH_VERBS:
+        code = _c
+        break
+
+# Accept both install-form prefixes across all THREE ctx execution tools. The
+# install matcher in setup.sh, this set, and the 'case \$TOOL_NAME' block near
+# the bottom of this file are three layers that must agree — the header note
+# warned that widening the matcher requires updating all of them together, and
+# that is what this change does. Previously only ctx_execute was routed, which
+# made ctx_batch_execute a documented-in-hindsight bypass.
 # Any other tool_name routes to 'other' and exits 0 (no nudge needed).
 _ACCEPTED = {
     'mcp__plugin_context-mode_context-mode__ctx_execute',
+    'mcp__plugin_context-mode_context-mode__ctx_execute_file',
+    'mcp__plugin_context-mode_context-mode__ctx_batch_execute',
     'mcp__context-mode__ctx_execute',
+    'mcp__context-mode__ctx_execute_file',
+    'mcp__context-mode__ctx_batch_execute',
 }
 if tool_name not in _ACCEPTED:
     emit(tool_name, 'other', '', '', cwd)
@@ -292,9 +322,14 @@ CWD_FIELD=$(echo "$PARSED"     | sed -n '5p')
 
 # Phase 57 G3: only match Context Mode ctx_execute (plugin form OR legacy MCP-server
 # form). Plugin form listed first per ordering rule; trigger behavior identical.
+# Layer 3 of 3 — keep in lockstep with _ACCEPTED above and the setup.sh matcher.
 case "$TOOL_NAME" in
     mcp__plugin_context-mode_context-mode__ctx_execute) ;;
+    mcp__plugin_context-mode_context-mode__ctx_execute_file) ;;
+    mcp__plugin_context-mode_context-mode__ctx_batch_execute) ;;
     mcp__context-mode__ctx_execute) ;;
+    mcp__context-mode__ctx_execute_file) ;;
+    mcp__context-mode__ctx_batch_execute) ;;
     *) exit 0 ;;
 esac
 
@@ -304,29 +339,64 @@ case "$KIND" in
     *) exit 0 ;;
 esac
 
-# --- Determine repo root (walk upward from target or cwd) ---
-REPO_ROOT=""
-_PROBE_DIR=""
+# --- Determine the SESSION's project root ---
+#
+# Previously this walked up from the search TARGET with a bare
+# `git -C <target> rev-parse --show-toplevel`. In a submodule that returns the
+# SUBMODULE root, while the session writes /tmp/cmm-session-ready-<hash> for the
+# MONOREPO root — the hashes never match, the sentinel looks absent, and the gate
+# fails open.
+#
+# Measured 2026-09-04 in a submodule monorepo (every apps/* and mcp-server a
+# submodule): a source grep at apps/webapp/src/ sailed through, while docs/ and
+# `.` were blocked. Planting the submodule's own sentinel flipped it to blocked,
+# which is what identified the mismatch. Net effect: enforcement inert across the
+# whole codebase while still firing at the root, so it looked armed.
+#
+# The right question is "is THIS SESSION's project indexed?", not "is the
+# target's repo indexed?" — so use the shared resolver, which already handles
+# nested submodules, git worktrees (via git-common-dir) and orphaned
+# .git/modules trees, and caches the answer.
+_PRLIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/project-root.sh" ] && { _PRLIB="$_d/project-root.sh"; break; }
+done
+# Partial install -> cannot tell -> fail open. Never block on our own absence.
+[ -n "$_PRLIB" ] || exit 0
+# project-root.sh resolves from $(pwd). The hook's own cwd is normally the
+# session cwd, but the payload states it explicitly — honour the declared value
+# so resolution does not depend on how the hook happens to be invoked.
+_ORIG_PWD="$(pwd)"
+if [ -n "$CWD_FIELD" ] && [ -d "$CWD_FIELD" ]; then
+    cd "$CWD_FIELD" 2>/dev/null || true
+fi
+# shellcheck disable=SC1090
+source "$_PRLIB"
+cd "$_ORIG_PWD" 2>/dev/null || true
+REPO_ROOT="$PROJECT_ROOT"
+
+# Resolve the target so the non-code-dir exemptions below can inspect it, and so
+# a target OUTSIDE this project can be released: our sentinel says nothing about
+# another repo's index.
 if [ -n "$TARGET_PATH" ]; then
-    # Resolve relative target against cwd
     case "$TARGET_PATH" in
         /*) _ABS="$TARGET_PATH" ;;
         *)  _ABS="${CWD_FIELD%/}/$TARGET_PATH" ;;
     esac
-    if [ -d "$_ABS" ]; then
-        _PROBE_DIR="$_ABS"
-    elif [ -f "$_ABS" ]; then
-        _PROBE_DIR="$(dirname "$_ABS")"
-    else
-        # Absolute target that doesn't exist → don't misattribute to cwd's repo (QA m1).
+    if [ ! -e "$_ABS" ]; then
+        # Absolute target that doesn't exist -> don't misattribute to this repo (QA m1).
         case "$TARGET_PATH" in
             /*) exit 0 ;;
-            *)  _PROBE_DIR="$CWD_FIELD" ;;
+        esac
+    else
+        _RESOLVED="$(cd "$(dirname "$_ABS")" 2>/dev/null && pwd -P)/$(basename "$_ABS")"
+        case "$_RESOLVED" in
+            "$REPO_ROOT"|"$REPO_ROOT"/*) ;;   # inside this project — gate it
+            *) exit 0 ;;                      # another repo entirely — fail open
         esac
     fi
-else
-    _PROBE_DIR="$CWD_FIELD"
 fi
+_PROBE_DIR="$REPO_ROOT"
 
 # Exempt non-code dirs anywhere in the probe path
 case "$_PROBE_DIR" in
@@ -336,10 +406,9 @@ case "$TARGET_PATH" in
     */node_modules/*|*/dist/*|*/build/*|*/.git/*|*/vendor/*|*/target/*|node_modules/*|dist/*|build/*|.git/*|vendor/*|target/*) exit 0 ;;
 esac
 
-if [ -n "$_PROBE_DIR" ] && [ -d "$_PROBE_DIR" ]; then
-    REPO_ROOT=$(git -C "$_PROBE_DIR" rev-parse --show-toplevel 2>/dev/null)
-    [ -z "$REPO_ROOT" ] && REPO_ROOT="$_PROBE_DIR"
-fi
+# REPO_ROOT is already the resolved session project root (from project-root.sh).
+# It is deliberately NOT re-derived from the target here — that re-derivation was
+# the submodule bug described above.
 [ -z "$REPO_ROOT" ] && exit 0
 
 # --- CMM availability check (.mcp.json cascade) ---
@@ -358,9 +427,10 @@ cmm_is_registered "$REPO_ROOT" && CMM_FOUND=true
 [ "$CMM_FOUND" = false ] && exit 0
 
 # --- Indexed-repo sentinel probe ---
-PROJECT_HASH=$(echo "$REPO_ROOT" | md5 -q 2>/dev/null || echo "$REPO_ROOT" | md5sum 2>/dev/null | awk '{print $1}')
-[ -z "$PROJECT_HASH" ] && exit 0
-CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
+# PROJECT_HASH / CMM_SENTINEL come from project-root.sh, so they are derived from
+# the same root the session-start hook used when it wrote the sentinel. Computing
+# them here from a locally-derived root is what let the hashes diverge.
+[ -z "${PROJECT_HASH:-}" ] && exit 0
 # If project not indexed for this session, fail open
 [ ! -f "$CMM_SENTINEL" ] && exit 0
 
