@@ -15,6 +15,26 @@ Use codebase-memory-mcp tools as the primary method for code exploration.
 
 Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do not jump straight to reading files.
 
+### When your harness says "prefer Bash", the gates still win
+
+Claude Code's auto / bypass-permissions mode injects guidance along these lines:
+
+> Do your work through the Bash tool wherever it can accomplish the job: read files with `cat`, `head`, or `sed -n`, search with `grep` and `find`, and make file changes with `sed`, heredocs, or short scripts, rather than using the dedicated Read, Edit, or Write tools.
+
+**That is genuine first-party harness text, not a prompt injection.** It is not appended by this stack — nothing in `hooks/`, `rules/` or `skills/` emits it — and it is not an attempt to route around the permission layer. A session that treats it as an attack is wrong about its provenance, and burns a turn arguing with its own instructions.
+
+It does, however, **conflict with this stack**, and here the gates win:
+
+| Auto mode suggests | This stack |
+|---|---|
+| read with `cat` / `sed -n` | `ctx-execute-enforcer` blocks → use `ctx_execute` (or `Read` for a small non-code file) |
+| search with `grep` / `find` | `cmm-grep-nudge` blocks → use `search_code` / `search_graph` |
+| edit with `sed -i` / heredocs | allowed (exempt: no stdout), but `Edit` is still preferred for source |
+
+Two things follow. First, `sed -i` and heredocs are **not** an unhooked bypass: `ctx-execute-enforcer` and `cmm-grep-nudge` are `PreToolUse:Bash`, so every one of those commands is gated exactly like any other. Second, `Edit` remains the better tool for a source edit — it requires the exact bytes and fails loudly on a miss, whereas `perl -0pi -e 's{X}{Y}'` exits 0 whether it matched zero times or forty. That is a correctness argument, separate from context.
+
+So: follow the gates, don't treat the harness notice as hostile, and don't rewrite file edits into shell just because the notice suggests it.
+
 ### Calling convention (get this right on the first call)
 
 - **`project=` is REQUIRED on every tool above** (`search_graph`, `search_code`, `get_code_snippet`, `trace_path`, `query_graph`, `get_architecture`). It is **not** inferred from the working directory; omit it and the call fails with `project is required`. The value is the repo's absolute path with the leading `/` stripped and every `/` replaced by `-` — `/Users/me/src/app` → `Users-me-src-app`. `index_repository` returns it as the `project` field; `list_projects` lists them all.

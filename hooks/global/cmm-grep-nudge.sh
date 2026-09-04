@@ -56,8 +56,52 @@ fi
 # _extract_term <command-or-pattern> -> a best-effort search term, possibly empty.
 # Prefers the first quoted string (grep -n "reqStatus" foo.pl), else the first
 # non-flag, non-path token after the navigation verb.
+# _narrow_to_search_segment <command> -> the sub-command that does the searching.
+#
+# Compound commands are routinely narrated with echo labels:
+#   git -C apps/mobile status | head -20; echo "=== spec coverage ==="; \
+#   grep -n "changeTarget" apps/mobile/src/.../comms.service.spec.ts
+# _extract_term takes the FIRST quoted string in the command, which here is the
+# echo label — so the block correctly fired and then suggested
+#   search_code(pattern="=== spec: changeTarget/_fetch coverage ===")
+# a call that runs and returns nothing. Observed live 2026-09-04.
+#
+# Same failure class the --include='*.pl' fix already addressed: a
+# plausible-but-wrong term converts worse than a bare "..." placeholder, because
+# it looks correct. Narrow to the segment owning the search verb first.
+#
+# Splits on ; && || and newlines only — NOT on a single `|`, because a grep and
+# its pipe sink belong to the same segment (`grep foo src/ | head -40`).
+_narrow_to_search_segment() {
+  local s="$1" seg stripped
+  local nl=$'\n'
+  local tmp="${s//&&/$nl}"
+  tmp="${tmp//||/$nl}"
+  tmp="${tmp//;/$nl}"
+  while IFS= read -r seg; do
+    # Strip leading whitespace, env assignments and sudo before reading the verb.
+    stripped=$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)+//; s/^sudo[[:space:]]+//')
+    case "$stripped" in
+      grep\ *|egrep\ *|fgrep\ *|rg\ *|ack\ *|ag\ *|ugrep\ *|find\ *)
+        printf '%s' "$seg"; return 0 ;;
+    esac
+    # `git grep` counts, but only when grep is the SUBCOMMAND. A bare `git -C dir
+    # branch` must not win the segment: it owns no search term, so selecting it
+    # yields the "..." placeholder and loses the real one further along. Peel the
+    # repo/config-selection global flags, then require grep.
+    if printf '%s' "$stripped" | grep -qE '^git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|--git-dir=[^[:space:]]+|--work-tree=[^[:space:]]+|--no-pager|-c[[:space:]]+[^[:space:]]+))*[[:space:]]+grep([[:space:]]|$)'; then
+        printf '%s' "$seg"; return 0
+    fi
+  done <<< "$tmp"
+  # No segment clearly owns a search verb -> unchanged (previous behaviour).
+  printf '%s' "$s"
+}
+
 _extract_term() {
   local s="$1" t=""
+  # Narrow BEFORE the filter-flag strip below, so an echo label in a sibling
+  # segment cannot supply the term.
+  s="$(_narrow_to_search_segment "$s")"
   # Drop value-carrying filter flags BEFORE looking for a quoted term: their
   # argument is a glob or a file type, never the thing being searched for.
   # `grep -rn 'foo' src/ --include='*.pl'` must yield foo, not *.pl -- and a

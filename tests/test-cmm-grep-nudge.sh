@@ -317,6 +317,52 @@ _assert_exit "c23: declared .cgi blocked without clearing the cache" 2 \
     "{\"tool_input\":{\"pattern\":\"handler\",\"glob\":\"*.cgi\",\"path\":\"$PROJ\"}}"
 rm -f "$PROJ/.codebase-memory.json"
 
+# --- c24: the search term comes from the SEGMENT that owns the search verb ---
+# Compound commands are routinely narrated with echo labels. _extract_term took
+# the FIRST quoted string in the whole command, so an echo label ahead of the
+# grep supplied the term: the block fired correctly and then suggested
+#   search_code(pattern="=== spec: changeTarget/_fetch coverage ===")
+# which runs and returns nothing. Same class as the --include='*.pl' fix (c18b):
+# a plausible-but-wrong term converts worse than a bare "..." placeholder.
+# Observed live 2026-09-04 in liverpool-cleanup.
+echo ""
+echo "--- Test c24: echo labels must not hijack the extracted term ---"
+
+_c24_term_is() {
+    local label="$1" cmd="$2" want="$3"
+    local msg
+    msg=$(_msg_of "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"cwd\":\"$PROJ_REAL\"}")
+    if printf '%s' "$msg" | grep -qF "\"$want\""; then
+        echo "PASS: c24: $label"; PASS=$((PASS+1))
+    else
+        echo "FAIL: c24: $label (term not '$want')"
+        echo "    msg: $msg"
+        FAIL=$((FAIL+1))
+    fi
+}
+
+_c24_term_is "bare grep keeps its own term" \
+    "grep -n 'changeTarget' src/main.py" "changeTarget"
+_c24_term_is "echo label BEFORE the grep does not win" \
+    "echo '=== coverage ==='; grep -n 'changeTarget' src/main.py" "changeTarget"
+_c24_term_is "echo labels on both sides" \
+    "echo '=== a ==='; grep -n 'changeTarget' src/main.py; echo '=== b ==='" "changeTarget"
+_c24_term_is "grep keeps its pipe sink in the same segment" \
+    "grep -n 'changeTarget' src/main.py | head -40" "changeTarget"
+# A leading `git -C <dir> <non-grep>` owns no search term; selecting it would
+# yield the placeholder and lose the real term further along.
+_c24_term_is "leading git -C branch does not claim the segment" \
+    "git -C src branch --show-current && echo '=== hdr ==='; grep -n 'changeTarget' src/main.py" "changeTarget"
+# Uses `git grep … src/` rather than `git -C src grep … .`: the outer gate
+# requires a source-path fragment to classify the command as navigation at all,
+# and `.` is not one. That predates this fix and is a separate behaviour.
+_c24_term_is "git grep IS a search verb" \
+    "echo '=== hdr ==='; git grep -n 'changeTarget' src/" "changeTarget"
+
+# And a compound with no code search at all must still pass through untouched.
+_assert_exit "c24: git branch + status compound not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git -C src branch --show-current && git -C src status --porcelain\"},\"cwd\":\"$PROJ_REAL\"}"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
