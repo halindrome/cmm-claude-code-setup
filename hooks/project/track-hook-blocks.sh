@@ -92,12 +92,36 @@ except (FileNotFoundError, json.JSONDecodeError):
 hook_type = hook_type.replace('-', '_')
 
 ALLOW_TYPES = ('bash_exempt', 'bash_unarmed')
-BLOCK_TYPES = ('read', 'bash', 'bash_compound', 'ctx_payload', 'ctx_payload_exempt')
+
+# Every type any hook in this stack passes, mapped to its by_hook key. Keep this
+# table in sync with the call sites -- grep hooks/ for track-hook-blocks.sh
+# invocations. NOTE: this whole program is passed to python3 -c inside a
+# DOUBLE-QUOTED shell string, so a literal double quote anywhere in it (even in
+# a comment) closes that string early and silently truncates the program: it
+# then writes nothing, exits 0, and the caller moves an empty temp file over the
+# counter. Use single quotes only, here and below.
+# It is a TABLE and not an if/elif chain because the chain was the bug: types
+# with no branch (bash_nav, grep, ctx_execute, webfetch) bumped total_blocks and
+# recorded nothing, so total_blocks and by_hook disagreed and the CMM gates --
+# the two whose conversion rate we actually care about -- were invisible.
+# 'grep' is sent by BOTH cmm-grep-nudge.sh and grep-cmm-gate.sh; they cannot be
+# told apart from the argument alone, so they share one key.
+BLOCK_KEYS = {
+    'read':          ('read_blocks',        'cmm-nudge'),
+    'bash':          ('bash_blocks',        'ctx-execute-enforcer'),
+    'bash_compound': ('bash_blocks',        'ctx-execute-enforcer'),
+    'bash_nav':      ('bash_blocks',        'cmm-grep-nudge'),
+    'grep':          ('grep_blocks',        'grep-cmm-gate'),
+    'ctx_execute':   ('ctx_execute_blocks', 'ctx-execute-cmm-nudge'),
+    'ctx_payload':   ('ctx_payload_blocks', 'ctx-payload-guard'),
+    'webfetch':      ('webfetch_blocks',    'webfetch-nudge'),
+}
 
 # Types that record an ALLOW, not a block. Handled before the total_blocks bump
-# so they can never inflate it. Unknown types land here too: recording nothing is
-# correct, silently counting them as a block is not.
-if hook_type in ALLOW_TYPES or hook_type not in BLOCK_TYPES:
+# so they can never inflate it. Genuinely unknown types land here too: recording
+# nothing is correct, silently counting them as a block is not.
+if (hook_type in ALLOW_TYPES
+        or (hook_type not in BLOCK_KEYS and hook_type != 'ctx_payload_exempt')):
     if hook_type in ALLOW_TYPES:
         # Reason is hook-supplied, but sanitise before it becomes a JSON key.
         reason = re.sub(r'[^a-z0-9-]', '', (hook_reason or 'unspecified').lower())[:32] or 'unspecified'
@@ -111,27 +135,17 @@ if hook_type in ALLOW_TYPES or hook_type not in BLOCK_TYPES:
 # Increment counters
 data['total_blocks'] = data.get('total_blocks', 0) + 1
 
-# A compound rejection is a bash block; it previously matched no branch, so it
-# bumped total_blocks and left by_hook untouched -- the two disagreed silently.
-if hook_type == 'bash_compound':
-    hook_type = 'bash'
-
-if hook_type == 'read':
-    data['read_blocks'] = data.get('read_blocks', 0) + 1
-    data.setdefault('by_hook', {})['cmm-nudge'] = data.get('by_hook', {}).get('cmm-nudge', 0) + 1
-elif hook_type == 'bash':
-    data['bash_blocks'] = data.get('bash_blocks', 0) + 1
-    data.setdefault('by_hook', {})['ctx-execute-enforcer'] = data.get('by_hook', {}).get('ctx-execute-enforcer', 0) + 1
-elif hook_type == 'ctx_payload':
-    data['ctx_payload_blocks'] = data.get('ctx_payload_blocks', 0) + 1
-    data.setdefault('by_hook', {})['ctx-payload-guard'] = data.get('by_hook', {}).get('ctx-payload-guard', 0) + 1
-elif hook_type == 'ctx_payload_exempt':
+if hook_type == 'ctx_payload_exempt':
     # An exempt use is NOT a block -- undo the unconditional total bump above.
     # The regression signal for ctx-payload-guard is the exempt:block ratio, not
     # the block count: a high block count is the gate working as measured, but a
     # rising exempt ratio means the agent keeps judging the gate wrong.
     data['total_blocks'] = data.get('total_blocks', 1) - 1
     data.setdefault('by_hook', {})['ctx-payload-guard-exempt'] = data.get('by_hook', {}).get('ctx-payload-guard-exempt', 0) + 1
+else:
+    bucket, hook_key = BLOCK_KEYS[hook_type]
+    data[bucket] = data.get(bucket, 0) + 1
+    data.setdefault('by_hook', {})[hook_key] = data.get('by_hook', {}).get(hook_key, 0) + 1
 
 # Write to temp file
 with open(temp_path, 'w') as f:
