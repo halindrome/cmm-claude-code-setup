@@ -166,13 +166,35 @@ if [[ "$_OPCHECK" == *"&&"* ]] || [[ "$_OPCHECK" == *"||"* ]] || \
     # 252 carried the identical `| head -N` into the sandbox, where nothing
     # inspected it. When the command carries a truncation, name the stripped
     # replacement concretely instead of leaving a blank to fill in.
-    _SUGGEST=$(printf '%s' "$_ORIG_COMMAND" | sed -E 's/[[:space:]]*\|[[:space:]]*(head|tail)[^|;&]*//g')
+    # Strip stdout-to-file redirects as well as truncating pipes. Suggesting
+    # `code="cmd > out.log"` hands the agent a payload that ctx-payload-guard
+    # then hard-blocks -- two blocks for one intent, with this hook authoring
+    # the second one.
+    #
+    # fd 1 only, and never a /dev/ target. `2> err.log`, `2>&1`, `>&2` and
+    # `> /dev/null` are all things the guard deliberately ALLOWS, so stripping
+    # them here would corrupt a command it was never going to object to. That
+    # needs a lookbehind and a lookahead, which sed -E has not got; python3 is
+    # already a dependency of the check above, and the sed fallback below keeps
+    # the pipe half working if it is missing.
+    _SUGGEST=$(_ORIG="$_ORIG_COMMAND" python3 <<'PY' 2>/dev/null
+import os, re, sys
+c = os.environ.get("_ORIG", "")
+c = re.sub(r"\s*\|\s*(?:head|tail)\b[^|;&]*", "", c)
+c = re.sub(r"\s*(?<![0-9&>])1?>>?\s*(?!/dev/)[^\s;|&]+", "", c)
+sys.stdout.write(c.strip())
+PY
+    ) || _SUGGEST=""
+    if [ -z "$_SUGGEST" ]; then
+        _SUGGEST=$(printf '%s' "$_ORIG_COMMAND" | sed -E 's/[[:space:]]*\|[[:space:]]*(head|tail)[^|;&]*//g')
+    fi
     if [ "$_SUGGEST" != "$_ORIG_COMMAND" ]; then
         _OPT2="       mcp__plugin_context-mode_context-mode__ctx_execute(language=\"shell\", code=\"$_SUGGEST\", intent=\"<what you are looking for>\")
-     The truncating pipe is dropped on purpose: ctx_execute indexes the FULL
-     output and returns only the sections matching intent=, so capping it first
-     discards data for no context saving. Re-adding it will be blocked by
-     ctx-payload-guard."
+     The truncation is dropped on purpose: ctx_execute indexes the FULL output
+     and returns only the sections matching intent=, so capping it first — or
+     sending stdout to a file — discards data for no context saving. Re-adding
+     it will be blocked by ctx-payload-guard. Redirecting stderr (2> file,
+     2>/dev/null, 2>&1) is untouched and never blocked."
     else
         _OPT2="       mcp__plugin_context-mode_context-mode__ctx_execute(language=\"shell\", code=\"$_ORIG_COMMAND\", intent=\"<what you are looking for>\")"
     fi

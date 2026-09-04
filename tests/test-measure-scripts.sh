@@ -1,9 +1,16 @@
 #!/bin/bash
 # test-measure-scripts.sh — Tests for the `make measure` analysis scripts.
-# Verifies the anti-pattern detectors classify known payloads correctly (its
-# own --selftest, which doubles as the spec for the ctx-payload-guard hook) and
-# that both scripts are importable and honour a days argument without touching
-# the filesystem.
+#
+# Scope, stated accurately: this file drives the scripts' own --selftest (whose
+# rows are the spec for the STRONG, WEAK, assert and bashism detectors, and
+# double as the spec for the ctx-payload-guard hook), asserts that the WEAK side
+# is exercised at all, and checks that both scripts are importable, honour a
+# days argument, and never write to the filesystem.
+#
+# What it does NOT do, so nobody reads more into a green run: it does not run
+# the two mirrored detectors against each other. `analyze-antipatterns.py` and
+# `hooks/project/ctx-payload-guard.sh` carry deliberately parallel logic and can
+# drift while both suites stay green. They agree on every SELFTEST row today.
 # Usage: bash tests/test-measure-scripts.sh
 # Exit: 0 = all pass, 1 = any failure
 set -euo pipefail
@@ -61,10 +68,52 @@ echo "--- weak detectors run on raw text, not the scrubbed copy ---"
 # Regression guard: scrubbing quoted spans before the weak scan blanks the very
 # argument being detected (`sed -n '1,3p'`), which silently zeroed the weak
 # counts and would have made a migration from head/tail look like a win.
-if grep -q 'RE_SED_RANGE) *:*$\|rx.search(text)' "$ANTI"; then
-  pass "weak/assert/bashism detectors scan raw text"
+#
+# This used to be a grep for a source pattern, and it was VACUOUS: one of its
+# two alternatives (`rx.search(text)`) also matches the bashism comprehension,
+# so it passed unconditionally — including against a copy with the fix removed.
+# Behaviour is the thing to assert, so assert behaviour: a line-range whose
+# argument is quoted must still be detected. That is exactly what scrubbing
+# first would destroy.
+_WEAKPROBE=$(python3 - "$ANTI" <<'PY' 2>/dev/null
+import importlib.util, sys
+sp = importlib.util.spec_from_file_location("a", sys.argv[1])
+m = importlib.util.module_from_spec(sp); sp.loader.exec_module(m)
+print(",".join(m.classify("sed -n '1,60p' run.log", "shell")["weak"]))
+PY
+)
+if [ "$_WEAKPROBE" = "sed line-range" ]; then
+  pass "quoted line-range is still detected (weak scan sees raw text)"
 else
-  fail "weak detectors appear to scan scrubbed text (would under-count)"
+  fail "weak scan missed a quoted line-range (got: '${_WEAKPROBE}')"
+fi
+
+echo ""
+echo "--- the WEAK side has an executable spec at all ---"
+# The migration reading depends on WEAK being measured. Every SELFTEST row used
+# to assert only `strong`, so the three weak detectors were unexercised: one
+# could stop matching and a fall in STRONG would read as a win rather than as
+# agents moving to `sed -n '1,60p'`.
+for _sym in WEAK_SELFTEST ASSERT_SELFTEST; do
+  if grep -q "^${_sym} = \[" "$ANTI"; then
+    pass "$_sym exists"
+  else
+    fail "$_sym missing — the weak/assert detectors have no spec"
+  fi
+done
+# Capture first, then grep. Piping into `grep -q` under `set -o pipefail` makes
+# grep exit at the first match, python3 take SIGPIPE, and the pipeline return
+# 141 — the same latent race that was flapping test-phase-66-install-scope.sh.
+_SELFTEST_OUT=$(python3 "$ANTI" --selftest 2>&1 || true)
+if printf '%s' "$_SELFTEST_OUT" | grep -q 'ok    weak='; then
+  pass "selftest actually exercises the weak detectors"
+else
+  fail "selftest runs no weak rows"
+fi
+if printf '%s' "$_SELFTEST_OUT" | grep -q 'ok    assert='; then
+  pass "selftest actually exercises the assert detector"
+else
+  fail "selftest runs no assert rows"
 fi
 
 echo ""

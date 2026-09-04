@@ -101,6 +101,22 @@ _lacks "ctx-rules: stale #34692 claim removed"   "$ROOT/rules/ctx-rules.md" "346
 _lacks "preamble: stale #34692 claim removed"    "$ROOT/rules/cmm-agent-preamble.md" "34692"
 _has "README: references preamble asset"         "$ROOT/README.md" "cmm-agent-preamble.md"
 _has "README: notes Workflow bypass"             "$ROOT/README.md" "bypass"
+# CONTRIBUTING carried the same stale claim ("SubagentStart hooks cannot
+# intercept tool calls inside the subagent") and was corrected by WS3, but
+# nothing pinned it — absence of a pin is how a correction silently regresses.
+# NB: skills/ctx-rules/SKILL.md has no subagent section at all, so it never
+# carried the claim and there is nothing to assert there.
+#
+# Pin the POSITIVE claim, not the absence of a phrase. "cannot intercept tool
+# calls" still appears there and is correct in its own sentence — SubagentStart
+# is a startup hook and genuinely cannot; what was wrong was concluding that
+# PreToolUse therefore does not reach the subagent either. Banning the phrase
+# would forbid a true statement.
+_lacks "CONTRIBUTING: stale #34692 claim removed" "$ROOT/CONTRIBUTING.md" "34692"
+_has "CONTRIBUTING: states PreToolUse does fire in subagents" \
+  "$ROOT/CONTRIBUTING.md" "**do** fire on tool calls made inside a subagent"
+_has "CONTRIBUTING: scopes the bypass to the spawn gate" \
+  "$ROOT/CONTRIBUTING.md" "agent-cmm-gate.sh"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

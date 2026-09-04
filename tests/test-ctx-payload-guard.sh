@@ -64,6 +64,20 @@ _stderr_lacks() {
   _run "$2" >/dev/null
   if grep -qF -- "$3" "/tmp/ctxpg-err.$$"; then fail "$1 (stderr still has: $3)"; else pass "$1"; fi
 }
+# The REPLACE WITH block only — the first line of the message names the offending
+# token on purpose, so a whole-stderr check can never distinguish "the message
+# mentions `| head -5`" from "the suggested call still runs `| head -5`". The
+# block spans several lines when the payload does, so scoping to the single line
+# containing `ctx_execute(` is not enough either.
+_suggest_lacks() { # _suggest_lacks <label> <json> <substring>
+  _run "$2" >/dev/null
+  local s; s=$(awk '/REPLACE WITH:/{f=1;next} f&&/^$/{exit} f' "/tmp/ctxpg-err.$$")
+  if printf '%s' "$s" | grep -qF -- "$3"; then
+    fail "$1 (REPLACE WITH still has: $3)"
+  else
+    pass "$1"
+  fi
+}
 trap 'rm -f /tmp/ctxpg-err.$$' EXIT
 
 echo ""
@@ -167,6 +181,37 @@ _allows "allows quoted target read back later" \
   "$(_json "$PLUGIN" shell 'cmd > "out.log" && grep x "out.log"')"
 _allows "allows quoted authoring target" "$(_json "$PLUGIN" shell 'echo hi > "f.txt"')"
 echo ""
+echo "--- backslash-escaped quotes do not end a quoted span (QA round 1, F-01) ---"
+# Inside "..." a backslash escapes the next char, so \" does NOT close the span.
+# Without this the span ended early, the rest was re-parsed as unquoted shell, and
+# a '>' inside a JSON body became a real redirect: a valid command was hard-blocked
+# AND the suggested replacement had the middle of the body spliced out of it.
+_allows "escaped quote inside a JSON body with '>'" \
+  "$(_json "$PLUGIN" shell 'curl -sS -d "{\"q\":\"a > b\"}" https://example.test/api')"
+_allows "escaped quote around a pipe-looking string" \
+  "$(_json "$PLUGIN" shell 'curl -d "{\"cmd\":\"x | head -5\"}" https://example.test/api')"
+# Single quotes take no escapes in shell: inside '...' a backslash is literal, so
+# the span still ends at the next quote and a real truncation after it is caught.
+_blocks "backslash in single quotes does not swallow a later truncation" \
+  "$(_json "$PLUGIN" shell "grep 'a\\' src/ | head -5")"
+
+echo ""
+echo "--- the suggestion strips EVERY truncation, not just the first (F-05) ---"
+# Splicing out only the first match leaves the rest in REPLACE WITH, so an agent
+# that pastes it is blocked again on the next one -- the laundering loop this hook
+# exists to close, rebuilt inside the hook.
+_M2="$(_json "$PLUGIN" shell 'a | head -5
+b | tail -3')"
+_blocks "blocks a two-truncation payload" "$_M2"
+_suggest_lacks "suggestion drops the SECOND pipe truncation too" "$_M2" '| tail -3'
+_suggest_lacks "suggestion drops the first pipe truncation"      "$_M2" '| head -5'
+_R2="$(_json "$PLUGIN" shell 'cmd1 > out1.log
+cmd2 > out2.log')"
+_blocks "blocks a two-redirect payload" "$_R2"
+_suggest_lacks "suggestion drops the SECOND redirect too" "$_R2" '> out2.log'
+_suggest_lacks "suggestion drops the first redirect"      "$_R2" '> out1.log'
+
+echo ""
 echo "--- a shell comment is prose, not a pipeline ---"
 # Found by dogfooding: the guard blocked its own author's payload because a
 # comment contained `-> isolates`, which read as a redirect to a file named
@@ -234,6 +279,15 @@ echo ""
 echo "--- escape hatch ---"
 _allows "'# ctx-truncate-ok' bypasses" \
   "$(_json "$PLUGIN" shell 'cmd | head -20  # ctx-truncate-ok')"
+# The bypass is a NEW marker on purpose. `# ctx-exempt` is ctx-execute-enforcer's
+# operator-only key, matched there as a bare substring anywhere in a command;
+# honouring it here would hand agents the master key to that hook's 2,510 blocks.
+_blocks "'# ctx-exempt' does NOT bypass this guard" \
+  "$(_json "$PLUGIN" shell 'ls -la /usr/bin | head -5 # ctx-exempt')"
+# The marker must be a real comment, not any occurrence of the string: a payload
+# that merely mentions it must not disarm the gate on itself.
+_blocks "marker inside a quoted string does not bypass" \
+  "$(_json "$PLUGIN" shell "grep -rn '# ctx-truncate-ok' hooks/ | head -5")"
 _blocks "exempt in one batch entry does not whitelist another" \
   "$(_batch "$PBATCH" 'a | head -5  # ctx-truncate-ok' 'b | head -5')"
 

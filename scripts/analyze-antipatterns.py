@@ -46,7 +46,9 @@ ROOT = os.path.expanduser("~/.config/claude-code/projects")
 # false-positived an earlier draft of this script.
 SHELLY = {"shell", "bash", "sh", "zsh", "", None}
 
-RE_PIPE_TRUNC = re.compile(r"(?<!\|)\|(?!\|)\s*(?:head|tail)\b")
+# `[\s\\]*` so a line continuation between the pipe and the verb still counts;
+# kept in lockstep with PIPE_TRUNC in hooks/project/ctx-payload-guard.sh.
+RE_PIPE_TRUNC = re.compile(r"(?<!\|)\|(?!\|)[\s\\]*(?:head|tail)\b")
 RE_TEE = re.compile(r"\|\s*tee\b")
 # `echo '{...}' > config.json` is file AUTHORING: nothing was going to be printed
 # for the index, so nothing is discarded. Same category as a heredoc.
@@ -57,7 +59,9 @@ RE_AUTHORING = re.compile(
 # A redirect token, capturing any fd digit immediately before it and the target.
 # `[ \t]*` and NOT `\s*`: `\s` crosses a newline, so `cmd >` ending one line
 # would take the next line's first word as its redirect target.
-RE_REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?&?)[ \t]*(?P<target>[^\s;|&()]+)")
+# `\|?` accepts `>|` (noclobber override), an ordinary stdout redirect whose
+# target the `|`-excluding class would otherwise refuse to match.
+RE_REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?\|?&?)[ \t]*(?P<target>[^\s;|&()]+)")
 
 # `(?<!<)<<(?!<)` so a here-STRING (`<<< word`) is not mistaken for a here-DOC.
 # Without the guards this matched `<<< x`, took "x" as the terminator, and blanked
@@ -95,8 +99,16 @@ def strip_quoted(s):
         c = s[i]
         if c in "'\"":
             j = i + 1
+            # Inside "..." a backslash escapes the next char, so `\"` does not
+            # close the span. Without this a `>` in an escaped JSON body
+            # (curl -d "{\"q\":\"a > b\"}") counts as a real redirect, so the
+            # baseline carries false positives of that shape. Single quotes take
+            # no escapes in shell, so only `"` gets this treatment.
             while j < n and s[j] != c:
-                j += 1
+                if c == '"' and s[j] == "\\":
+                    j += 2
+                else:
+                    j += 1
             # `_`, not a space: `cmd > "out.log"` must still present a redirect
             # TARGET to RE_REDIR, and a span of spaces presents none -- which
             # silently dropped every quoted-target redirect from the counts.
@@ -104,7 +116,7 @@ def strip_quoted(s):
             # target stays recoverable by offset.
             for k in range(i, min(j + 1, n)):
                 out[k] = "_"
-            i = j + 1
+            i = min(j + 1, n)
         elif c == "#" and (i == 0 or s[i - 1] in " \t\n"):
             # A shell comment is prose, not a pipeline: `# ... -> isolates the
             # fix` otherwise counts as a redirect to a file named "isolates",
@@ -275,9 +287,40 @@ SELFTEST = [
     ("# see: cmd | head -5\ngit status", "shell", False),
     ("echo $# ; cmd | head -5", "shell", True),   # $# is not a comment
     ("git log\n# note > here\ncmd > out.log", "shell", True),  # real one still caught
+    # Alternate spellings of the same truncation (QA round 1).
+    ("cmd | \\\n  head -5", "shell", True),          # line continuation
+    ("cmd >| out.log", "shell", True),               # noclobber override
     ("const a = b > c ? 1 : 2", "javascript", False),
     ("x = y >> 1", "python", False),
     ("print $fh > 5", "perl", False),
+]
+
+# The WEAK side had NO executable spec at all: every SELFTEST row above asserts
+# only `strong`, so the line-range detectors were never exercised. That matters
+# more than an ordinary coverage gap, because the whole point of separating WEAK
+# from STRONG is to detect MIGRATION -- agents answering a `| head` block with
+# `sed -n '1,60p'`. A WEAK detector that silently stopped matching would make a
+# migration look like a clean win, which is precisely the misreading the split
+# exists to prevent. (label, payload, must-appear-in-weak)
+WEAK_SELFTEST = [
+    ("sed line-range",  "sed -n '1,60p' run.log", True),
+    ("awk NR-range",    "awk 'NR<=40' run.log", True),
+    ("grep -m N",       "grep -m 5 ERROR run.log", True),
+    # NB: WEAK is exactly these three detectors. `cut -c1-N` is named as
+    # line-range extraction in some earlier drafts but has no detector here, so
+    # it is deliberately NOT asserted -- a row for it would be asserting a
+    # capability the report does not claim.
+    # A full-file sed with no line range is not truncation.
+    (None,               "sed -e 's/a/b/g' file", False),
+    (None,               "awk '{print $1}' file", False),
+    (None,               "grep ERROR run.log", False),
+]
+
+# The assert-on-a-guessed-literal detector, likewise unexercised.
+ASSERT_SELFTEST = [
+    ("grep -c 'not ok' run.log", True),
+    ("grep -q FAILED build.log && echo bad", True),
+    ("grep -rn TODO src/", False),
 ]
 
 
@@ -290,6 +333,25 @@ def selftest():
             print(f"FAIL  expected strong={expect} got={got}: {payload!r} [{lang}]")
         else:
             print(f"ok    strong={got:<5} {payload!r} [{lang}]")
+    # WEAK detectors -- these gate the migration reading, so they get a spec.
+    for label, payload, expect in WEAK_SELFTEST:
+        weak = classify(payload, "shell")["weak"]
+        got = bool(weak)
+        ok = (got == expect) and (label is None or label in weak)
+        if not ok:
+            failed += 1
+            print(f"FAIL  expected weak={expect}{' ' + label if label else ''} "
+                  f"got={weak}: {payload!r}")
+        else:
+            print(f"ok    weak={got:<6} {payload!r}")
+    # assert-on-a-guessed-literal detector
+    for payload, expect in ASSERT_SELFTEST:
+        got = bool(classify(payload, "shell")["assert"])
+        if got != expect:
+            failed += 1
+            print(f"FAIL  expected assert={expect} got={got}: {payload!r}")
+        else:
+            print(f"ok    assert={got:<4} {payload!r}")
     # bashism detector
     for payload, expect in (("v=x; echo ${!v}", True), ("echo ${v}", False),
                             ("for f in $files; do echo $f; done", True)):

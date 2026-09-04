@@ -58,8 +58,17 @@ fi
 # non-flag, non-path token after the navigation verb.
 _extract_term() {
   local s="$1" t=""
-  t=$(printf '%s' "$s" | sed -nE "s/.*'([^']{2,64})'.*/\1/p" | head -1)
-  [ -z "$t" ] && t=$(printf '%s' "$s" | sed -nE 's/.*"([^"]{2,64})".*/\1/p' | head -1)
+  # Drop value-carrying filter flags BEFORE looking for a quoted term: their
+  # argument is a glob or a file type, never the thing being searched for.
+  # `grep -rn 'foo' src/ --include='*.pl'` must yield foo, not *.pl -- and a
+  # plausible-but-wrong term is worse for conversion than the old "..."
+  # placeholder, because search_graph(name_pattern="*.pl") looks correct and
+  # returns nothing. That misfires hardest on the Perl case WS2 exists to fix.
+  s=$(printf '%s' "$s" | sed -E "s/(--(include|exclude|exclude-dir|type|type-add|glob|iglob|file)|[[:space:]]-[tgf])(=|[[:space:]]+)('[^']*'|\"[^\"]*\"|[^[:space:]]+)/ /g")
+  # `[^']*` anchors to the FIRST quoted string; a leading `.*` is greedy and
+  # lands on the LAST one, which is the opposite of what the comment promises.
+  t=$(printf '%s' "$s" | sed -nE "s/[^']*'([^']{2,64})'.*/\1/p" | head -1)
+  [ -z "$t" ] && t=$(printf '%s' "$s" | sed -nE 's/[^"]*"([^"]{2,64})".*/\1/p' | head -1)
   if [ -z "$t" ]; then
     t=$(printf '%s' "$s" | sed -nE 's/.*(^|[[:space:]|;&(])(grep|rg)[[:space:]]+((-[^[:space:]]+[[:space:]]+)*)([^-[:space:]][^[:space:]]*).*/\5/p' | head -1)
     case "$t" in */*) t="" ;; esac   # a path, not a search term
@@ -98,8 +107,12 @@ _cmm_recovery_lines() {
 # Read. Perl IS a Hybrid LSP language here; say so at the moment of blocking,
 # because that is the only moment the agent is asking the question.
 _perl_note() {
+  # `*.pl*` is a substring match, so it fired on .plist, .plugin.ts and .pm2 —
+  # telling an agent searching a TypeScript file that Perl is indexed. Anchor
+  # each extension at a word boundary instead: the extension must be followed by
+  # a non-alphanumeric or end of string.
   case "$1" in
-    *.pl*|*.pm*|*perl*|*Perl*)
+    *.pl|*.pm|*.pl[!a-zA-Z0-9]*|*.pm[!a-zA-Z0-9]*|*perl*|*Perl*)
       printf '\n%s' "  Perl is fully indexed (Hybrid LSP): packages, @ISA / use parent inheritance,
   Exporter import maps and bless self-type inference all resolve. Use the graph." ;;
   esac
@@ -225,7 +238,14 @@ cmm_is_registered "$REPO_ROOT" && CMM_FOUND=true
 _EXT_CACHE=""
 if [ -n "$REPO_ROOT" ]; then
   _CMM_CFG="${REPO_ROOT}/.codebase-memory.json"
-  _CFG_MTIME=$(stat -f %m "$_CMM_CFG" 2>/dev/null || stat -c %Y "$_CMM_CFG" 2>/dev/null || echo 0)
+  # GNU FIRST, BSD second -- the order is load-bearing, not stylistic. On GNU
+  # coreutils `-f` is --file-system, which SUCCEEDS for any existing file and
+  # prints filesystem info, so `stat -f %m || stat -c %Y` never reaches the
+  # fallback and the key becomes a per-platform constant. `-c` is unknown to BSD
+  # stat, which exits non-zero, so trying it first degrades correctly on both.
+  # This hook installs to ~/.claude and runs for every repo, so getting it
+  # backwards restores the "first read is permanent" bug on all of Linux.
+  _CFG_MTIME=$(stat -c %Y "$_CMM_CFG" 2>/dev/null || stat -f %m "$_CMM_CFG" 2>/dev/null || echo 0)
   _EXT_CACHE="/tmp/cmm-user-ext-$(echo -n "$REPO_ROOT" | md5 -q 2>/dev/null || echo -n "$REPO_ROOT" | md5sum 2>/dev/null | cut -d' ' -f1)-${_CFG_MTIME}"
   if [ ! -f "$_EXT_CACHE" ]; then
     python3 -c "

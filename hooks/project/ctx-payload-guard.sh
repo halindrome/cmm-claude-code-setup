@@ -50,11 +50,20 @@ ACCEPTED = {
 SHELLY = {"shell", "bash", "sh", "zsh", "", None}
 
 EXEMPT = re.compile(r"#\s*ctx-truncate-ok\b")
-PIPE_TRUNC = re.compile(r"(?<!\|)\|(?!\|)\s*(?:head|tail)\b[^|;&\n]*")
+# `[\s\\]*` rather than `\s*`: a line continuation (`cmd | \` newline `head -5`)
+# puts a backslash between the pipe and the verb, which `\s*` will not cross.
+# That is a shape agents write naturally on long pipelines, so it is worth the
+# character class. Other spellings deliberately left alone -- `| less`, `| more`,
+# `| sed 1q` are outside the stated head/tail contract, and chasing every one has
+# diminishing returns. The guard fails OPEN on all of them.
+PIPE_TRUNC = re.compile(r"(?<!\|)\|(?!\|)[\s\\]*(?:head|tail)\b[^|;&\n]*")
 TEE = re.compile(r"\|\s*tee\b")
 # `[ \t]*` and NOT `\s*`: `\s` crosses a newline, so `cmd >` at the end of one
 # line would take the next line's first word as its redirect target.
-REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?&?)[ \t]*(?P<target>[^\s;|&()]+)")
+# `\|?` in the op accepts `>|`, bash's noclobber override: it is an ordinary
+# stdout redirect, but the target class excludes `|`, so without this the match
+# failed and the redirect went unseen.
+REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?\|?&?)[ \t]*(?P<target>[^\s;|&()]+)")
 # `(?<!<)<<(?!<)` so a here-STRING (`<<< word`) is not mistaken for a here-DOC.
 # Without the guards this matched `<<< x`, took "x" as the terminator, and blanked
 # every following line until one equalled "x" -- scrubbing away real truncations
@@ -63,7 +72,7 @@ HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?(\w+)")
 HEREDOC_LINE = re.compile(r"(?<!<)<<(?!<)")
 
 
-def scrub(s):
+def scrub(s, drop_comments=True):
     """Blank quoted spans, $( ), backticks and heredoc bodies with same-length
     placeholders so operator scanning never fires on text inside them. Whole-string,
     not line-based: a multi-line `git commit -m "..."` crosses newlines.
@@ -80,12 +89,22 @@ def scrub(s):
         c = s[i]
         if c == "'" or c == '"':
             j = i + 1
+            # Inside "..." a backslash escapes the next character, so `\"` does
+            # NOT close the span. Without this the span ends early and the rest
+            # of the payload is re-parsed as unquoted shell: a `>` in a JSON body
+            # (curl -d "{\"q\":\"a > b\"}") became a real redirect, hard-blocking
+            # a valid command AND splicing the middle out of the suggested
+            # replacement. Single quotes take no escapes in shell -- inside
+            # '...' a backslash is a literal -- so only `"` gets this treatment.
             while j < n and s[j] != c:
-                j += 1
+                if c == '"' and s[j] == "\\":
+                    j += 2
+                else:
+                    j += 1
             for k in range(i, min(j + 1, n)):
                 out[k] = "_"
-            i = j + 1
-        elif c == "#" and (i == 0 or s[i - 1] in " \t\n"):
+            i = min(j + 1, n)
+        elif drop_comments and c == "#" and (i == 0 or s[i - 1] in " \t\n"):
             # A shell comment is prose, not a pipeline. Found by dogfooding:
             # `# ... -> isolates the fix` blocked as a redirect to a file named
             # "isolates", and `# see cmd | head` would block as a truncation.
@@ -125,7 +144,11 @@ def scrub(s):
             if raw_lines[idx].strip() == term:
                 term = None
             continue
-        m = HEREDOC.search(raw_lines[idx])
+        # Search the SCRUBBED line, not the raw one: `echo "use << EOF here"`
+        # otherwise starts a heredoc whose terminator never arrives, blanking
+        # every following line -- so a real `make | head -5` after it vanished.
+        # Under-blocking only (it fails open), but silently.
+        m = HEREDOC.search(line)
         res.append(line)
         if m:
             term = m.group(1)
@@ -143,8 +166,11 @@ AUTHORING = re.compile(
     r"(?:^|[;&|]|\n)\s*(?:(?:do|then|else)\s+)?(?:echo|printf)\b[^;&|\n]*$")
 
 
-def redirect_hit(scrubbed, raw):
-    """Return (match, target) if stdout goes to a file, else None.
+def redirect_hits(scrubbed, raw):
+    """Yield (match, target) for EVERY stdout-to-file redirect, in order.
+
+    A generator, not a first-match lookup, because the suggested replacement has
+    to have all of them removed -- see _strip_all.
 
     Targets are read back out of `raw` by offset, not taken from `scrubbed`:
     scrub() fills quoted spans with `_`, so the scrubbed target of
@@ -152,7 +178,8 @@ def redirect_hit(scrubbed, raw):
     target is /dev/null or is read back by a later command."""
     # Heredoc lines are file AUTHORING (`cat > script.sh <<EOF`), not output
     # truncation: nothing is discarded because nothing was going to print.
-    heredoc = set(i for i, ln in enumerate(raw.split("\n")) if HEREDOC_LINE.search(ln))
+    # Scrubbed, not raw -- same reason as the terminator search in scrub().
+    heredoc = set(i for i, ln in enumerate(scrubbed.split("\n")) if HEREDOC_LINE.search(ln))
     for m in REDIR.finditer(scrubbed):
         if scrubbed.count("\n", 0, m.start()) in heredoc:
             continue
@@ -176,28 +203,51 @@ def redirect_hit(scrubbed, raw):
             continue                                   # discarding; nothing to recover
         if target in raw[m.end():]:
             continue                                   # file is read back later
-        return m, target
-    return None
+        yield m, target
+
+
+def _strip_all(text, spans):
+    """Remove EVERY offending span from the payload, right to left.
+
+    Splicing out only the first match leaves the rest in the suggested
+    replacement, so an agent that pastes it gets blocked again on the next
+    truncation -- the laundering loop this hook exists to close, rebuilt inside
+    the hook itself. It converges eventually, one round per truncation, which is
+    still a round per truncation too many. `ctx-execute-enforcer.sh` already
+    strips all of them; this matches it.
+    """
+    out = text
+    for a, b in sorted(spans, reverse=True):
+        out = out[:a] + out[b:]
+    return out.strip()
 
 
 def check(text, language):
     """-> (kind, token, target, suggested) | ("EXEMPT",...) | None."""
     if (language or "").lower() not in SHELLY:
         return None
-    if EXEMPT.search(text):
+    # The bypass must be a real COMMENT, not any occurrence of the string: a
+    # payload that merely mentions the marker -- `grep -rn '# ctx-truncate-ok'
+    # hooks/ | head -5` -- would otherwise disarm the gate on itself. Quoted
+    # spans are blanked first; comments are deliberately KEPT, which is the one
+    # place the scrub has to run with drop_comments=False.
+    if EXEMPT.search(scrub(text, drop_comments=False)):
         return ("EXEMPT", "", "", "")
     scrubbed = scrub(text)
-    m = PIPE_TRUNC.search(scrubbed)
-    if m:
-        token = text[m.start():m.end()].strip()
-        return ("pipe", token, "", (text[:m.start()] + text[m.end():]).strip())
-    if not TEE.search(scrubbed):
-        hit = redirect_hit(scrubbed, text)
-        if hit:
-            m, target = hit
-            token = text[m.start():m.end()].strip()
-            return ("redirect", token, target,
-                    (text[:m.start()] + text[m.end():]).strip())
+    pipes = list(PIPE_TRUNC.finditer(scrubbed))
+    # A `| tee` means stdout still flows, so redirects on that payload are not
+    # suppressing anything; pipe truncation is judged independently of it.
+    redirects = [] if TEE.search(scrubbed) else list(redirect_hits(scrubbed, text))
+    spans = [(m.start(), m.end()) for m in pipes]
+    spans += [(m.start(), m.end()) for m, _ in redirects]
+    if pipes:
+        m = pipes[0]
+        return ("pipe", text[m.start():m.end()].strip(), "",
+                _strip_all(text, spans))
+    if redirects:
+        m, target = redirects[0]
+        return ("redirect", text[m.start():m.end()].strip(), target,
+                _strip_all(text, spans))
     return None
 
 
@@ -270,6 +320,13 @@ TOKEN=$(printf  '%s' "$RESULT" | sed -n '4p')
 TOOL=$(printf   '%s' "$RESULT" | sed -n '5p')
 TARGET=$(printf '%s' "$RESULT" | sed -n '6p')
 SUGGESTED=$(printf '%s' "$RESULT" | sed -n '/^---PAYLOAD---$/,$p' | sed '1d')
+# The suggestion is rendered inside code="..." / command: "...", so an embedded
+# double quote closes the string early: `grep -n "foo bar" src/x.py` came out as
+# code="grep -n "foo bar" src/x.py", which is not pasteable. Single-quoted
+# payloads (awk '{print $1}' f) were already fine, so this only ever bit
+# double-quoted commands -- but an unpasteable REPLACE WITH is the one thing
+# this message exists to provide.
+SUGGESTED=${SUGGESTED//\"/\\\"}
 
 # ctx_batch_execute has no intent=; its equivalent is the queries= array.
 case "$TOOL" in

@@ -223,6 +223,56 @@ else
     echo "FAIL: c18: block still prints a placeholder"; FAIL=$((FAIL+1))
 fi
 
+echo "--- Test c14b/c15b: pipe-sink payloads that actually REACH the sink logic ---"
+# c14/c15 send 'cd $PROJ_REAL/src && git log --oneline | cat'. The gate first
+# requires a path fragment matching (src/|app/|lib/|hooks/|…); '…/src && git'
+# contains 'src ' not 'src/', so those payloads never reach the pipe-sink code at
+# all — both assertions passed against a hook with the fix fully removed. These
+# forms carry a real 'src/' and so discriminate: fixed => exit 0, unfixed => 2.
+_assert_exit "c14b: 'git log --oneline src/ | cat' not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git log --oneline src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+_assert_exit "c15b: 'git diff --stat src/ | cat' not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git diff --stat src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+_assert_exit "c15c: 'ls src/ | cat' not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+# …and the sink fix must not disarm a REAL navigation command that happens to
+# end in a sink. This is the pair that keeps the fix honest in both directions.
+_assert_exit "c15d: 'grep -rn foo src/ | cat' still blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -rn foo src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c18b: an --include glob never becomes the search term (QA r1 F-03) ---"
+# `.*` in the extractor was greedy, so it bound the LAST quoted string: a trailing
+# --include='*.pl' produced search_graph(name_pattern="*.pl"), a call that returns
+# nothing. Worse than the old "..." placeholder because it looks correct -- and it
+# misfires hardest on the Perl case WS2 exists to fix.
+for _CMD in "grep -rn 'reqStatus' src/ --include='*.pl'" \
+            "grep -rn --include='*.pm' 'reqStatus' src/" \
+            "grep -rn 'reqStatus' -t perl src/" ; do
+  _M=$(_msg_of "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$_CMD\"},\"cwd\":\"$PROJ_REAL\"}")
+  if printf '%s' "$_M" | grep -qF 'reqStatus'; then
+    echo "PASS: c18b: term recovered from: $_CMD"; PASS=$((PASS+1))
+  else
+    echo "FAIL: c18b: wrong term from: $_CMD"; FAIL=$((FAIL+1))
+  fi
+  if printf '%s' "$_M" | grep -qE '(name_pattern|query)="\*\.(pl|pm)"'; then
+    echo "FAIL: c18b: glob leaked in as the search term: $_CMD"; FAIL=$((FAIL+1))
+  else
+    echo "PASS: c18b: no glob in the suggested call: $_CMD"; PASS=$((PASS+1))
+  fi
+done
+
+echo "--- Test c20: extension-cache mtime probe tries GNU stat first (QA r1 F-04) ---"
+# On GNU coreutils `stat -f` is --file-system and EXITS 0 for any existing file,
+# so `stat -f %m || stat -c %Y` never reaches the fallback and the cache key is a
+# per-platform constant -- restoring the "first read is permanent" bug on all of
+# Linux. This hook installs to ~/.claude and runs for every repo, so order matters.
+_STATLINE=$(grep -n '_CFG_MTIME=' "$HOOK" | head -1)
+if printf '%s' "$_STATLINE" | grep -qE 'stat -c %Y.*stat -f %m'; then
+    echo "PASS: c20: GNU stat -c is attempted before BSD stat -f"; PASS=$((PASS+1))
+else
+    echo "FAIL: c20: BSD stat -f runs first; on GNU it succeeds and pins the key"; FAIL=$((FAIL+1))
+fi
+
 echo "--- Test c19: regex-shaped term leads with search_code ---"
 _M=$(_msg_of "{\"tool_input\":{\"pattern\":\"foo.*bar\",\"glob\":\"*.py\",\"path\":\"$PROJ\"}}")
 if printf '%s' "$_M" | grep -m1 -q 'search_code'; then

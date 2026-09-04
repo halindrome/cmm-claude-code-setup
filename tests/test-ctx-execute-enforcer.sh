@@ -440,6 +440,36 @@ else
     echo "FAIL: suggested replacement omits intent="
     FAIL=$((FAIL+1))
 fi
+# QA round 1, F-02: a stdout redirect echoed verbatim hands the agent a payload
+# that ctx-payload-guard then hard-blocks -- two blocks for one intent, with this
+# hook authoring the second. Only fd 1 is stripped.
+_OUTR=$(_err_of '{"tool_name":"Bash","tool_input":{"command":"git log --oneline > /tmp/log.txt && wc -l /tmp/log.txt"}}')
+if printf '%s' "$_OUTR" | grep -F 'ctx_execute(' | grep -qF '> /tmp/log.txt'; then
+    echo "FAIL: suggested replacement still redirects stdout to a file"
+    FAIL=$((FAIL+1))
+else
+    echo "PASS: suggested replacement strips the stdout redirect"
+    PASS=$((PASS+1))
+fi
+# Stream splitting and discards are things the guard ALLOWS, so stripping them
+# here would corrupt a command it was never going to object to.
+_OUTE=$(_err_of '{"tool_name":"Bash","tool_input":{"command":"make test 2> err.log && echo ok"}}')
+if printf '%s' "$_OUTE" | grep -qF '2> err.log'; then
+    echo "PASS: stderr redirect is preserved in the suggestion"
+    PASS=$((PASS+1))
+else
+    echo "FAIL: stderr redirect was stripped (the guard never blocks it)"
+    FAIL=$((FAIL+1))
+fi
+_OUTD=$(_err_of '{"tool_name":"Bash","tool_input":{"command":"noisy-cmd > /dev/null && echo ok"}}')
+if printf '%s' "$_OUTD" | grep -qF '> /dev/null'; then
+    echo "PASS: /dev/null discard is preserved in the suggestion"
+    PASS=$((PASS+1))
+else
+    echo "FAIL: /dev/null discard was stripped (the guard never blocks it)"
+    FAIL=$((FAIL+1))
+fi
+
 # A compound with no truncation must keep its command intact.
 _OUT2=$(_err_of '{"tool_name":"Bash","tool_input":{"command":"make test && echo done"}}')
 if printf '%s' "$_OUT2" | grep -qF 'code="make test && echo done"'; then
