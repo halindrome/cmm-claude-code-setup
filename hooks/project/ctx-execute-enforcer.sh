@@ -160,6 +160,22 @@ if [[ "$_OPCHECK" == *"&&"* ]] || [[ "$_OPCHECK" == *"||"* ]] || \
    [[ "$_OPCHECK" == *'$('* ]]  || [[ "$_OPCHECK" == *'`'* ]]  || \
    [[ "$_OPCHECK" == *"&"* ]]   || [[ "$_OPCHECK" == *$'\n'* ]]; then
     bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-compound" 2>/dev/null || true
+    # A bare code="..." placeholder is where the laundering happens: the agent
+    # refills it with the original command, truncating pipe and all. Measured
+    # 2026-09-03: of 1,501 blocked Bash calls that escalated into a ctx_* call,
+    # 252 carried the identical `| head -N` into the sandbox, where nothing
+    # inspected it. When the command carries a truncation, name the stripped
+    # replacement concretely instead of leaving a blank to fill in.
+    _SUGGEST=$(printf '%s' "$_ORIG_COMMAND" | sed -E 's/[[:space:]]*\|[[:space:]]*(head|tail)[^|;&]*//g')
+    if [ "$_SUGGEST" != "$_ORIG_COMMAND" ]; then
+        _OPT2="       mcp__plugin_context-mode_context-mode__ctx_execute(language=\"shell\", code=\"$_SUGGEST\", intent=\"<what you are looking for>\")
+     The truncating pipe is dropped on purpose: ctx_execute indexes the FULL
+     output and returns only the sections matching intent=, so capping it first
+     discards data for no context saving. Re-adding it will be blocked by
+     ctx-payload-guard."
+    else
+        _OPT2="       mcp__plugin_context-mode_context-mode__ctx_execute(language=\"shell\", code=\"$_ORIG_COMMAND\", intent=\"<what you are looking for>\")"
+    fi
     cat >&2 <<COMPOUND
 BLOCKED: Compound shell command cannot be exempted.
 
@@ -173,7 +189,7 @@ arbitrary output behind an exempt prefix.
 Fix options:
   1. Use absolute paths and drop the \`cd\` prefix.
   2. Route the real command through ctx_execute for output sandboxing:
-       mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="...")
+$_OPT2
   3. Run the two halves as separate Bash calls if both are independently exempt.
 COMPOUND
     exit 2
@@ -307,16 +323,32 @@ esac
 # Everything else must go through ctx_execute for output sandboxing.
 bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash" 2>/dev/null || true
 
+# Strip any output-truncation construct before echoing the command into the
+# suggested replacement. Echoing it verbatim taught the laundering path: measured
+# 2026-09-03, of 1,501 blocked Bash calls that escalated into a ctx_* call, 252
+# carried the identical `| head -N` through into the sandbox, where nothing
+# inspected it. Suggesting a payload that ctx-payload-guard will immediately
+# block is two blocks for one intent -- friction with no conversion.
+SUGGESTED="$COMMAND"
+TRUNC_NOTE=""
+_STRIPPED=$(printf '%s' "$COMMAND" | sed -E 's/[[:space:]]*\|[[:space:]]*(head|tail)[^|;&]*//g')
+if [ "$_STRIPPED" != "$COMMAND" ]; then
+  SUGGESTED="$_STRIPPED"
+  TRUNC_NOTE="The truncating pipe was removed: ctx_execute indexes the FULL output and returns
+only the sections matching intent=, so capping it first discards data for no saving."
+fi
+
 cat >&2 <<BLOCKED
 BLOCKED: Route this command through ctx_execute for output sandboxing.
 
 Replace:
   Bash("$COMMAND")
 With (plugin form):
-  mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="$COMMAND")
+  mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="$SUGGESTED", intent="<what you are looking for>")
 Or (MCP-server form, legacy):
-  mcp__context-mode__ctx_execute(language="shell", code="$COMMAND")
+  mcp__context-mode__ctx_execute(language="shell", code="$SUGGESTED", intent="<what you are looking for>")
 
+${TRUNC_NOTE}
 Context Mode captures only the relevant output portion, preventing context bloat.
 If this is a source-code search, prefer search_code / search_graph (CMM) over ctx_execute.
 See skill \`ctx-rules\` for the full protocol.

@@ -118,6 +118,16 @@
             "_comment": "Hard-blocks ctx_execute(code=\"grep/rg/find ... src/\") on indexed source code; redirects to CMM (no-ops if CMM not installed)"
           }
         ]
+      },
+      {
+        "matcher": "mcp__plugin_context-mode_context-mode__ctx_execute|mcp__plugin_context-mode_context-mode__ctx_execute_file|mcp__plugin_context-mode_context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ctx-payload-guard.sh",
+            "_comment": "Hard-blocks output truncation inside ctx payloads (cmd | head/tail, stdout > file); stderr redirects and tee are never blocked. Bypass: '# ctx-truncate-ok'"
+          }
+        ]
       }
     ],
     "PostToolUse": [

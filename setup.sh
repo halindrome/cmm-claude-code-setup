@@ -2085,6 +2085,10 @@ install_project() {
   #     "bash .claude/hooks/ctx-execute-enforcer.sh"; the wildcard loop below copies it
   #     and set_executable runs against it — no dedicated copy_file branch needed.
   #   index-root-gate.sh — PreToolUse:mcp__codebase-memory-mcp__index_repository hard-block for subtree indexing in monorepos (phase 65)
+  #   ctx-payload-guard.sh — PreToolUse on all three ctx execution tools (both name forms):
+  #     hard-blocks output truncation inside ctx payloads (cmd | head/tail, stdout > file).
+  #     Deliberately separate from ctx-execute-cmm-nudge.sh, whose parser fails OPEN on pipes
+  #     by design; this one must fire ON them. Bypass marker: '# ctx-truncate-ok'.
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
   # NOTE: VBW agent overrides are NOT copied verbatim. setup.sh --project installs

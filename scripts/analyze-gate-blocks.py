@@ -49,7 +49,7 @@ def _deprefix(slug):
 GATE_HOOKS = {
     "ctx-execute-enforcer", "cmm-grep-nudge", "grep-cmm-gate", "cmm-nudge",
     "agent-cmm-gate", "cwd-guard", "session-gate", "cmm-session-gate",
-    "ctx-execute-cmm-nudge", "cbm-code-discovery-gate",
+    "ctx-execute-cmm-nudge", "cbm-code-discovery-gate", "ctx-payload-guard",
 }
 # Hook path in a block message. The `.sh` suffix is OPTIONAL: some global gates
 # (e.g. cbm-code-discovery-gate) emit an extensionless path, and requiring `.sh`

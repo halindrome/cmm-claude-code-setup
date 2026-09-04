@@ -408,6 +408,48 @@ _assert_exit "empty JSON fail-open" 0 \
 _assert_exit "malformed JSON fail-open" 0 \
     'not-json'
 
+# --- Laundering guard: the suggested replacement must not carry a truncation ---
+# Measured 2026-09-03: of 1,501 blocked Bash calls that escalated into a ctx_*
+# call, 252 carried the identical `| head -N` into the sandbox, where nothing
+# inspected it. Suggesting a payload that ctx-payload-guard will immediately
+# block is two blocks for one intent -- friction with no conversion.
+echo ""
+echo "--- Suggested ctx_execute replacement strips output truncation ---"
+
+_err_of() { echo "$1" | (cd "$FAKE_PROJ" && bash "$HOOK") 2>&1 >/dev/null || true; }
+
+_OUT=$(_err_of '{"tool_name":"Bash","tool_input":{"command":"orb list 2>&1 | head -20"}}')
+if printf '%s' "$_OUT" | grep -F 'ctx_execute(' | grep -qF '| head'; then
+    echo "FAIL: suggested replacement still contains the truncating pipe"
+    FAIL=$((FAIL+1))
+else
+    echo "PASS: suggested replacement strips the truncating pipe"
+    PASS=$((PASS+1))
+fi
+if printf '%s' "$_OUT" | grep -qF 'code="orb list 2>&1"'; then
+    echo "PASS: suggested replacement names the stripped command concretely"
+    PASS=$((PASS+1))
+else
+    echo "FAIL: suggested replacement is a bare placeholder (agent will refill it)"
+    FAIL=$((FAIL+1))
+fi
+if printf '%s' "$_OUT" | grep -qF 'intent='; then
+    echo "PASS: suggested replacement offers intent="
+    PASS=$((PASS+1))
+else
+    echo "FAIL: suggested replacement omits intent="
+    FAIL=$((FAIL+1))
+fi
+# A compound with no truncation must keep its command intact.
+_OUT2=$(_err_of '{"tool_name":"Bash","tool_input":{"command":"make test && echo done"}}')
+if printf '%s' "$_OUT2" | grep -qF 'code="make test && echo done"'; then
+    echo "PASS: non-truncating compound is echoed unchanged"
+    PASS=$((PASS+1))
+else
+    echo "FAIL: non-truncating compound was altered"
+    FAIL=$((FAIL+1))
+fi
+
 # --- Summary ---
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
