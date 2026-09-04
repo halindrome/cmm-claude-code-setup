@@ -128,6 +128,16 @@
             "_comment": "Hard-blocks output truncation inside ctx payloads (cmd | head/tail, stdout > file); stderr redirects and tee are never blocked. Bypass: '# ctx-truncate-ok'"
           }
         ]
+      },
+      {
+        "matcher": "mcp__plugin_context-mode_context-mode__ctx_execute|mcp__plugin_context-mode_context-mode__ctx_execute_file|mcp__plugin_context-mode_context-mode__ctx_batch_execute|mcp__context-mode__ctx_execute|mcp__context-mode__ctx_execute_file|mcp__context-mode__ctx_batch_execute",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ctx-shell-compat.sh",
+            "_comment": "Advisory (never blocks): warns when a shell payload uses bash-only syntax. ctx_execute runs $SHELL (zsh), not bash, and language=bash is not a distinct runtime. One hook per matcher entry — merge_settings_json dedups on command basename, so pairing two hooks in one entry duplicates the first on re-run"
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -53,5 +53,13 @@ Full `Read` only for: non-code files, files under ~50 lines, or files not yet in
 - `ctx_fetch_and_index` — fetch a URL (indexed + cached) instead of `curl`
 Route large diffs, whole-file reads, test-suite runs, and multi-file scans through these so your
 findings — not the raw bytes — enter context. On a big diff this preserves your own token budget.
+Do NOT pipe into `head`/`tail` or redirect stdout to a file: those discard bytes before they are
+indexed. Pass `intent="<your question>"` instead — output over 5KB flips to search-mode for free.
+
+**`language="shell"` runs `$SHELL` (zsh here), NOT bash.** `language="bash"` is not a distinct
+runtime and cannot select bash. `${!var}` is bash-only — zsh spells it `${(P)var}` and otherwise
+answers `bad substitution`. `mapfile`/`readarray`/`declare -n` do not exist; `${var^^}`/`${var,,}`
+are `${var:u}`/`${var:l}`; arrays are 1-indexed. Worst, zsh does not word-split an unquoted `$var`,
+so `for f in $files` silently iterates once over the whole string. Need bash? `bash -c '…'`.
 
 --- copy to here ---

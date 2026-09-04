@@ -2089,6 +2089,10 @@ install_project() {
   #     hard-blocks output truncation inside ctx payloads (cmd | head/tail, stdout > file).
   #     Deliberately separate from ctx-execute-cmm-nudge.sh, whose parser fails OPEN on pipes
   #     by design; this one must fire ON them. Bypass marker: '# ctx-truncate-ok'.
+  #   ctx-shell-compat.sh — PreToolUse on the same six ctx tool names, ADVISORY (never blocks):
+  #     warns when a shell payload uses bash-only syntax. context-mode resolves one "shell"
+  #     runtime ($SHELL when allowlisted, else bash), so payloads run zsh on a default macOS
+  #     install and language="bash" cannot select bash — there is no such runtime key.
   # Registration of these hooks is handled via rules/project-settings-example.json merged into .claude/settings.json.
   #
   # NOTE: VBW agent overrides are NOT copied verbatim. setup.sh --project installs
