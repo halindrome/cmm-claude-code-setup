@@ -323,32 +323,20 @@ esac
 # Everything else must go through ctx_execute for output sandboxing.
 bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash" 2>/dev/null || true
 
-# Strip any output-truncation construct before echoing the command into the
-# suggested replacement. Echoing it verbatim taught the laundering path: measured
-# 2026-09-03, of 1,501 blocked Bash calls that escalated into a ctx_* call, 252
-# carried the identical `| head -N` through into the sandbox, where nothing
-# inspected it. Suggesting a payload that ctx-payload-guard will immediately
-# block is two blocks for one intent -- friction with no conversion.
-SUGGESTED="$COMMAND"
-TRUNC_NOTE=""
-_STRIPPED=$(printf '%s' "$COMMAND" | sed -E 's/[[:space:]]*\|[[:space:]]*(head|tail)[^|;&]*//g')
-if [ "$_STRIPPED" != "$COMMAND" ]; then
-  SUGGESTED="$_STRIPPED"
-  TRUNC_NOTE="The truncating pipe was removed: ctx_execute indexes the FULL output and returns
-only the sections matching intent=, so capping it first discards data for no saving."
-fi
-
+# NOTE: no truncation-stripping here. An unquoted `| head` always trips the
+# compound-command check above and is handled there, where the strip is tested.
+# The only way to reach this branch with `| head` in the text is inside quotes
+# (`echo "x | head"`), where stripping would mangle a correct command.
 cat >&2 <<BLOCKED
 BLOCKED: Route this command through ctx_execute for output sandboxing.
 
 Replace:
   Bash("$COMMAND")
 With (plugin form):
-  mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="$SUGGESTED", intent="<what you are looking for>")
+  mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="$COMMAND", intent="<what you are looking for>")
 Or (MCP-server form, legacy):
-  mcp__context-mode__ctx_execute(language="shell", code="$SUGGESTED", intent="<what you are looking for>")
+  mcp__context-mode__ctx_execute(language="shell", code="$COMMAND", intent="<what you are looking for>")
 
-${TRUNC_NOTE}
 Context Mode captures only the relevant output portion, preventing context bloat.
 If this is a source-code search, prefer search_code / search_graph (CMM) over ctx_execute.
 See skill \`ctx-rules\` for the full protocol.

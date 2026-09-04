@@ -53,7 +53,12 @@ EXEMPT = re.compile(r"#\s*ctx-truncate-ok\b")
 PIPE_TRUNC = re.compile(r"(?<!\|)\|(?!\|)\s*(?:head|tail)\b[^|;&\n]*")
 TEE = re.compile(r"\|\s*tee\b")
 REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?&?)\s*(?P<target>[^\s;|&()]+)")
-HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)")
+# `(?<!<)<<(?!<)` so a here-STRING (`<<< word`) is not mistaken for a here-DOC.
+# Without the guards this matched `<<< x`, took "x" as the terminator, and blanked
+# every following line until one equalled "x" -- scrubbing away real truncations
+# in the rest of a multi-line payload.
+HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?(\w+)")
+HEREDOC_LINE = re.compile(r"(?<!<)<<(?!<)")
 
 
 def scrub(s):
@@ -111,7 +116,7 @@ def redirect_hit(scrubbed, raw):
     """Return (match, target) if stdout goes to a file, else None."""
     # Heredoc lines are file AUTHORING (`cat > script.sh <<EOF`), not output
     # truncation: nothing is discarded because nothing was going to print.
-    heredoc = set(i for i, ln in enumerate(raw.split("\n")) if "<<" in ln)
+    heredoc = set(i for i, ln in enumerate(raw.split("\n")) if HEREDOC_LINE.search(ln))
     for m in REDIR.finditer(scrubbed):
         if scrubbed.count("\n", 0, m.start()) in heredoc:
             continue

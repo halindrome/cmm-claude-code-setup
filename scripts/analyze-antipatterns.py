@@ -51,6 +51,12 @@ RE_TEE = re.compile(r"\|\s*tee\b")
 # A redirect token, capturing any fd digit immediately before it and the target.
 RE_REDIR = re.compile(r"(?P<fd>\d)?(?P<op>&?>>?&?)\s*(?P<target>[^\s;|&()]+)")
 
+# `(?<!<)<<(?!<)` so a here-STRING (`<<< word`) is not mistaken for a here-DOC.
+# Without the guards this matched `<<< x`, took "x" as the terminator, and blanked
+# every following line until one equalled "x".
+RE_HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?(\w+)")
+RE_HEREDOC_LINE = re.compile(r"(?<!<)<<(?!<)")
+
 RE_SED_RANGE = re.compile(r"sed\s+-n\s+['\"]?\s*\d+\s*,\s*\d+\s*p")
 RE_AWK_NR = re.compile(r"awk\s+['\"][^'\"]*NR\s*[<>=]")
 RE_GREP_M = re.compile(r"\bgrep\b[^|;&\n]*\s-m\s*\d+")
@@ -117,7 +123,7 @@ def strip_quoted(s):
             if raw_lines[idx].strip() == skip_until:
                 skip_until = None
             continue
-        m = re.search(r"<<-?\s*['\"]?(\w+)", raw_lines[idx])
+        m = RE_HEREDOC.search(raw_lines[idx])
         result.append(line)
         if m:
             skip_until = m.group(1)
@@ -128,7 +134,7 @@ def redirect_hit(scrubbed, raw):
     """Return the offending target if stdout is redirected to a file, else None."""
     # Heredoc lines are file *authoring* (`cat > script.sh <<'EOF'`), not output
     # truncation: nothing is being discarded because nothing was going to print.
-    heredoc_lines = {i for i, ln in enumerate(raw.split("\n")) if "<<" in ln}
+    heredoc_lines = {i for i, ln in enumerate(raw.split("\n")) if RE_HEREDOC_LINE.search(ln)}
     for m in RE_REDIR.finditer(scrubbed):
         if scrubbed.count("\n", 0, m.start()) in heredoc_lines:
             continue
@@ -211,6 +217,10 @@ SELFTEST = [
     ("grep 'x > y' file", "shell", False),
     ("a || b", "shell", False),
     ("cat > script.sh <<'EOF'\ncmd | head -5\nEOF", "shell", False),
+    # A here-STRING is not a here-DOC: `<<< x` must not start a scrub that swallows
+    # the rest of the payload, or later truncations go undetected.
+    ("read -ra a <<< x\ncmd | head -5", "shell", True),
+    ("cmd <<< x > out.log", "shell", True),
     ("const a = b > c ? 1 : 2", "javascript", False),
     ("x = y >> 1", "python", False),
     ("print $fh > 5", "perl", False),

@@ -128,6 +128,16 @@ _allows "allows '>' inside a quoted string" \
 _allows "allows '||' (not a truncating pipe)" "$(_json "$PLUGIN" shell 'a || b')"
 
 echo ""
+echo "--- a here-STRING must not be mistaken for a here-DOC ---"
+# `<<< word` matched the heredoc pattern, took the word as a terminator, and
+# blanked every following line until one equalled it -- scrubbing away real
+# truncations later in a multi-line payload. Fail-open, so it hid blocks.
+_blocks "truncation after a here-string is still caught" \
+  "$(_json "$PLUGIN" shell "$(printf 'read -ra a <<< x\ncmd | head -5')")"
+_blocks "redirect on a here-string line is still caught" \
+  "$(_json "$PLUGIN" shell 'cmd <<< x > out.log')"
+
+echo ""
 echo "--- PASS: non-shell languages are never scanned ---"
 # '>' is a comparison operator outside shell.
 _allows "allows javascript comparison" "$(_json "$PLUGIN" javascript 'const a = b > c ? 1 : 2')"
