@@ -5,7 +5,8 @@
 machine. Primary window **30 days** (1,796 transcripts: 202 main-thread, 1,593 subagent).
 Secondary window **120 days** (4,609 transcripts) used only because **no Workflow-spawned worker
 ran in the last 30 days** — the most recent one is ~46 days old.
-**Script:** `docs/proposals/analyze_enforcement.py` (argument = window in days).
+**Scripts:** `scripts/analyze-enforcement.py` and `scripts/analyze-antipatterns.py` (argument =
+window in days). Both run together via `make measure` (`make measure DAYS=120`).
 
 **Method.** Hook emissions are classified by **content fingerprint** — the literal strings emitted
 by `hooks/{global,project}/*.sh` in this repo — never by `hookName`. Other hook suites (cmux,
@@ -195,6 +196,39 @@ Three of the first four sampled `cmm-grep-nudge` blocks were not code searches a
 file. The `| cat` suffix appears to be what trips the matcher. Blocking `git log` as "code search"
 is friction with no CMM alternative, and plausibly contributes to the 74% back-to-raw rate on the
 main thread. Worth a separate look at `hooks/global/cmm-grep-nudge.sh`.
+
+---
+
+## Baseline — anti-pattern rates before any gate change (2026-09-03, 30 days)
+
+Recorded so the effect of `ctx-payload-guard` can be judged against something. Produced by
+`make measure`; 1,799 transcripts. **STRONG** = `cmd | head/tail` or stdout-to-file (unambiguous
+output suppression). **WEAK** = `sed -n 'a,bp'`, `awk 'NR<=N'`, `grep -m N` (line-range extraction,
+often a legitimate computed excerpt).
+
+| surface | shell payloads | STRONG | caught by a hook | WEAK |
+|---|---:|---:|---:|---:|
+| `Bash` | 8,683 | 20.8% | **32.5%** | 5.0% |
+| `ctx_execute` | 21,326 | **27.8%** | **0.0%** (1 of 5,927) | 16.8% |
+| `ctx_execute_file` | 86 | 20.9% | 0.0% | 16.3% |
+| `ctx_batch_execute` | 19,607 | 7.5% | 0.0% | 13.9% |
+
+`intent=` is on 31.8% of shell `ctx_execute` calls, and truncation is essentially as likely with it
+(26.4%) as without (28.4%) — the intended alternative is not displacing the anti-pattern.
+
+Bash-only syntax in `language="shell"` payloads, which run `$SHELL` (zsh here), not bash:
+`${!var}` 141, unquoted word-split `for` 38, `mapfile`/`readarray` 4, `read -a` 2,
+`declare -n` 1, `${var^^}` 1.
+
+**Reading the after-shot:** success is STRONG falling **without** WEAK rising to absorb it. Once
+`| head` is gated, the cheapest evasion is `sed -n '1,60p'`, and WEAK is already 3,141 occurrences
+in `ctx_execute` — a migration would look like a win in the STRONG column alone.
+
+> These figures are tighter than the ones quoted in this session's earlier drafts (which read 34.1%
+> for `ctx_execute`). The shipped detector scrubs quoted spans, `$( )`, backticks and heredoc bodies
+> before scanning for STRONG operators, and applies a file-descriptor rule so `2> err.log`,
+> `2>/dev/null`, `2>&1` and `>&2` are not counted while `1> out.log` is. The earlier numbers
+> included those false positives. Direction and conclusions are unchanged.
 
 ## Caveats
 

@@ -66,6 +66,7 @@ c1639dd9a42fe4e999a65ec57ff431db2052e57a767d5d0e834448faec6769c7  tests/test-gre
 8941fad0ba216f75558ff476ce1084fb4aaa5b3b972776ecbe2b7c26998c8e41  tests/test-hook-block-counter.sh
 f129967a5c92938cf04eb3d44bdb7d49f44414fbaef7fc3ccb1f24192ae55445  tests/test-hooks-use-shared-lib.sh
 8c9cf297c78eb9ecd7cd0484e694ec75a10b3724b8b42aa90ae2c6f7cb649fa8  tests/test-index-root-gate.sh
+bb0d4263327736be68b754e0d4ccdd7ab3d7682786661db86df62a98e884b7d9  tests/test-measure-scripts.sh
 3cb4a78464bcab3c22d2943dc8723c1b8ca8ade7ee34251708c4ee7140a3f102  tests/test-per-project-call-count.sh
 7a2d5b07939620f420f6dba4c8a3bd7bcc9b0a3a79f54176fc4b99b68268ced8  tests/test-phase-45-bundle-install.sh
 b544490233e1a603edb59b80aa9d7744a02a9102ec57df19e17785b90492e998  tests/test-phase-46-bundle-install.sh

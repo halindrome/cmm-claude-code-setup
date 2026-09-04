@@ -353,10 +353,12 @@ alternatives.
 
 **Superseded by measurement (2026-09-03):** §5.1 proposed *advisory* treatment for
 pipe-to-truncate and blocking only for `stdout > file`. The advisory choice does not survive the
-data — `ctx_execute` carries a truncation or redirect in **34.1%** of its 21,297 shell payloads and
-**0.0%** are caught today, while advisory `SubagentStart` injection lands ~2,210 times per 30 days
-and still leaves 52% zero-CMM sessions. Ship both forms as blocking, with a `# ctx-truncate-ok`
-escape hatch. See `docs/proposals/enforcement-reach-vs-adoption-measurement.md`.
+data — `ctx_execute` carries a pipe-to-truncate or stdout-to-file in **27.8%** of its 21,326 shell
+payloads and **0.0%** are caught today (1 of 5,927), while advisory `SubagentStart` injection lands
+~2,210 times per 30 days and still leaves 52% zero-CMM sessions. Ship both forms as blocking, with
+a `# ctx-truncate-ok` escape hatch. Baseline and detector spec:
+`scripts/analyze-antipatterns.py` (`make measure`, `--selftest`); full report in
+`docs/proposals/enforcement-reach-vs-adoption-measurement.md`.
 
 ---
 
