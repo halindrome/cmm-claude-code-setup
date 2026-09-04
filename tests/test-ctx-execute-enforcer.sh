@@ -269,8 +269,51 @@ _assert_exit "node command blocked" 2 \
 _assert_exit "python3 command blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"python3 script.py"}}'
 
-_assert_exit "sed command blocked" 2 \
+# NOTE: `sed -i` moved from blocked to EXEMPT. An in-place edit writes to a file
+# and prints nothing, so there is no output to sandbox — it is the same category
+# as the mv/cp exemptions, and it matches upstream context-mode's own rule for
+# curl/wget ("allow silent file-output downloads, block stdout floods", #166).
+# The pair below is the point: the `-i` is what makes it silent, and one flag
+# apart the verdict must invert.
+_assert_exit "sed -i (in-place, silent) exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"sed -i s/foo/bar/ file.txt"}}'
+
+_assert_exit "sed WITHOUT -i (floods stdout) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"sed s/foo/bar/ big.c"}}'
+
+# --- In-place editors exempt (expect exit 0) ---
+echo ""
+echo "--- In-place editors exempt (expect exit 0) ---"
+
+_assert_exit "sed -i '' (BSD/macOS form) exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"sed -i '\''back'\'' s/a/b/ f.ts"}}'
+
+_assert_exit "sed -i.bak (GNU suffix form) exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"sed -i.bak s/a/b/ f.ts"}}'
+
+_assert_exit "perl -0pi -e exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -0pi -e s/a/b/ f.pl"}}'
+
+_assert_exit "perl -pe WITHOUT -i (prints) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -pe s/a/b/ big.c"}}'
+
+_assert_exit "awk -i inplace exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"awk -i inplace {print} f.txt"}}'
+
+# --- run_in_background exempt (expect exit 0) ---
+# Output goes to a background task, never into the conversation, so sandboxing
+# buys nothing. No hook in this stack read this field before 2026-09-04.
+echo ""
+echo "--- run_in_background exempt (expect exit 0) ---"
+
+_assert_exit "run_in_background=true exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"npx ng serve --port 4200","run_in_background":true}}'
+
+_assert_exit "run_in_background=false still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"npx ng serve --port 4200","run_in_background":false}}'
+
+_assert_exit "run_in_background absent still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"npx ng serve --port 4200"}}'
 
 # --- VBW/planning exempt tests (expect exit 0) ---
 echo ""

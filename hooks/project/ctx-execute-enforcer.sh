@@ -292,6 +292,48 @@ case "$COMMAND" in
   touch\ *|install\ -m*|mktemp*)                                 _track_exempt filesystem; exit 0 ;;
 esac
 
+# In-place editors: mutate a file, print NOTHING. Same category as mv/cp above.
+#
+# This follows upstream context-mode's own rule for curl/wget
+# (hooks/core/routing.mjs, issue #166): "allow silent file-output downloads,
+# block stdout floods". An in-place edit is the canonical silent-file-output
+# case, so blocking it for "output sandboxing" was incoherent -- there is no
+# output to sandbox. Upstream does not hard-block Bash at all; it nudges once
+# per session via guidanceOnce().
+#
+# The `-i` is load-bearing and matched EXPLICITLY, never a bare `sed`/`perl`:
+# `sed 's/a/b/' big.c` prints the whole file to stdout, which is precisely what
+# this hook exists to stop. One flag apart, opposite verdicts.
+#
+# BSD vs GNU differ and both forms are accepted here:
+#   GNU: sed -i 's/a/b/' f        sed -i.bak 's/a/b/' f
+#   BSD: sed -i '' 's/a/b/' f     (the '' IS the backup suffix on macOS)
+#
+# NOTE this exemption is about CONTEXT only. It does not endorse blind regex
+# edits on source: `perl -0pi -e 's{X}{Y}'` exits 0 whether it matched zero
+# times or forty, so Edit (which requires the exact bytes and fails loudly on a
+# miss) remains the better tool for a source edit. That is a correctness
+# argument, and it belongs in a correctness gate -- not smuggled into this one.
+case "$COMMAND" in
+  sed\ -i\ *|sed\ -i.*|gsed\ -i\ *|gsed\ -i.*)   _track_exempt inplace-edit; exit 0 ;;
+  perl\ -*i*e\ *|perl\ -*i*\ -e\ *)              _track_exempt inplace-edit; exit 0 ;;
+  ruby\ -*i*e\ *|awk\ -i\ inplace\ *)            _track_exempt inplace-edit; exit 0 ;;
+esac
+
+# run_in_background: Claude Code streams the output to a background task, so it
+# never enters the conversation. Sandboxing it buys nothing, and redirecting a
+# long-running process (a dev server) into ctx_execute fights the user's intent
+# -- observed 2026-09-04: `ng serve` took five blocked calls to start, and the
+# FIRST attempt already carried run_in_background=true. No hook in this stack
+# read that field before now.
+if [ "$(printf '%s' "$INPUT" | python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: print("false"); raise SystemExit
+print("true" if d.get("tool_input",{}).get("run_in_background") is True else "false")' 2>/dev/null)" = "true" ]; then
+    _track_exempt background
+    exit 0
+fi
+
 # Navigation and short queries (output is bounded)
 case "$COMMAND" in
   cd\ *|pwd|which\ *|type\ *|command\ -v\ *)     _track_exempt navigation; exit 0 ;;
