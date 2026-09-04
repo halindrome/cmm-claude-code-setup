@@ -15,6 +15,12 @@ Use codebase-memory-mcp tools as the primary method for code exploration.
 
 Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do not jump straight to reading files.
 
+### Calling convention (get this right on the first call)
+
+- **`project=` is REQUIRED on every tool above** (`search_graph`, `search_code`, `get_code_snippet`, `trace_path`, `query_graph`, `get_architecture`). It is **not** inferred from the working directory; omit it and the call fails with `project is required`. The value is the repo's absolute path with the leading `/` stripped and every `/` replaced by `-` — `/Users/me/src/app` → `Users-me-src-app`. `index_repository` returns it as the `project` field; `list_projects` lists them all.
+- **`search_code` takes `pattern`, not `query`.** There is no `query` parameter on `search_code`; passing one fails with `pattern is required`. (`search_graph` *does* have a `query` parameter, for BM25 full-text search — that is the collision this rule exists to prevent.)
+- These two mistakes compose: `search_code(query="foo")` fails twice in a row, once for each. Measured over 30 days of local transcripts, the first CMM call after one of this stack's gate blocks failed on arguments **8.4%** of the time against a **1.3%** baseline. Two consecutive failures is where agents give up on CMM and fall back to `Read` — so the cost of a malformed first call is not one retry, it is the rest of the session.
+
 ### Behavior notes (upstream v0.10.8)
 
 - `search_graph` returns at most **200 rows** by default (upstream cap as of v0.10.8); pass `offset` to page or use `query_graph` with Cypher for full scans.

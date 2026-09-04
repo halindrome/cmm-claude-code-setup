@@ -42,6 +42,15 @@ The prompt is where strategy is set. Bake this in.
 - `get_architecture` — orient in an unfamiliar area (packages, hotspots, routes)
 - `query_graph` — Cypher graph queries (complexity metrics, cross-cutting patterns)
 - `search_code` — graph-augmented text search for string literals, error messages, TODOs
+
+**Every one of those takes a REQUIRED `project=` argument.** Omit it and the call fails with
+`project is required` — it is not inferred from your working directory. The value is the repo's
+absolute path with the leading `/` removed and every `/` replaced by `-`
+(`/Users/me/src/app` → `Users-me-src-app`); `index_repository` returns it as the `project` field
+and `list_projects` lists them. Also: `search_code` takes **`pattern`**, not `query` — there is
+no `query` parameter on it, and `search_code(query=…)` fails with `pattern is required`. Two
+failed calls in a row is the point where agents abandon CMM for `Read`; get the call right first.
+
 Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Any symbol-existence
 claim MUST cite the definition site from `get_code_snippet` / `search_graph`, not a grep hit.
 Full `Read` only for: non-code files, files under ~50 lines, or files not yet indexed.

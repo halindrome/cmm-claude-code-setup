@@ -373,20 +373,29 @@ if [[ "$PATTERN_FIELD" =~ ^[A-Za-z_][A-Za-z0-9_]{2,63}$ ]]; then
     esac
 fi
 
+# project= is REQUIRED on both tools, and search_code takes `pattern`, not
+# `query` -- see cmm_project_name() in hooks/lib/cmm-registered.sh. Omit the
+# argument when the root is unknown rather than emitting project="".
+_PROJ="$(cmm_project_name 2>/dev/null)"
+_P=""
+[ -n "$_PROJ" ] && _P=", project=\"${_PROJ}\""
+
 if [ "$IS_IDENTIFIER" = true ]; then
-    FIRST_LINE="REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern=\"${PATTERN_FIELD}\")"
-    SECOND_LINE="OR:           mcp__codebase-memory-mcp__search_code(query=\"${PATTERN_FIELD}\")"
+    FIRST_LINE="REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern=\"${PATTERN_FIELD}\"${_P})"
+    SECOND_LINE="OR:           mcp__codebase-memory-mcp__search_code(pattern=\"${PATTERN_FIELD}\"${_P})"
 else
-    FIRST_LINE="REPLACE WITH: mcp__codebase-memory-mcp__search_code(query=\"${PATTERN_FIELD}\")"
-    SECOND_LINE="OR:           mcp__codebase-memory-mcp__search_graph(name_pattern=\"${PATTERN_FIELD}\")"
+    FIRST_LINE="REPLACE WITH: mcp__codebase-memory-mcp__search_code(pattern=\"${PATTERN_FIELD}\"${_P})"
+    SECOND_LINE="OR:           mcp__codebase-memory-mcp__search_graph(name_pattern=\"${PATTERN_FIELD}\"${_P})"
 fi
 
 # --- Block message (stderr, exit 2) ---
+# Bypass last and scoped to non-code: see the note in cmm-grep-nudge.sh.
 cat >&2 <<EOF
 [ctx-execute-cmm-nudge] BLOCKED -- source-code search via ctx_execute in indexed repo.
 ${FIRST_LINE}
 ${SECOND_LINE}
-Bypass: add '# cmm-exempt' to your code, or run against a non-indexed / build-artifact path.
+(Non-code target -- a build artifact or a non-indexed path? Add '# cmm-exempt'
+to your code. Not for searching source.)
 EOF
 
 # --- Block counter (best-effort, parity with siblings) ---

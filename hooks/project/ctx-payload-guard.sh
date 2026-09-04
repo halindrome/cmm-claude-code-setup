@@ -335,7 +335,27 @@ for label, lang, text in payloads:
     # with an empty tool name.
     token = " ".join(token.split())
     target = " ".join(target.split())
-    sys.stdout.write("BLOCK\n%s\n%s\n%s\n%s\n%s\n" % (kind, label, token, tool, target))
+    # Line 7: the caller's OWN intent=, when they already supplied one. The
+    # suggestion used to hardcode the "<what you are looking for>" placeholder,
+    # which threw away a perfectly good question the caller had already written
+    # and invited them to paste the placeholder back verbatim. Collapsed to one
+    # line for the same reason token/target are: this is a line-indexed record.
+    # ctx_batch_execute carries queries=[] instead; join them so the batch branch
+    # can render them back too.
+    # Escaped HERE, not in the shell: it is rendered inside a double-quoted
+    # argument. queries= is joined with a literal `", "` so a multi-query batch
+    # renders as queries=["a", "b"] -- joining with a bare comma would collapse
+    # two independent FTS questions into one worse query.
+    existing = ti.get("intent")
+    if isinstance(existing, str):
+        existing = existing.replace('"', '\\"')
+    else:
+        q = ti.get("queries")
+        existing = '", "'.join(
+            x.replace('"', '\\"') for x in q if isinstance(x, str)
+        ) if isinstance(q, list) else ""
+    existing = " ".join((existing or "").split())
+    sys.stdout.write("BLOCK\n%s\n%s\n%s\n%s\n%s\n%s\n" % (kind, label, token, tool, target, existing))
     sys.stdout.write("---PAYLOAD---\n")
     sys.stdout.write(suggested)
     sys.exit(0)
@@ -365,6 +385,8 @@ LABEL=$(printf  '%s' "$RESULT" | sed -n '3p')
 TOKEN=$(printf  '%s' "$RESULT" | sed -n '4p')
 TOOL=$(printf   '%s' "$RESULT" | sed -n '5p')
 TARGET=$(printf '%s' "$RESULT" | sed -n '6p')
+# The caller's own intent=/queries=, empty when they supplied none.
+EXISTING_ASK=$(printf '%s' "$RESULT" | sed -n '7p')
 SUGGESTED=$(printf '%s' "$RESULT" | sed -n '/^---PAYLOAD---$/,$p' | sed '1d')
 # The suggestion is rendered inside code="..." / command: "...", so an embedded
 # double quote closes the string early: `grep -n "foo bar" src/x.py` came out as
@@ -374,13 +396,19 @@ SUGGESTED=$(printf '%s' "$RESULT" | sed -n '/^---PAYLOAD---$/,$p' | sed '1d')
 # this message exists to provide.
 SUGGESTED=${SUGGESTED//\"/\\\"}
 
+# Keep the caller's own question when they already asked one -- only fall back to
+# the placeholder when they supplied nothing. Already quote-escaped on the python
+# side (it must be, so the queries= join can emit unescaped separator quotes).
+_ASK_TEXT="<what you are looking for>"
+[ -n "$EXISTING_ASK" ] && _ASK_TEXT="$EXISTING_ASK"
+
 # ctx_batch_execute has no intent=; its equivalent is the queries= array.
 case "$TOOL" in
   *ctx_batch_execute)
-    RECOVER="  ${TOOL}(commands=[{label: \"…\", command: \"${SUGGESTED}\"}], queries=[\"<what you are looking for>\"])"
+    RECOVER="  ${TOOL}(commands=[{label: \"…\", command: \"${SUGGESTED}\"}], queries=[\"${_ASK_TEXT}\"])"
     ASK="queries=" ;;
   *)
-    RECOVER="  ${TOOL}(language=\"shell\", code=\"${SUGGESTED}\", intent=\"<what you are looking for>\")"
+    RECOVER="  ${TOOL}(language=\"shell\", code=\"${SUGGESTED}\", intent=\"${_ASK_TEXT}\")"
     ASK="intent=" ;;
 esac
 

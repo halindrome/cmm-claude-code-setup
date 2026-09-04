@@ -217,7 +217,7 @@ _msg_of() { echo "$1" | bash "$HOOK" 2>&1 >/dev/null || true; }
 
 echo "--- Test c18: Grep block echoes the real search term ---"
 _M=$(_msg_of "{\"tool_input\":{\"pattern\":\"handleRequest\",\"glob\":\"*.ts\",\"path\":\"$PROJ\"}}")
-if printf '%s' "$_M" | grep -qF 'search_graph(name_pattern="handleRequest")'; then
+if printf '%s' "$_M" | grep -qF 'search_graph(name_pattern="handleRequest", project="'; then
     echo "PASS: c18: block names the concrete search_graph call"; PASS=$((PASS+1))
 else
     echo "FAIL: c18: block still prints a placeholder"; FAIL=$((FAIL+1))

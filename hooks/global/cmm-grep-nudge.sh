@@ -79,25 +79,37 @@ _extract_term() {
 # _cmm_recovery_lines <term> -> the two-or-three CMM call lines for the message.
 # An identifier-shaped term goes to search_graph first (it resolves definitions);
 # anything with regex metacharacters goes to search_code first.
+#
+# Every emitted call carries project= -- it is a REQUIRED argument on all of
+# these tools, and the search term goes in search_code's `pattern`, not `query`
+# (there is no `query` parameter). See cmm_project_name() in
+# hooks/lib/cmm-registered.sh for why printing a call that cannot run is worse
+# than printing no call at all.
 _cmm_recovery_lines() {
   local term="$1"
+  local proj; proj="$(cmm_project_name 2>/dev/null)"
+  # Omit the argument entirely when the root is unknown; project="" fails the
+  # same way a missing project does, and a visibly-empty argument reads as a
+  # tool defect rather than a prompt to supply the value.
+  local p=""
+  [ -n "$proj" ] && p=", project=\"${proj}\""
   if [ -z "$term" ]; then
     printf '%s\n%s\n%s' \
-      '  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern="...")' \
-      '  - Text search:    mcp__codebase-memory-mcp__search_code(query="...")' \
-      '  - Fetch source:   mcp__codebase-memory-mcp__get_code_snippet(qualified_name="...")'
+      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"...\"${p})" \
+      "  - Text search:    mcp__codebase-memory-mcp__search_code(pattern=\"...\"${p})" \
+      "  - Fetch source:   mcp__codebase-memory-mcp__get_code_snippet(qualified_name=\"...\"${p})"
     return
   fi
   local is_ident=false
   if printf '%s' "$term" | grep -qE '^[A-Za-z_][A-Za-z0-9_:]{1,63}$'; then is_ident=true; fi
   if [ "$is_ident" = true ]; then
     printf '%s\n%s' \
-      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\")" \
-      "  - Text search:    mcp__codebase-memory-mcp__search_code(query=\"${term}\")"
+      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\"${p})" \
+      "  - Text search:    mcp__codebase-memory-mcp__search_code(pattern=\"${term}\"${p})"
   else
     printf '%s\n%s' \
-      "  - Text search:    mcp__codebase-memory-mcp__search_code(query=\"${term}\")" \
-      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\")"
+      "  - Text search:    mcp__codebase-memory-mcp__search_code(pattern=\"${term}\"${p})" \
+      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\"${p})"
   fi
 }
 
@@ -170,11 +182,19 @@ if [ "$TOOL_NAME" = "Bash" ]; then
       # "..." placeholder convert 13-25%, and gates naming no alternative ~0%,
       # sending 90-95% of blocks straight back to Read/Bash.
       _TERM=$(_extract_term "$BASH_CMD")
+      # The bypass is deliberately NOT the closing line. Observed 2026-09-04: a
+      # session read "Add # cmm-exempt to bypass" as the recommended next action,
+      # appended it to its next four commands -- including a source-code grep
+      # this gate exists to redirect -- and made no further CMM calls all
+      # session. The escape hatch must stay discoverable (removing it risks
+      # wedging a session), but it is for NON-CODE targets, and saying so is
+      # what stops it becoming the default.
       cat >&2 <<EOF
 BLOCKED: Use CMM tools instead of Bash navigation for code search.
 $(_cmm_recovery_lines "$_TERM")$(_perl_note "$BASH_CMD")
-Add # cmm-exempt to the command to bypass this gate.
 See skill \`cmm-rules\` for the full protocol.
+(If this target is NOT source code -- generated output, a build artifact, a
+data file -- add '# cmm-exempt' to the command. Do not use it to grep source.)
 EOF
       bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-nav" 2>/dev/null || true
       exit 2

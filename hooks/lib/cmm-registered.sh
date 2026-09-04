@@ -92,3 +92,45 @@ for p in paths:
 sys.exit(1)
 ' 2>/dev/null
 }
+
+# cmm_project_name -> the CMM project name for the current repo, e.g.
+#   /Users/ahby/Sources/my-repo  ->  Users-ahby-Sources-my-repo
+#
+# WHY THIS EXISTS
+# ---------------
+# `project` is a REQUIRED argument on search_code, search_graph,
+# get_code_snippet, trace_path, query_graph and get_architecture. Every gate in
+# this stack used to print a redirect like
+#   search_code(query="foo")
+# which fails TWICE before it can work: `query` is not a parameter at all (it is
+# `pattern`), and `project` is missing. Measured over 30 days of local
+# transcripts, the first CMM call after one of our gate blocks failed on
+# arguments 8.4% of the time against a 1.3% baseline -- 6.5x. A gate that hands
+# back a broken call teaches the agent that CMM does not work, and the observed
+# response is to stop using CMM rather than to fix the call.
+#
+# Derivation matches reindex-after-commit.sh (leading slash stripped, "/" -> "-")
+# which is the naming index_repository itself uses. Prints nothing when the root
+# cannot be determined; callers must omit the argument rather than emit an empty
+# one, since project="" fails the same way a missing project does.
+cmm_project_name() {
+    local root=""
+    # Prefer a PROJECT_ROOT already resolved by hooks/lib/project-root.sh.
+    if [ -n "${PROJECT_ROOT:-}" ]; then
+        root="$PROJECT_ROOT"
+    else
+        root="$(git rev-parse --show-toplevel 2>/dev/null)"
+        # Walk out of submodules so the name matches the monorepo-root index;
+        # a subtree index is a DIFFERENT project name and will not resolve.
+        if [ -n "$root" ]; then
+            local parent
+            while parent="$(git -C "$root" rev-parse --show-superproject-working-tree 2>/dev/null)"; do
+                [ -n "$parent" ] || break
+                root="$parent"
+            done
+        fi
+    fi
+    [ -n "$root" ] || return 0
+    root="${root#/}"
+    printf '%s' "${root//\//-}"
+}

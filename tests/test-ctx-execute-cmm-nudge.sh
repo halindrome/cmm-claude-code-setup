@@ -141,19 +141,19 @@ echo ""
 echo "--- REPLACE WITH ordering (stderr content checks) ---"
 _assert_stderr_contains "bare identifier -> search_graph first" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn 'MyFunc' src/\"},\"cwd\":\"$FIX\"}" \
-    'REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern="MyFunc")'
+    'REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern="MyFunc", project="'
 _assert_stderr_contains "bare identifier -> search_code second" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn 'MyFunc' src/\"},\"cwd\":\"$FIX\"}" \
-    'OR:           mcp__codebase-memory-mcp__search_code(query="MyFunc")'
+    'OR:           mcp__codebase-memory-mcp__search_code(pattern="MyFunc", project="'
 _assert_stderr_contains "regex alternation -> search_code first" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep 'password|PASSWORD' src/\"},\"cwd\":\"$FIX\"}" \
-    'REPLACE WITH: mcp__codebase-memory-mcp__search_code(query="password|PASSWORD")'
+    'REPLACE WITH: mcp__codebase-memory-mcp__search_code(pattern="password|PASSWORD", project="'
 _assert_stderr_contains "regex alternation -> search_graph second" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep 'password|PASSWORD' src/\"},\"cwd\":\"$FIX\"}" \
-    'OR:           mcp__codebase-memory-mcp__search_graph(name_pattern="password|PASSWORD")'
+    'OR:           mcp__codebase-memory-mcp__search_graph(name_pattern="password|PASSWORD", project="'
 _assert_stderr_contains "find -name *.go -> search_code first (no bare id)" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"find src -name '*.go'\"},\"cwd\":\"$FIX\"}" \
-    'REPLACE WITH: mcp__codebase-memory-mcp__search_code(query='
+    'REPLACE WITH: mcp__codebase-memory-mcp__search_code(pattern='
 _assert_stderr_contains "block message prefix" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn 'MyFunc' src/\"},\"cwd\":\"$FIX\"}" \
     '[ctx-execute-cmm-nudge] BLOCKED'
@@ -172,7 +172,7 @@ _assert_exit "grep -o <pat> <target> blocks" 2 \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -o foo src/\"},\"cwd\":\"$FIX\"}"
 _assert_stderr_contains "grep -o keeps pattern, not target" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -o foo src/\"},\"cwd\":\"$FIX\"}" \
-    'query="foo"'
+    'pattern="foo"'
 # rg -r IS value-taking (--replace), so next token is consumed.
 _assert_exit "rg -r <repl> <pat> <target> blocks on pat" 2 \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"rg -r REPLACED MyFunc src/\"},\"cwd\":\"$FIX\"}"

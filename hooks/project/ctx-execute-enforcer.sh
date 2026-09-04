@@ -107,11 +107,25 @@ fi
 # Trade-off, stated plainly: enforcement does not arm until the first successful
 # ctx_* call of a session. That is the point — a hook must not mandate a tool it
 # has never seen work. Same rule as hooks/lib/context-mode-detect.sh.
+#
+# MEASUREMENT NOTE (2026-09-04): an unarmed exit 0 is indistinguishable in the
+# transcript from an armed hook that chose to allow the command. Both leave no
+# trace, so scripts/analyze-enforcement.py scores an unarmed window as "the hook
+# did not fire" and its COVERAGE number silently mixes the two. Observed in a
+# real session: 13 of 20 post-install Bash calls ran while unarmed, reported as
+# 16.7% coverage. That is the exact failure analyze-antipatterns.py's own
+# docstring warns about — a check that never ran, reporting clean. Record the
+# reason so the two are separable after the fact. Counter only: emitting to
+# stderr here would inject noise into every allowed Bash call.
+_unarmed() {
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash_unarmed" "$1" 2>/dev/null || true
+    exit 0
+}
 CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
 CONTEXT_MODE_TTL_MIN="${CTX_ENFORCER_TTL_MIN:-30}"
-[ -f "$CONTEXT_MODE_SENTINEL" ] || exit 0
-grep -q '^live$' "$CONTEXT_MODE_SENTINEL" 2>/dev/null || exit 0
-[ -n "$(find "$CONTEXT_MODE_SENTINEL" -mmin "-${CONTEXT_MODE_TTL_MIN}" 2>/dev/null)" ] || exit 0
+[ -f "$CONTEXT_MODE_SENTINEL" ] || _unarmed absent
+grep -q '^live$' "$CONTEXT_MODE_SENTINEL" 2>/dev/null || _unarmed notlive
+[ -n "$(find "$CONTEXT_MODE_SENTINEL" -mmin "-${CONTEXT_MODE_TTL_MIN}" 2>/dev/null)" ] || _unarmed stale
 
 # --- Bypass Marker ---
 # Internal bypass marker — undocumented, for operator use only.
