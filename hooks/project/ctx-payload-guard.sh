@@ -72,7 +72,24 @@ HEREDOC = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?(\w+)")
 HEREDOC_LINE = re.compile(r"(?<!<)<<(?!<)")
 
 
-def scrub(s, drop_comments=True):
+# KNOWN LIMITATION, measured and left open deliberately (QA round 2, F-06).
+# The quote/comment/backtick pass below runs over the WHOLE string before the
+# heredoc-body pass, so an unpaired quote inside a heredoc BODY -- an ordinary
+# prose contraction, `don't` in a fixture -- blanks everything to end of string,
+# newlines included, and every truncation after that heredoc is invisible:
+#
+#     cat > f.txt <<'EOF'
+#     don't do this
+#     EOF
+#     make | head -5          <-- not blocked
+#
+# It fails OPEN, and it predates the round-1/round-2 fixes (the same behaviour is
+# in the first commit of this hook, and scripts/analyze-antipatterns.py shares
+# it, so the two still agree). Closing it means running the heredoc pass BEFORE
+# the quote pass -- a structural reordering of the one function that has now
+# produced a regression on two consecutive attempts to improve it. Left for a
+# separate change with its own review, rather than a third pass here.
+def scrub(s):
     """Blank quoted spans, $( ), backticks and heredoc bodies with same-length
     placeholders so operator scanning never fires on text inside them. Whole-string,
     not line-based: a multi-line `git commit -m "..."` crosses newlines.
@@ -104,7 +121,7 @@ def scrub(s, drop_comments=True):
             for k in range(i, min(j + 1, n)):
                 out[k] = "_"
             i = min(j + 1, n)
-        elif drop_comments and c == "#" and (i == 0 or s[i - 1] in " \t\n"):
+        elif c == "#" and (i == 0 or s[i - 1] in " \t\n"):
             # A shell comment is prose, not a pipeline. Found by dogfooding:
             # `# ... -> isolates the fix` blocked as a redirect to a file named
             # "isolates", and `# see cmd | head` would block as a truncation.
@@ -144,11 +161,20 @@ def scrub(s, drop_comments=True):
             if raw_lines[idx].strip() == term:
                 term = None
             continue
-        # Search the SCRUBBED line, not the raw one: `echo "use << EOF here"`
-        # otherwise starts a heredoc whose terminator never arrives, blanking
-        # every following line -- so a real `make | head -5` after it vanished.
-        # Under-blocking only (it fails open), but silently.
-        m = HEREDOC.search(line)
+        # RAW line, deliberately. Searching the scrubbed line looks like the
+        # tidier choice and is wrong: scrub blanks the quoted terminator in
+        # `<<'EOF'`, so HEREDOC finds no terminator word, the heredoc never
+        # ends, and every truncation after it is silently skipped -- a fail-open
+        # on the exact anti-pattern this hook exists to block, on the COMMON
+        # form of the syntax (this file uses `<<'PYEOF'` itself). That was tried
+        # in b9cc572 and reverted here.
+        #
+        # The cost of using the raw line is the narrow case it was trying to
+        # fix: `echo "use << EOF here"` starts a heredoc that never terminates,
+        # blanking the rest of the payload. That also fails open, but it needs
+        # that literal text, whereas the quoted-terminator form is routine.
+        # Under-blocking either way; this direction under-blocks far less.
+        m = HEREDOC.search(raw_lines[idx])
         res.append(line)
         if m:
             term = m.group(1)
@@ -178,8 +204,8 @@ def redirect_hits(scrubbed, raw):
     target is /dev/null or is read back by a later command."""
     # Heredoc lines are file AUTHORING (`cat > script.sh <<EOF`), not output
     # truncation: nothing is discarded because nothing was going to print.
-    # Scrubbed, not raw -- same reason as the terminator search in scrub().
-    heredoc = set(i for i, ln in enumerate(scrubbed.split("\n")) if HEREDOC_LINE.search(ln))
+    # Raw, not scrubbed -- same reason as the terminator search in scrub().
+    heredoc = set(i for i, ln in enumerate(raw.split("\n")) if HEREDOC_LINE.search(ln))
     for m in REDIR.finditer(scrubbed):
         if scrubbed.count("\n", 0, m.start()) in heredoc:
             continue
@@ -216,8 +242,19 @@ def _strip_all(text, spans):
     still a round per truncation too many. `ctx-execute-enforcer.sh` already
     strips all of them; this matches it.
     """
+    # MERGE overlapping spans before splicing. A redirect span can sit inside a
+    # pipe-truncation span (`a | head -5 > out.log`): splicing the inner one
+    # first shifts the outer one's stored offsets, and the second splice then
+    # eats real command text, handing back a syntactically different command to
+    # paste. Merging first makes each splice independent of the others.
+    merged = []
+    for a, b in sorted(spans):
+        if merged and a <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else:
+            merged.append((a, b))
     out = text
-    for a, b in sorted(spans, reverse=True):
+    for a, b in reversed(merged):
         out = out[:a] + out[b:]
     return out.strip()
 
@@ -226,12 +263,21 @@ def check(text, language):
     """-> (kind, token, target, suggested) | ("EXEMPT",...) | None."""
     if (language or "").lower() not in SHELLY:
         return None
-    # The bypass must be a real COMMENT, not any occurrence of the string: a
-    # payload that merely mentions the marker -- `grep -rn '# ctx-truncate-ok'
-    # hooks/ | head -5` -- would otherwise disarm the gate on itself. Quoted
-    # spans are blanked first; comments are deliberately KEPT, which is the one
-    # place the scrub has to run with drop_comments=False.
-    if EXEMPT.search(scrub(text, drop_comments=False)):
+    # RAW text, deliberately. Running this against a scrub() to enforce that the
+    # marker is a real comment was tried in b9cc572 and reverted: scrub blanks
+    # from an unpaired quote to the end of the payload, so a single apostrophe
+    # anywhere earlier -- `# don't truncate` -- silently ate the marker. The
+    # operator then got a hard block whose message told them to add the very
+    # bypass they had already added, which is the failure mode most certain to
+    # read as "the gate is broken".
+    #
+    # Accepted limitation, stated so nobody "fixes" it again without weighing
+    # this: a payload that merely MENTIONS the marker inside quotes
+    # (`grep -rn '# ctx-truncate-ok' hooks/ | head -5`) disarms the gate on
+    # itself. That is not a threat model -- the bypass is the operator's own,
+    # and an agent wanting it can simply add the comment -- whereas breaking the
+    # hatch for every payload containing an apostrophe is a real cost.
+    if EXEMPT.search(text):
         return ("EXEMPT", "", "", "")
     scrubbed = scrub(text)
     pipes = list(PIPE_TRUNC.finditer(scrubbed))

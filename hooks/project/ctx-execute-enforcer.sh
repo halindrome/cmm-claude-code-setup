@@ -166,35 +166,28 @@ if [[ "$_OPCHECK" == *"&&"* ]] || [[ "$_OPCHECK" == *"||"* ]] || \
     # 252 carried the identical `| head -N` into the sandbox, where nothing
     # inspected it. When the command carries a truncation, name the stripped
     # replacement concretely instead of leaving a blank to fill in.
-    # Strip stdout-to-file redirects as well as truncating pipes. Suggesting
-    # `code="cmd > out.log"` hands the agent a payload that ctx-payload-guard
-    # then hard-blocks -- two blocks for one intent, with this hook authoring
-    # the second one.
+    # Truncating pipes only. Stripping stdout redirects here was tried in
+    # b9cc572 (QA round 1 F-02, to stop this hook suggesting a payload that
+    # ctx-payload-guard then blocks) and reverted in round 2: deciding whether a
+    # redirect is objectionable requires the guard's AUTHORING and
+    # read-back-later exemptions, and without them the strip silently deleted
+    # legitimate file writes -- `jq ... > f.json && cat f.json` was suggested
+    # with the write removed, so the paired read gets a stale or absent file.
+    # Reproducing the guard's exemptions here would put two copies of that logic
+    # in lockstep, which is the divergence hazard this repo already documents.
     #
-    # fd 1 only, and never a /dev/ target. `2> err.log`, `2>&1`, `>&2` and
-    # `> /dev/null` are all things the guard deliberately ALLOWS, so stripping
-    # them here would corrupt a command it was never going to object to. That
-    # needs a lookbehind and a lookahead, which sed -E has not got; python3 is
-    # already a dependency of the check above, and the sed fallback below keeps
-    # the pipe half working if it is missing.
-    _SUGGEST=$(_ORIG="$_ORIG_COMMAND" python3 <<'PY' 2>/dev/null
-import os, re, sys
-c = os.environ.get("_ORIG", "")
-c = re.sub(r"\s*\|\s*(?:head|tail)\b[^|;&]*", "", c)
-c = re.sub(r"\s*(?<![0-9&>])1?>>?\s*(?!/dev/)[^\s;|&]+", "", c)
-sys.stdout.write(c.strip())
-PY
-    ) || _SUGGEST=""
-    if [ -z "$_SUGGEST" ]; then
-        _SUGGEST=$(printf '%s' "$_ORIG_COMMAND" | sed -E 's/[[:space:]]*\|[[:space:]]*(head|tail)[^|;&]*//g')
-    fi
+    # So the double-block stands, deliberately: a redirect command is blocked
+    # here, the agent moves it into ctx_execute unchanged, and the guard's own
+    # message then names the `2>&1 | tee` fix. Two round-trips, converging --
+    # a bounded cost, unlike a corrupted suggestion the agent is told to paste.
+    _SUGGEST=$(printf '%s' "$_ORIG_COMMAND" | sed -E 's/[[:space:]]*\|[[:space:]]*(head|tail)[^|;&]*//g')
     if [ "$_SUGGEST" != "$_ORIG_COMMAND" ]; then
         _OPT2="       mcp__plugin_context-mode_context-mode__ctx_execute(language=\"shell\", code=\"$_SUGGEST\", intent=\"<what you are looking for>\")
-     The truncation is dropped on purpose: ctx_execute indexes the FULL output
-     and returns only the sections matching intent=, so capping it first — or
-     sending stdout to a file — discards data for no context saving. Re-adding
-     it will be blocked by ctx-payload-guard. Redirecting stderr (2> file,
-     2>/dev/null, 2>&1) is untouched and never blocked."
+     The truncating pipe is dropped on purpose: ctx_execute indexes the FULL
+     output and returns only the sections matching intent=, so capping it first
+     discards data for no context saving. Re-adding it will be blocked by
+     ctx-payload-guard. If the command also sends stdout to a file, replace that
+     with '2>&1 | tee <file>' so the output is captured as well as saved."
     else
         _OPT2="       mcp__plugin_context-mode_context-mode__ctx_execute(language=\"shell\", code=\"$_ORIG_COMMAND\", intent=\"<what you are looking for>\")"
     fi

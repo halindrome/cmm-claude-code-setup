@@ -69,6 +69,15 @@ _stderr_lacks() {
 # mentions `| head -5`" from "the suggested call still runs `| head -5`". The
 # block spans several lines when the payload does, so scoping to the single line
 # containing `ctx_execute(` is not enough either.
+_suggest_has() { # _suggest_has <label> <json> <substring>
+  _run "$2" >/dev/null
+  local s; s=$(awk '/REPLACE WITH:/{f=1;next} f&&/^$/{exit} f' "/tmp/ctxpg-err.$$")
+  if printf '%s' "$s" | grep -qF -- "$3"; then
+    pass "$1"
+  else
+    fail "$1 (REPLACE WITH lacks: $3)"
+  fi
+}
 _suggest_lacks() { # _suggest_lacks <label> <json> <substring>
   _run "$2" >/dev/null
   local s; s=$(awk '/REPLACE WITH:/{f=1;next} f&&/^$/{exit} f' "/tmp/ctxpg-err.$$")
@@ -210,6 +219,37 @@ cmd2 > out2.log')"
 _blocks "blocks a two-redirect payload" "$_R2"
 _suggest_lacks "suggestion drops the SECOND redirect too" "$_R2" '> out2.log'
 _suggest_lacks "suggestion drops the first redirect"      "$_R2" '> out1.log'
+# Overlapping spans: a redirect nested inside a pipe-truncation span. Splicing
+# the inner one first shifts the outer one's offsets and the second splice eats
+# real command text, so the agent is handed a DIFFERENT command to paste
+# (QA round 2). Spans are merged before splicing.
+# The payload must have text AFTER the overlapping spans, or the bug has nothing
+# left to eat: in `verbose-cmd | head -5 > out.log` the pipe span runs to
+# end-of-string either way, so fixed and unfixed both yield `verbose-cmd` and the
+# assertion pins nothing. With a trailing `&& echo done` the unfixed splice eats
+# `&& echo`, yielding `big  done` against the fixed `big && echo done`.
+_OV="$(_json "$PLUGIN" shell 'big | head -5 > o.log && echo done')"
+_blocks "blocks an overlapping pipe+redirect payload" "$_OV"
+_suggest_has  "overlap: suggestion keeps the trailing command intact" "$_OV" '&& echo done'
+_suggest_lacks "overlap: suggestion drops the truncation" "$_OV" '| head -5'
+_suggest_lacks "overlap: suggestion drops the redirect"   "$_OV" '> o.log'
+
+echo ""
+echo "--- a QUOTED heredoc terminator still terminates (QA round 2) ---"
+# `<<'EOF'` is the common form — this hook uses `<<'PYEOF'` itself. Matching the
+# terminator on the scrubbed line (tried in b9cc572, reverted) blanks the quoted
+# word, so the heredoc never ends and every truncation after it is skipped: a
+# silent fail-open on exactly what this hook exists to block.
+_QH="$(_json "$PLUGIN" shell "cat > fixture.txt <<'EOF'
+some fixture content
+EOF
+make test | head -5")"
+_blocks "truncation after a quoted-terminator heredoc is still caught" "$_QH"
+_QH2="$(_json "$PLUGIN" shell 'cat > fixture.txt <<"EOF"
+content
+EOF
+make test | tail -3')"
+_blocks "truncation after a double-quoted terminator is caught" "$_QH2"
 
 echo ""
 echo "--- a shell comment is prose, not a pipeline ---"
@@ -284,10 +324,33 @@ _allows "'# ctx-truncate-ok' bypasses" \
 # honouring it here would hand agents the master key to that hook's 2,510 blocks.
 _blocks "'# ctx-exempt' does NOT bypass this guard" \
   "$(_json "$PLUGIN" shell 'ls -la /usr/bin | head -5 # ctx-exempt')"
-# The marker must be a real comment, not any occurrence of the string: a payload
-# that merely mentions it must not disarm the gate on itself.
-_blocks "marker inside a quoted string does not bypass" \
-  "$(_json "$PLUGIN" shell "grep -rn '# ctx-truncate-ok' hooks/ | head -5")"
+# The marker is matched against RAW text, so an apostrophe anywhere earlier must
+# not eat it. Enforcing "must be a real comment" by scrubbing first was tried and
+# reverted (QA round 2): scrub blanks from an unpaired quote to end of payload,
+# so `# don't truncate` silently disarmed the hatch and the operator got a block
+# telling them to add the bypass they had already added.
+# The apostrophe must be on a SEPARATE line from the truncation. Putting both on
+# one line is not a discriminating test: the same unpaired quote that eats the
+# marker also eats the pipe, so the payload is allowed either way and the
+# assertion pins nothing. (It is also invalid shell and could never run.) Here
+# the truncation is real and visible; only the marker's survival is at stake.
+_allows "bypass survives an apostrophe earlier in the payload" \
+  "$(_json "$PLUGIN" shell "# don't truncate
+make | head -5  # ctx-truncate-ok")"
+# The quote has to sit inside a COMMENT for this to discriminate, and that is the
+# actual mechanism of the bug: the main scan drops comments before it ever sees
+# the quote, so the truncation stays visible — while the EXEMPT scan kept
+# comments, processed the quote, and blanked to end of payload, eating the
+# marker. A bare top-level unpaired quote hides the truncation too, so the
+# payload is allowed either way and pins nothing.
+_allows "bypass survives an unpaired double quote earlier" \
+  "$(_json "$PLUGIN" shell '# he said "5 inches of rain
+make | head -3  # ctx-truncate-ok')"
+# Control: the same payloads WITHOUT the marker must still block, or the two
+# assertions above would be passing on the truncation being invisible.
+_blocks "control: same payload without the marker still blocks" \
+  "$(_json "$PLUGIN" shell "# don't truncate
+make | head -5")"
 _blocks "exempt in one batch entry does not whitelist another" \
   "$(_batch "$PBATCH" 'a | head -5  # ctx-truncate-ok' 'b | head -5')"
 

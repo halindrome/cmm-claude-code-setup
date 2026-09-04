@@ -440,34 +440,33 @@ else
     echo "FAIL: suggested replacement omits intent="
     FAIL=$((FAIL+1))
 fi
-# QA round 1, F-02: a stdout redirect echoed verbatim hands the agent a payload
-# that ctx-payload-guard then hard-blocks -- two blocks for one intent, with this
-# hook authoring the second. Only fd 1 is stripped.
-_OUTR=$(_err_of '{"tool_name":"Bash","tool_input":{"command":"git log --oneline > /tmp/log.txt && wc -l /tmp/log.txt"}}')
-if printf '%s' "$_OUTR" | grep -F 'ctx_execute(' | grep -qF '> /tmp/log.txt'; then
-    echo "FAIL: suggested replacement still redirects stdout to a file"
-    FAIL=$((FAIL+1))
-else
-    echo "PASS: suggested replacement strips the stdout redirect"
+# QA round 2: this hook must NOT strip stdout redirects. Doing so (tried in
+# b9cc572 for round-1 F-02) requires the guard's AUTHORING and read-back-later
+# exemptions to decide whether a redirect is objectionable at all; without them
+# the strip deleted legitimate file writes and the paired read then saw a stale
+# or absent file — a corrupted command the agent is explicitly told to paste.
+# The redirect double-block stands instead: blocked here, moved into ctx_execute
+# unchanged, and the guard's own message names the `2>&1 | tee` fix. Two
+# round-trips, converging.
+# Scope the grep to the ctx_execute( line: the block message unconditionally
+# echoes the original command under "Detected:", so a whole-stderr grep finds the
+# redirect no matter what _SUGGEST holds and pins nothing. The payload also needs
+# a real truncation, or _SUGGEST == _ORIG_COMMAND and the branch under test is
+# never entered at all.
+_OUTR=$(_err_of '{"tool_name":"Bash","tool_input":{"command":"jq -r .name pkg.json > /tmp/n.txt && cat /tmp/n.txt | head -5"}}')
+if printf '%s' "$_OUTR" | grep -F 'ctx_execute(' | grep -qF '> /tmp/n.txt'; then
+    echo "PASS: file write is preserved in the suggestion (not silently dropped)"
     PASS=$((PASS+1))
+else
+    echo "FAIL: suggestion dropped the file write; the paired read would break"
+    FAIL=$((FAIL+1))
 fi
-# Stream splitting and discards are things the guard ALLOWS, so stripping them
-# here would corrupt a command it was never going to object to.
-_OUTE=$(_err_of '{"tool_name":"Bash","tool_input":{"command":"make test 2> err.log && echo ok"}}')
-if printf '%s' "$_OUTE" | grep -qF '2> err.log'; then
-    echo "PASS: stderr redirect is preserved in the suggestion"
-    PASS=$((PASS+1))
-else
-    echo "FAIL: stderr redirect was stripped (the guard never blocks it)"
+if printf '%s' "$_OUTR" | grep -F 'ctx_execute(' | grep -qF '| head'; then
+    echo "FAIL: suggestion kept the truncating pipe"
     FAIL=$((FAIL+1))
-fi
-_OUTD=$(_err_of '{"tool_name":"Bash","tool_input":{"command":"noisy-cmd > /dev/null && echo ok"}}')
-if printf '%s' "$_OUTD" | grep -qF '> /dev/null'; then
-    echo "PASS: /dev/null discard is preserved in the suggestion"
-    PASS=$((PASS+1))
 else
-    echo "FAIL: /dev/null discard was stripped (the guard never blocks it)"
-    FAIL=$((FAIL+1))
+    echo "PASS: suggestion still strips the truncating pipe"
+    PASS=$((PASS+1))
 fi
 
 # A compound with no truncation must keep its command intact.
