@@ -315,6 +315,45 @@ _assert_exit "run_in_background=false still blocked" 2 \
 _assert_exit "run_in_background absent still blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"npx ng serve --port 4200"}}'
 
+# --- Quoted here-doc bodies are blanked before the compound scan ---
+# `git commit -F - <<'EOF' … EOF` is a git-write (already exempt) that prints two
+# lines, but the heredoc's newlines tripped the compound check, so committing
+# with a message body was blocked outright. Only QUOTED heredocs are blanked:
+# an unquoted <<W expands parameters and command substitutions, so its body is
+# live code and must stay visible to the scan. That split is the whole point.
+echo ""
+echo "--- Quoted here-doc exemption (expect exit 0) ---"
+
+_assert_exit "git commit -F - with quoted heredoc allowed" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<'"'"'EOF'"'"'\nfix: a subject\n\nbody with ; and && and | inside\nEOF"}}'
+
+_assert_exit "git -C <dir> commit with quoted heredoc allowed" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/mobile commit -F - <<'"'"'EOF'"'"'\nfix: subject\nEOF"}}'
+
+_assert_exit "double-quoted heredoc terminator allowed" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<\"EOF\"\nfix: subject\nEOF"}}'
+
+_assert_exit "<<- dash form allowed" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<-'"'"'EOF'"'"'\nfix: subject\nEOF"}}'
+
+echo ""
+echo "--- Here-doc exemption must NOT widen (expect exit 2) ---"
+
+# Unquoted heredoc: body expands, $(...) is live code.
+_assert_exit "UNQUOTED heredoc still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<EOF\nsubject\nEOF"}}'
+
+# Anything after the terminator survives the blanking.
+_assert_exit "operator after heredoc terminator still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<'"'"'EOF'"'"'\nsubject\nEOF\n; rm -rf /tmp/x"}}'
+
+_assert_exit "&& after heredoc terminator still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<'"'"'EOF'"'"'\nsubject\nEOF\n&& npm test"}}'
+
+# The heredoc does not make a non-exempt command exempt.
+_assert_exit "non-exempt command with heredoc still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat <<'"'"'EOF'"'"'\nlots of output\nEOF"}}'
+
 # --- VBW/planning exempt tests (expect exit 0) ---
 echo ""
 echo "--- VBW/planning exempt tests (expect exit 0) ---"

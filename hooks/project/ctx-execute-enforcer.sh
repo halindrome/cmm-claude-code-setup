@@ -159,11 +159,50 @@ done
 # not false-positive blocked. Quoted spans may cross newlines (e.g. a multi-line
 # `git commit -m "..."`), so the scrub is whole-string, not line-based: a
 # line-based sed leaves the embedded newline in place and false-positives the
-# newline check above. No attempt to handle escape sequences or here-docs.
+# newline check above. No attempt to handle escape sequences.
+#
+# QUOTED here-doc bodies are blanked (2026-09-04). `git commit -F - <<'EOF' …
+# EOF` is a git-write, already exempt, producing two lines of output — but the
+# heredoc's newlines tripped the compound check, so committing with a message
+# body was blocked outright. Same shape as the sed -i case: an exempt operation
+# defeated by its syntax rather than its effect.
+#
+# ONLY quoted heredocs (<<'W', <<"W", <<-'W') are blanked, and the distinction is
+# load-bearing: an UNQUOTED <<W expands parameters and command substitutions, so
+# `$(rm -rf …)` inside its body is live code and must stay visible to the operator
+# scan below. Quoted bodies are literal text and cannot execute anything.
+#
+# Runs BEFORE the quote scrub, because that scrub would otherwise eat the quotes
+# in <<'EOF' and hide the heredoc from this pass — the same ordering trap
+# ctx-payload-guard.sh documents.
+#
+# Only the heredoc BODY and its operator token are removed. Anything after the
+# terminator survives, so `git commit -F - <<'EOF' … EOF; rm -rf /` still shows
+# a bare `;` to the scan and is still blocked.
 # Falls back to the raw command (safe — may over-block) if python3 is absent.
 _OPCHECK=$(COMMAND="$COMMAND" python3 <<'PY' 2>/dev/null
 import os, re, sys
 c = os.environ.get("COMMAND", "")
+
+def strip_quoted_heredocs(text):
+    lines = text.split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        m = re.search(r"""<<-?\s*(['"])(\w+)\1""", lines[i])
+        if not m:
+            out.append(lines[i]); i += 1; continue
+        term = m.group(2)
+        # Keep the line minus the heredoc operator; drop the body.
+        out.append(lines[i][:m.start()] + lines[i][m.end():])
+        i += 1
+        # A terminator must be alone on its line; anything else continues the body.
+        while i < len(lines) and lines[i].strip() != term:
+            i += 1
+        if i < len(lines):
+            i += 1          # consume the terminator itself
+    return "\n".join(out)
+
+c = strip_quoted_heredocs(c)
 c = re.sub(r"'[^']*'", "", c, flags=re.S)
 c = re.sub(r'"[^"]*"', "", c, flags=re.S)
 sys.stdout.write(c)
