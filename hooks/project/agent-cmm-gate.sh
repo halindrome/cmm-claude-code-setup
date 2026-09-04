@@ -99,9 +99,11 @@ BLOCKED: Agent prompt does not reference codebase-memory-mcp tools.
 
 Agents MUST use the codebase-memory-mcp (CMM) graph tools for code exploration
 instead of reading files directly. Add these instructions to your agent prompt.
-NOTE: Workflow agent() prompts bypass this gate — paste the block into every
-agent() call and .claude/agents/*.md definition, since hooks do not reach inside
-a running subagent.
+NOTE: Workflow agent() prompts bypass THIS gate (a Workflow spawn is a Workflow
+call, not an Agent call). Other PreToolUse gates still fire on the worker's own
+tool calls — but nothing checks a Workflow prompt for you, and gates change which
+tool is used, not which strategy. Paste the block into every agent() call and
+.claude/agents/*.md definition.
 
 --- Copy-paste the following into your agent prompt ---
 

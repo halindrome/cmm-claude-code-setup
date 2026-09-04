@@ -172,8 +172,12 @@ _grep_absent "SKILL.md does not claim Perl trace_path is as trustworthy as Go" \
   'exactly as on Go' "skills/cmm-rules/SKILL.md"
 _grep_assert "SKILL.md forbids inferring non-support from an absent language" \
   'Never infer that a language is unsupported' "skills/cmm-rules/SKILL.md"
-_grep_assert "SKILL.md carries the Subagents & Workflows hook-reach warning" \
-  'hooks do not reach inside a subagent' "skills/cmm-rules/SKILL.md"
+_grep_assert "SKILL.md states hooks DO fire inside subagents" \
+  'do\*\* fire for tool calls made inside a subagent' "skills/cmm-rules/SKILL.md"
+_grep_assert "SKILL.md scopes the bypass to the Agent spawn gate" \
+  'agent-cmm-gate.sh' "skills/cmm-rules/SKILL.md"
+_grep_absent "SKILL.md no longer cites the disproven #34692 claim" \
+  '34692' "skills/cmm-rules/SKILL.md"
 
 echo ""
 echo "--- pre-existing notes still retained in cmm-rules ---"

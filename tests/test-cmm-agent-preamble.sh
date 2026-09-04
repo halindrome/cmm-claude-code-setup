@@ -1,7 +1,8 @@
 #!/bin/bash
 # test-cmm-agent-preamble.sh — Tests for the reusable CMM/ctx subagent preamble asset,
 # the agent-cmm-gate DRY emission + inline fallback, the strengthened SubagentStart
-# injection, and the docs that explain the subagent hook-reachability limitation.
+# injection, and the docs that explain why the preamble is needed despite hooks
+# reaching subagents (reach is solved; adoption is not — measured 2026-09-03).
 # Usage: bash tests/test-cmm-agent-preamble.sh
 # Exit: 0 = all pass, 1 = any failure
 set -euo pipefail
@@ -17,6 +18,9 @@ pass() { echo "PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
 _has() { # _has <label> <file> <substring>
   if grep -qF -- "$3" "$2"; then pass "$1"; else fail "$1 (missing: $3)"; fi
+}
+_lacks() { # _lacks <label> <file> <substring>
+  if grep -qF -- "$3" "$2"; then fail "$1 (still present: $3)"; else pass "$1"; fi
 }
 
 echo "--- Asset exists and is well-formed ---"
@@ -81,11 +85,20 @@ _has "startup: adds ctx routing mandate"         "$STARTUP" "ctx_batch_execute"
 _has "startup: preserves cmm-rules Skill call"   "$STARTUP" "Invoke Skill('cmm-rules')"
 _has "startup: preserves ctx-rules Skill call"   "$STARTUP" "Invoke Skill('ctx-rules')"
 
-echo "--- Docs explain the limitation and point at the asset ---"
-_has "cmm-rules: #34692 cited"                   "$ROOT/rules/cmm-rules.md" "34692"
+echo "--- Docs explain the real limitation and point at the asset ---"
+# Measured 2026-09-03: PreToolUse hooks DO fire inside subagents on every CC version
+# 2.1.175-2.1.260. The old assertions pinned the disproven #34692 claim; these pin the
+# corrected wording so the rewrite cannot silently regress.
+_has "cmm-rules: states hooks do fire in subagents" "$ROOT/rules/cmm-rules.md" "**do** fire inside subagents"
+_has "cmm-rules: scopes bypass to the spawn gate"   "$ROOT/rules/cmm-rules.md" "agent-cmm-gate.sh"
+_has "cmm-rules: justifies preamble on adoption"    "$ROOT/rules/cmm-rules.md" "**zero** CMM calls"
 _has "cmm-rules: points at preamble asset"       "$ROOT/rules/cmm-rules.md" "cmm-agent-preamble.md"
-_has "ctx-rules: #34692 cited"                   "$ROOT/rules/ctx-rules.md" "34692"
+_has "ctx-rules: states hooks do fire in subagents" "$ROOT/rules/ctx-rules.md" "**do** fire for tool calls"
 _has "ctx-rules: points at preamble asset"       "$ROOT/rules/ctx-rules.md" "cmm-agent-preamble.md"
+_has "preamble: states hooks do reach the agent"    "$ROOT/rules/cmm-agent-preamble.md" "Hooks **do** reach inside a running subagent"
+_lacks "cmm-rules: stale #34692 claim removed"   "$ROOT/rules/cmm-rules.md" "34692"
+_lacks "ctx-rules: stale #34692 claim removed"   "$ROOT/rules/ctx-rules.md" "34692"
+_lacks "preamble: stale #34692 claim removed"    "$ROOT/rules/cmm-agent-preamble.md" "34692"
 _has "README: references preamble asset"         "$ROOT/README.md" "cmm-agent-preamble.md"
 _has "README: notes Workflow bypass"             "$ROOT/README.md" "bypass"
 

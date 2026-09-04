@@ -52,9 +52,12 @@ fi
 # Concrete tool-preference mandate (not just a Skill nudge): prefer CMM graph
 # tools over Read/grep for code, and route large output through ctx_* — the soft
 # "invoke Skill" advisory alone was empirically ignored by subagents whose own
-# prompts told them to grep/read. NOTE: this SubagentStart injection is best-effort
-# only; hooks do not reliably steer subagent behavior (see rules/cmm-agent-preamble.md),
-# so the durable lever is baking that preamble into the subagent's PROMPT.
+# prompts told them to grep/read. NOTE: this injection IS delivered reliably
+# (~2,210 times per 30 days, measured 2026-09-03) — delivery is not the problem.
+# Adoption is: 52% of gated subagent transcripts still make zero CMM calls, and a
+# blocked Grep becomes a Read more often than a search_graph. So this hook is a
+# floor; the durable lever remains baking rules/cmm-agent-preamble.md into the
+# subagent's PROMPT.
 MANDATE="Prefer CMM graph tools (search_graph / get_code_snippet / trace_path / get_architecture) over Read/grep for code exploration; cite definition sites from get_code_snippet, not grep hits. Route large diffs, whole-file reads, and command output through ctx_execute / ctx_batch_execute / ctx_search to keep bytes out of context."
 if [ ! -f "$CMM_SENTINEL" ] || grep -q '^stale$' "$CMM_SENTINEL"; then
     ADVISORY="⚠ CMM index is stale. Call index_repository before graph tools. $MANDATE Invoke Skill('cmm-rules') via the Skill tool now, then Invoke Skill('ctx-rules') via the Skill tool now."
