@@ -9,24 +9,29 @@ into every subagent prompt you author:
 - the body of any `.claude/agents/*.md` **agent definition** used as an
   `agentType` / `subagent_type`.
 
-## Why the prompt is the only place this lands
+## Why the prompt still matters, even though hooks do reach the agent
 
-Hooks do **not** reach inside a running subagent:
+Hooks **do** reach inside a running subagent. Measured over 1,798 Claude Code
+transcripts (30 days, 2026-09-03):
 
-- Claude Code issue [#34692](https://github.com/anthropics/claude-code/issues/34692):
-  `PreToolUse` / `PostToolUse` hooks do **not** fire for tool calls made *inside*
-  a subagent. The stack's enforcement gates (`ctx-execute-enforcer.sh`,
-  `cmm-nudge.sh`, `grep-cmm-gate.sh`) therefore never touch a subagent's
-  `Bash` / `Read` / `Grep` calls.
-- `SubagentStart` `additionalContext` injection is not a reliable behavioral
-  lever for subagents (empirically not surfaced/actioned by either Task or
-  Workflow workers).
-- `agent-cmm-gate.sh` (`PreToolUse:Agent`) enforces this preamble on the
-  **main-thread `Agent` tool only**. A **Workflow-spawned worker bypasses that
-  gate** — it surfaces as a `Workflow` call, not an `Agent` call.
+- `PreToolUse` gates fire on tool calls made *inside* a subagent — 1,462
+  `ctx-execute-enforcer` and 112 `cmm-grep-nudge` hard blocks landed on
+  sidechain (`isSidechain: true`) calls, on every Claude Code version from
+  2.1.175 through 2.1.260. Workflow-spawned workers are gated too.
+- `SubagentStart` `additionalContext` **is** delivered — ~2,210 injections per
+  30 days.
+- The one real bypass is narrow: `agent-cmm-gate.sh` is `PreToolUse:**Agent**`,
+  so a Workflow-spawned worker (a `Workflow` call) never matches it — 163
+  `Workflow` calls, 0 gated. That is the **spawn** check only; the worker's own
+  tool calls are still gated.
 
-So the subagent's **prompt** (and its `agentType` definition) is the ONLY place
-this guidance provably lands. Bake it in; do not rely on hooks.
+Delivery is not the problem. **Adoption is.** 52% of gated subagent transcripts
+making 5+ tool calls still issue zero CMM calls, and only 13–25% of blocked code
+searches are followed by a CMM call — a blocked `Grep` becomes a `Read` far more
+often than it becomes a `search_graph`. A hook can stop one tool call; it does
+not change the agent's strategy for the next one.
+
+The prompt is where strategy is set. Bake this in.
 
 --- copy from here ---
 
@@ -48,5 +53,13 @@ Full `Read` only for: non-code files, files under ~50 lines, or files not yet in
 - `ctx_fetch_and_index` — fetch a URL (indexed + cached) instead of `curl`
 Route large diffs, whole-file reads, test-suite runs, and multi-file scans through these so your
 findings — not the raw bytes — enter context. On a big diff this preserves your own token budget.
+Do NOT pipe into `head`/`tail` or redirect stdout to a file: those discard bytes before they are
+indexed. Pass `intent="<your question>"` instead — output over 5KB flips to search-mode for free.
+
+**`language="shell"` runs `$SHELL` (zsh here), NOT bash.** `language="bash"` is not a distinct
+runtime and cannot select bash. `${!var}` is bash-only — zsh spells it `${(P)var}` and otherwise
+answers `bad substitution`. `mapfile`/`readarray`/`declare -n` do not exist; `${var^^}`/`${var,,}`
+are `${var:u}`/`${var:l}`; arrays are 1-indexed. Worst, zsh does not word-split an unquoted `$var`,
+so `for f in $files` silently iterates once over the whole string. Need bash? `bash -c '…'`.
 
 --- copy to here ---

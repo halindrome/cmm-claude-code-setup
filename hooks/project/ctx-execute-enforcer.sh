@@ -160,6 +160,37 @@ if [[ "$_OPCHECK" == *"&&"* ]] || [[ "$_OPCHECK" == *"||"* ]] || \
    [[ "$_OPCHECK" == *'$('* ]]  || [[ "$_OPCHECK" == *'`'* ]]  || \
    [[ "$_OPCHECK" == *"&"* ]]   || [[ "$_OPCHECK" == *$'\n'* ]]; then
     bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-compound" 2>/dev/null || true
+    # A bare code="..." placeholder is where the laundering happens: the agent
+    # refills it with the original command, truncating pipe and all. Measured
+    # 2026-09-03: of 1,501 blocked Bash calls that escalated into a ctx_* call,
+    # 252 carried the identical `| head -N` into the sandbox, where nothing
+    # inspected it. When the command carries a truncation, name the stripped
+    # replacement concretely instead of leaving a blank to fill in.
+    # Truncating pipes only. Stripping stdout redirects here was tried in
+    # b9cc572 (QA round 1 F-02, to stop this hook suggesting a payload that
+    # ctx-payload-guard then blocks) and reverted in round 2: deciding whether a
+    # redirect is objectionable requires the guard's AUTHORING and
+    # read-back-later exemptions, and without them the strip silently deleted
+    # legitimate file writes -- `jq ... > f.json && cat f.json` was suggested
+    # with the write removed, so the paired read gets a stale or absent file.
+    # Reproducing the guard's exemptions here would put two copies of that logic
+    # in lockstep, which is the divergence hazard this repo already documents.
+    #
+    # So the double-block stands, deliberately: a redirect command is blocked
+    # here, the agent moves it into ctx_execute unchanged, and the guard's own
+    # message then names the `2>&1 | tee` fix. Two round-trips, converging --
+    # a bounded cost, unlike a corrupted suggestion the agent is told to paste.
+    _SUGGEST=$(printf '%s' "$_ORIG_COMMAND" | sed -E 's/[[:space:]]*\|[[:space:]]*(head|tail)[^|;&]*//g')
+    if [ "$_SUGGEST" != "$_ORIG_COMMAND" ]; then
+        _OPT2="       mcp__plugin_context-mode_context-mode__ctx_execute(language=\"shell\", code=\"$_SUGGEST\", intent=\"<what you are looking for>\")
+     The truncating pipe is dropped on purpose: ctx_execute indexes the FULL
+     output and returns only the sections matching intent=, so capping it first
+     discards data for no context saving. Re-adding it will be blocked by
+     ctx-payload-guard. If the command also sends stdout to a file, replace that
+     with '2>&1 | tee <file>' so the output is captured as well as saved."
+    else
+        _OPT2="       mcp__plugin_context-mode_context-mode__ctx_execute(language=\"shell\", code=\"$_ORIG_COMMAND\", intent=\"<what you are looking for>\")"
+    fi
     cat >&2 <<COMPOUND
 BLOCKED: Compound shell command cannot be exempted.
 
@@ -173,7 +204,7 @@ arbitrary output behind an exempt prefix.
 Fix options:
   1. Use absolute paths and drop the \`cd\` prefix.
   2. Route the real command through ctx_execute for output sandboxing:
-       mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="...")
+$_OPT2
   3. Run the two halves as separate Bash calls if both are independently exempt.
 COMPOUND
     exit 2
@@ -307,15 +338,19 @@ esac
 # Everything else must go through ctx_execute for output sandboxing.
 bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash" 2>/dev/null || true
 
+# NOTE: no truncation-stripping here. An unquoted `| head` always trips the
+# compound-command check above and is handled there, where the strip is tested.
+# The only way to reach this branch with `| head` in the text is inside quotes
+# (`echo "x | head"`), where stripping would mangle a correct command.
 cat >&2 <<BLOCKED
 BLOCKED: Route this command through ctx_execute for output sandboxing.
 
 Replace:
   Bash("$COMMAND")
 With (plugin form):
-  mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="$COMMAND")
+  mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="$COMMAND", intent="<what you are looking for>")
 Or (MCP-server form, legacy):
-  mcp__context-mode__ctx_execute(language="shell", code="$COMMAND")
+  mcp__context-mode__ctx_execute(language="shell", code="$COMMAND", intent="<what you are looking for>")
 
 Context Mode captures only the relevant output portion, preventing context bloat.
 If this is a source-code search, prefer search_code / search_graph (CMM) over ctx_execute.

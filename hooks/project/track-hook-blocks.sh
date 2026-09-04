@@ -83,6 +83,16 @@ if hook_type == 'read':
 elif hook_type == 'bash':
     data['bash_blocks'] = data.get('bash_blocks', 0) + 1
     data.setdefault('by_hook', {})['ctx-execute-enforcer'] = data.get('by_hook', {}).get('ctx-execute-enforcer', 0) + 1
+elif hook_type == 'ctx_payload':
+    data['ctx_payload_blocks'] = data.get('ctx_payload_blocks', 0) + 1
+    data.setdefault('by_hook', {})['ctx-payload-guard'] = data.get('by_hook', {}).get('ctx-payload-guard', 0) + 1
+elif hook_type == 'ctx_payload_exempt':
+    # An exempt use is NOT a block -- undo the unconditional total bump above.
+    # The regression signal for ctx-payload-guard is the exempt:block ratio, not
+    # the block count: a high block count is the gate working as measured, but a
+    # rising exempt ratio means the agent keeps judging the gate wrong.
+    data['total_blocks'] = data.get('total_blocks', 1) - 1
+    data.setdefault('by_hook', {})['ctx-payload-guard-exempt'] = data.get('by_hook', {}).get('ctx-payload-guard-exempt', 0) + 1
 
 # Write to temp file
 with open(temp_path, 'w') as f:

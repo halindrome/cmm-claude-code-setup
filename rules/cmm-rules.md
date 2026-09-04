@@ -43,12 +43,12 @@ CMM project names are path-derived (`…myrepo-apps-api` vs `…myrepo`), so a s
 
 CMM indexes code symbols across sessions (persistent graph of functions/classes/modules). Context-mode captures tool output within one session (FTS5 search over Bash/Read/Grep results). Use CMM for "where is this function defined"; use `ctx_search` for "what did my last test run print".
 
-### Subagents & Workflows — hooks do not reach inside a subagent
+### Subagents & Workflows — hooks reach the agent; they do not change its strategy
 
-The enforcement hooks steer the **main thread only**. They do **not** reach inside a running subagent:
+The enforcement hooks **do** fire inside subagents. Measured over 1,798 transcripts (30 days, 2026-09-03): 97.2% of subagent transcripts carry a stack hook emission, and `PreToolUse` hard blocks land on tool calls made inside sidechains (`isSidechain: true`) on every Claude Code version from 2.1.175 through 2.1.260. Workflow-spawned workers are gated too (757 gate emissions over 120 days). `SubagentStart` `additionalContext` is delivered, ~2,210 times per 30 days.
 
-- `PreToolUse` / `PostToolUse` hooks do **not** fire for tool calls made *inside* a subagent (Claude Code issue [#34692](https://github.com/anthropics/claude-code/issues/34692)) — the CMM/grep gates never touch a subagent's `Read`/`Grep`/`Bash`.
-- `agent-cmm-gate.sh` (`PreToolUse:Agent`) enforces the preamble on the **main-thread `Agent` tool only**. A **Workflow-spawned worker** (`agent()` / `parallel()` / `pipeline()` lens) surfaces as a `Workflow` call, not an `Agent` call, so it **bypasses the gate**.
-- `SubagentStart` `additionalContext` injection is best-effort and not a reliable behavioral lever.
+One bypass is real, and it is narrow:
 
-Therefore the subagent's **prompt** (and its `.claude/agents/*.md` `agentType` definition) is the only place CMM/ctx guidance provably lands. When authoring a Workflow or subagent, paste the block from `rules/cmm-agent-preamble.md` (installed to `.claude/rules/cmm-agent-preamble.md`) into every `agent()` prompt and agent definition. Do not rely on hooks to make lens agents use CMM.
+- `agent-cmm-gate.sh` is `PreToolUse:**Agent**`. A **Workflow-spawned worker** (`agent()` / `parallel()` / `pipeline()` lens) surfaces as a `Workflow` call, so it never matches that gate — 163 `Workflow` calls, 0 gated, against 1,477 `Agent` calls of which 183 were gated. This affects the **spawn** check only; every other `PreToolUse` gate still fires on the worker's own tool calls.
+
+**Paste the preamble anyway — for a different reason than you may have been told.** The problem is not delivery, it is adoption: 52% of gated subagent transcripts making 5+ tool calls still issue **zero** CMM calls, and only 13–25% of blocked code searches are followed by a CMM call. A hook that blocks a tool does not change the agent's strategy — blocked agents pivot to `Read`/`Bash` rather than to `search_graph`. The prompt is where strategy is set. When authoring a Workflow or subagent, paste the block from `rules/cmm-agent-preamble.md` (installed to `.claude/rules/cmm-agent-preamble.md`) into every `agent()` prompt and agent definition.

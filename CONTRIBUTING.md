@@ -152,7 +152,7 @@ hooks:
 
 The `SubagentStart` hook in `.claude/settings.json` fires in the **parent session** (not inside the subagent) when any subagent starts. It runs `subagent-cmm-startup.sh`, which injects CMM index state into the subagent via `additionalContext` JSON output — telling the agent whether the index is ready or stale before it begins work. This is informational only — it never blocks the agent.
 
-SubagentStart hooks cannot intercept tool calls inside the subagent. Use agent frontmatter hooks (`.claude/agents/<name>.md`) for ongoing per-tool enforcement.
+`SubagentStart` is a startup hook, so it cannot intercept tool calls — but that is not a gap: project `PreToolUse` hooks **do** fire on tool calls made inside a subagent (measured across 1,798 transcripts, every Claude Code version 2.1.175–2.1.260, Workflow-spawned workers included), so per-tool enforcement is already in place without agent frontmatter hooks. The one thing that does not reach a Workflow-spawned worker is `agent-cmm-gate.sh`, because it matches `PreToolUse:Agent` and a Workflow spawn is a `Workflow` call.
 
 ### Hook Advisory Style
 

@@ -189,6 +189,134 @@ echo "--- Test c13: real 'wc' verb against src/ still -> exit 2 (BLOCKED) ---"
 _assert_exit "c13: real wc verb still blocked" 2 \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"wc -l src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
 
+# --- A verb in PIPE-SINK position is not navigation ---
+# Measured 2026-09-03: `git log --oneline | cat` and `git diff --stat | cat` were
+# blocked as "code search". CMM has no replacement for them, and a block with no
+# usable alternative sends 90-95% of attempts straight back to raw tools.
+echo "--- Test c14: 'git log --oneline | cat' under a source path -> exit 0 (ALLOW) ---"
+_assert_exit "c14: git log piped to cat not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $PROJ_REAL/src && git log --oneline | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c15: 'git diff --stat | cat' -> exit 0 (ALLOW) ---"
+_assert_exit "c15: git diff piped to cat not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $PROJ_REAL/src && git diff --stat | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c16: pipeline HEAD naming a source path still -> exit 2 (BLOCKED) ---"
+# The fix must not disarm the gate: `cat` here reads a file, it is not a sink.
+_assert_exit "c16: cat of src/ piped onward still blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat src/main.py | wc -l\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c17: quoted pipe in a grep pattern still -> exit 2 (BLOCKED) ---"
+_assert_exit "c17: quoted alternation does not disarm the gate" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -n 'foo|cat' src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
+
+# --- Block messages must name a concrete call, not a placeholder ---
+# Measured: gates naming a specific replacement convert 36-50% of blocks; a "..."
+# template converts 13-25%; naming no alternative at all converts ~0%.
+_msg_of() { echo "$1" | bash "$HOOK" 2>&1 >/dev/null || true; }
+
+echo "--- Test c18: Grep block echoes the real search term ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"handleRequest\",\"glob\":\"*.ts\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -qF 'search_graph(name_pattern="handleRequest")'; then
+    echo "PASS: c18: block names the concrete search_graph call"; PASS=$((PASS+1))
+else
+    echo "FAIL: c18: block still prints a placeholder"; FAIL=$((FAIL+1))
+fi
+
+echo "--- Test c14b/c15b: pipe-sink payloads that actually REACH the sink logic ---"
+# c14/c15 send 'cd $PROJ_REAL/src && git log --oneline | cat'. The gate first
+# requires a path fragment matching (src/|app/|lib/|hooks/|…); '…/src && git'
+# contains 'src ' not 'src/', so those payloads never reach the pipe-sink code at
+# all — both assertions passed against a hook with the fix fully removed. These
+# forms carry a real 'src/' and so discriminate: fixed => exit 0, unfixed => 2.
+_assert_exit "c14b: 'git log --oneline src/ | cat' not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git log --oneline src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+_assert_exit "c15b: 'git diff --stat src/ | cat' not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git diff --stat src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+_assert_exit "c15c: 'ls src/ | cat' not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+# …and the sink fix must not disarm a REAL navigation command that happens to
+# end in a sink. This is the pair that keeps the fix honest in both directions.
+_assert_exit "c15d: 'grep -rn foo src/ | cat' still blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -rn foo src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c18b: an --include glob never becomes the search term (QA r1 F-03) ---"
+# `.*` in the extractor was greedy, so it bound the LAST quoted string: a trailing
+# --include='*.pl' produced search_graph(name_pattern="*.pl"), a call that returns
+# nothing. Worse than the old "..." placeholder because it looks correct -- and it
+# misfires hardest on the Perl case WS2 exists to fix.
+for _CMD in "grep -rn 'reqStatus' src/ --include='*.pl'" \
+            "grep -rn --include='*.pm' 'reqStatus' src/" \
+            "grep -rn 'reqStatus' -t perl src/" ; do
+  _M=$(_msg_of "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$_CMD\"},\"cwd\":\"$PROJ_REAL\"}")
+  if printf '%s' "$_M" | grep -qF 'reqStatus'; then
+    echo "PASS: c18b: term recovered from: $_CMD"; PASS=$((PASS+1))
+  else
+    echo "FAIL: c18b: wrong term from: $_CMD"; FAIL=$((FAIL+1))
+  fi
+  if printf '%s' "$_M" | grep -qE '(name_pattern|query)="\*\.(pl|pm)"'; then
+    echo "FAIL: c18b: glob leaked in as the search term: $_CMD"; FAIL=$((FAIL+1))
+  else
+    echo "PASS: c18b: no glob in the suggested call: $_CMD"; PASS=$((PASS+1))
+  fi
+done
+
+echo "--- Test c20: extension-cache mtime probe tries GNU stat first (QA r1 F-04) ---"
+# On GNU coreutils `stat -f` is --file-system and EXITS 0 for any existing file,
+# so `stat -f %m || stat -c %Y` never reaches the fallback and the cache key is a
+# per-platform constant -- restoring the "first read is permanent" bug on all of
+# Linux. This hook installs to ~/.claude and runs for every repo, so order matters.
+_STATLINE=$(grep -n '_CFG_MTIME=' "$HOOK" | head -1)
+if printf '%s' "$_STATLINE" | grep -qE 'stat -c %Y.*stat -f %m'; then
+    echo "PASS: c20: GNU stat -c is attempted before BSD stat -f"; PASS=$((PASS+1))
+else
+    echo "FAIL: c20: BSD stat -f runs first; on GNU it succeeds and pins the key"; FAIL=$((FAIL+1))
+fi
+
+echo "--- Test c19: regex-shaped term leads with search_code ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"foo.*bar\",\"glob\":\"*.py\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -m1 -q 'search_code'; then
+    echo "PASS: c19: regex term leads with search_code"; PASS=$((PASS+1))
+else
+    echo "FAIL: c19: regex term did not lead with search_code"; FAIL=$((FAIL+1))
+fi
+
+# --- Perl reassurance at the moment of blocking ---
+# Observed failure: an agent blocked on a *.pm grep concludes CMM cannot search
+# Perl and falls back to Read. Perl IS a Hybrid LSP language here.
+echo "--- Test c20: Perl target gets the 'fully indexed' line ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"ApTest::SQLiteFile\",\"glob\":\"*.pm\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -qF 'Perl is fully indexed'; then
+    echo "PASS: c20: Perl block states Perl is indexed"; PASS=$((PASS+1))
+else
+    echo "FAIL: c20: Perl block omits the Perl reassurance"; FAIL=$((FAIL+1))
+fi
+
+echo "--- Test c21: non-Perl target does NOT get the Perl line ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"handleRequest\",\"glob\":\"*.ts\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -qF 'Perl is fully indexed'; then
+    echo "FAIL: c21: Perl line leaked onto a TypeScript block"; FAIL=$((FAIL+1))
+else
+    echo "PASS: c21: Perl line correctly absent"; PASS=$((PASS+1))
+fi
+
+# --- extra_extensions cache must follow the config, not outlive it ---
+# .cgi is known to neither the built-in list nor CMM; both learn it only from
+# extra_extensions in .codebase-memory.json. Keying the cache on REPO_ROOT alone
+# made the first read permanent, so adding an extension had no effect until the
+# /tmp file was deleted by hand.
+echo "--- Test c22: .cgi not blocked before it is declared ---"
+_assert_exit "c22: undeclared .cgi allowed" 0 \
+    "{\"tool_input\":{\"pattern\":\"handler\",\"glob\":\"*.cgi\",\"path\":\"$PROJ\"}}"
+
+echo "--- Test c23: .cgi blocked once declared in extra_extensions ---"
+echo '{"extra_extensions":{".cgi":"perl"}}' > "$PROJ/.codebase-memory.json"
+# No cache clearing here on purpose: if the key ignored the config mtime, the
+# stale entry from c22 would still be in effect and this assertion would fail.
+_assert_exit "c23: declared .cgi blocked without clearing the cache" 2 \
+    "{\"tool_input\":{\"pattern\":\"handler\",\"glob\":\"*.cgi\",\"path\":\"$PROJ\"}}"
+rm -f "$PROJ/.codebase-memory.json"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
