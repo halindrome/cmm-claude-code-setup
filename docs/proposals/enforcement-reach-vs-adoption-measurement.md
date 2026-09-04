@@ -236,17 +236,40 @@ in `ctx_execute` — a migration would look like a win in the STRONG column alon
 > | change | Δ | why |
 > |---|---:|---|
 > | quoted spans filled with `_`, not spaces | **−136** | the dominant defect, and it cut **both** ways |
-> | redirect target may not cross a newline | 0 | correct, but no payload in the corpus hit it |
+> | redirect target may not cross a newline | 0 | already subsumed by the row above — see below |
 > | shell `#` comments scrubbed | −18 | `# note -> here` read as a redirect to a file `here` |
 > | `echo` after `do`/`then`/`else` is authoring | −8 | `for i in …; do echo x > "f$i"; done` |
+> | **total** | **−162** | |
 >
 > The first row is worth stating precisely, because "quoted targets were invisible" is the natural
 > guess and it is wrong. Blanking a quoted span to **spaces** did not remove the redirect — it
-> removed the *target*, and `\s*` in the target pattern then skipped the blanks and bound the **next
-> word** instead. `: > "$tmp/empty"; mkdir "$tmp/dir"` bound `mkdir`. So the old count both missed
-> real quoted-target redirects and invented phantom ones against whatever token followed; the net
-> was an overcount of 162. Filling with `_` keeps the token intact, so the `/dev/null`,
-> target-reused-later and authoring exclusions finally evaluate the file the payload actually names.
+> removed the *target*, and `\s*` before the target then skipped the blanks (and any newline) to
+> bind **the next word in the payload**, which is usually the next command. Real bindings from the
+> corpus, old detector:
+>
+> ```
+> … git archive HEAD | tar -x -C "$BASE"        bound target 'mv'     (next line)
+> … rm -rf "$BASE"                              bound target 'git'    (next line)
+> … cp -a "$SP/fixture" "$FX"                   bound target 'printf'
+> for f in …; do cp "$f" "$BASE/$f"; done       bound target 'done'
+> ```
+>
+> Every downstream rule keys on that target — the `/dev/null` exclusion, "is this file read back
+> later", the `tee` suggestion in the block message — so all of them were deciding about a token
+> that was not a filename. The result was two-sided: real redirects went uncounted while phantom
+> ones were invented against whatever followed. Net, an **overcount of 162**.
+>
+> This is also why the newline row measures 0. The newline crossing was not a separate defect with
+> no instances; it was the *mechanism* of the phantom bindings above, and filling with `_` stops
+> `\s*` before it ever reaches the newline. Restricting the pattern to `[ \t]*` is the same fix seen
+> from the other side, and is kept because it makes the constraint explicit rather than incidental.
+>
+> The recovered true positives are the ones the guard now blocks and previously did not:
+>
+> ```
+> tmp=$(mktemp -d); : > "$tmp/empty"; printf … > "$tmp/ws"     target '$tmp/empty'
+> rm -rf "$S"; mkdir -p "$S/atm"; … > "$S/atm/INSTALL.pl"      target '$S/atm/INSTALL.pl'
+> ```
 >
 > Direction and conclusions are unchanged: `ctx_execute` remains the largest anti-pattern surface
 > and is still essentially ungated (0.1%). `make measure` after WS1 must be compared against **this**
