@@ -363,6 +363,52 @@ _c24_term_is "git grep IS a search verb" \
 _assert_exit "c24: git branch + status compound not blocked" 0 \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git -C src branch --show-current && git -C src status --porcelain\"},\"cwd\":\"$PROJ_REAL\"}"
 
+# --- c25: a nav verb left DANGLING by the `<<` cut owns no path ---
+# BNAV_HEAD is cut at the first `<<`, so
+#   git -C /repo/apps/mobile commit --no-edit -m "$(cat <<'EOF' … EOF)"
+# became `… -m "$(cat `. The bare `cat` (preceded by `(`, in the separator class)
+# satisfied the VERB test while `apps/` from the `git -C` PATH satisfied the path
+# test -- the two taken from different commands. Observed live 2026-09-04 in
+# liverpool-cleanup, blocking a commit whose message body came from a here-doc:
+# exactly the shape ctx-execute-enforcer.sh was fixed for in 4d26952, blocked
+# here instead, so that fix bought the agent nothing.
+echo ""
+echo "--- Test c25: dangling nav verb after the here-doc cut ---"
+
+# Built via a quoted here-doc, then JSON-encoded in python: the payload contains
+# both `"` and `$(`, and hand-escaping those through a bash double-quoted string
+# into JSON is how the earlier fixtures in this file grew unreadable.
+_c25_json() {
+    _C25_CMD="$1" _C25_CWD="$PROJ_REAL" python3 -c 'import json, os
+print(json.dumps({"tool_name": "Bash",
+                  "tool_input": {"command": os.environ["_C25_CMD"]},
+                  "cwd": os.environ["_C25_CWD"]}))'
+}
+
+read -r -d '' _C25_COMMIT <<'C25EOF' || true
+git -C __PROJ__/apps/mobile commit --no-edit -m "$(cat <<'EOF'
+fix(comms): correct _fetch change target
+
+Body line that mentions src/main.py on purpose.
+EOF
+)"
+C25EOF
+_C25_COMMIT="${_C25_COMMIT//__PROJ__/$PROJ_REAL}"
+
+_assert_exit "c25: here-doc commit message not blocked as navigation" 0 \
+    "$(_c25_json "$_C25_COMMIT")"
+
+# The fix must not disarm the gate. Each of these keeps its argument, so the verb
+# and the path belong to the SAME command and the block must stand.
+_assert_exit "c25: cat inside \$() WITH a path still blocked" 2 \
+    "$(_c25_json 'echo "$(cat apps/mobile/src/foo.ts)"')"
+_assert_exit "c25: bare input redirect still blocked (F-01)" 2 \
+    "$(_c25_json 'cat < src/main.py')"
+_assert_exit "c25: plain cat of a source path still blocked" 2 \
+    "$(_c25_json 'cat src/main.py')"
+_assert_exit "c25: grep with its own term still blocked" 2 \
+    "$(_c25_json 'grep -n changeTarget apps/mobile/src/comms.service.spec.ts')"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

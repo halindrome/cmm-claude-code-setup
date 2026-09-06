@@ -207,7 +207,26 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # what actually names paths (`cat src/a.py | grep foo`), still matches normally.
   # Quoted pipes are safe: `grep 'a|b' src/x` leaves `b` unmatched, and
   # `grep 'a|cat' src/x` fails the trailing-whitespace requirement.
-  BNAV_SCAN=$(printf '%s ' "$BNAV_HEAD" | sed -E 's/\|[[:space:]]*(grep|rg|find|cat|head|tail|wc)[[:space:]]/| _sink_ /g')
+  #
+  # A verb left DANGLING at the end of the head — no argument after it — owns no
+  # path, so it cannot be navigation. This is what the `<<` cut above creates:
+  #
+  #   git -C /repo/apps/mobile commit --no-edit -m "$(cat <<'EOF' … EOF)"
+  #
+  # cuts to `… -m "$(cat `, and the bare `cat` (preceded by `(`, which is in the
+  # separator class) then matched the verb test while `apps/` in the `git -C`
+  # PATH satisfied the path test — verb and path taken from two different
+  # commands. Observed live 2026-09-04 blocking a commit whose message body came
+  # from a here-doc: the same shape ctx-execute-enforcer.sh was fixed for in
+  # 4d26952, blocked here instead, so the fix bought the agent nothing.
+  #
+  # Narrow, not a heredoc special case: the invariant is that the verb and the
+  # path must belong to the SAME command. `cat src/a.py` keeps its argument and
+  # still blocks; `cat < src/x.py` is untouched because a bare `<` is never cut
+  # (QA round 1, F-01); `echo "$(cat apps/x.ts)"` has no cut at all and blocks.
+  BNAV_SCAN=$(printf '%s ' "$BNAV_HEAD" \
+    | sed -E 's/\|[[:space:]]*(grep|rg|find|cat|head|tail|wc)[[:space:]]/| _sink_ /g' \
+    | sed -E 's/(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)[[:space:]]*$/\1_dangling_ /')
   if echo "$BNAV_SCAN" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)
