@@ -447,6 +447,23 @@ _assert_exit "curl > file still blocked" 2 \
 _assert_exit "cat without a redirect still blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"cat big.c"}}'
 
+# A STDERR redirect is not authoring: stdout still floods. A case glob cannot see
+# the fd digit, so `cat big.c 2>/dev/null` matched as "cat " + "big.c 2" + ">" +
+# "/dev/null" and was exempted — the exact hole this hook exists to close, on one
+# of the most common idioms an agent writes.
+_assert_exit "cat with 2>/dev/null still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c 2>/dev/null"}}'
+
+_assert_exit "cat with 2>err.log still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat src/huge.py 2>err.log"}}'
+
+_assert_exit "echo with only a stderr redirect still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo hello 2>/dev/null"}}'
+
+# ...but a real stdout redirect alongside a stderr one is still authoring.
+_assert_exit "echo > file with 2>/dev/null still exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo hello > f.txt 2>/dev/null"}}'
+
 # An UNQUOTED heredoc keeps its body and newlines visible to the compound scan,
 # so it is blocked before it can reach the authoring case. Fail-closed.
 _assert_exit "cat > file with UNQUOTED heredoc still blocked" 2 \

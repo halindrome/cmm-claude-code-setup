@@ -408,9 +408,17 @@ esac
 # this hook's block code, so the whole suite's "expect exit 2" assertions still
 # passed and only the exemptions AFTER this line broke. A check that never ran,
 # reporting clean; the exact shape rules/ctx-rules.md warns about.
-case "$_OPCHECK" in
-  cat\ *\>*|echo\ *\>*|printf\ *\>*)             _track_exempt authoring; exit 0 ;;
-esac
+# The `>` must be a STDOUT redirect. A case glob cannot see the fd digit, so
+# `cat big.c 2>/dev/null` matched as "cat " + "big.c 2" + ">" + "/dev/null" and
+# was exempted -- opening the exact hole this hook exists to close, on one of the
+# most common idioms an agent writes. Guard on a `>` not preceded by a digit
+# first. `&>` never reaches here (the `&` trips the compound scan above), and a
+# literal `1> f` does not exempt: fail-closed, and rare.
+if [[ "$_OPCHECK" =~ (^|[^0-9])\> ]]; then
+  case "$_OPCHECK" in
+    cat\ *\>*|echo\ *\>*|printf\ *\>*)           _track_exempt authoring; exit 0 ;;
+  esac
+fi
 
 # run_in_background: Claude Code streams the output to a background task, so it
 # never enters the conversation. Sandboxing it buys nothing, and redirecting a
