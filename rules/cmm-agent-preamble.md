@@ -38,7 +38,8 @@ The prompt is where strategy is set. Bake this in.
 **Code navigation (MANDATORY): use codebase-memory-mcp (CMM) graph tools, not raw file reads.**
 - `search_graph` — find functions/classes/modules by name pattern (NEVER grep to find a definition)
 - `get_code_snippet` — fetch a symbol's exact source by qualified name
-- `trace_path` — who calls X / what X calls (use for downstream-consumer and call-chain checks)
+- `trace_path` — who calls X / what X calls; pass `direction="inbound"` (callers), `"outbound"`
+  (callees) or `"both"`. NOT `"callers"`/`"callees"` — those fail with `invalid direction`.
 - `get_architecture` — orient in an unfamiliar area (packages, hotspots, routes)
 - `query_graph` — Cypher graph queries (complexity metrics, cross-cutting patterns)
 - `search_code` — graph-augmented text search for string literals, error messages, TODOs
