@@ -140,10 +140,32 @@ fi
 # matched against exemption patterns below. Anything still compound after
 # peeling falls through to the default block — exemption patterns assume a
 # single bounded command.
+#
+# A leading VARIABLE ASSIGNMENT peels for the same reason (2026-09-04). Observed
+# live, immediately after cwd-guard.sh blocked the `cd` form and told the agent
+# to use `git -C`:
+#
+#   M=/Users/…/apps/mobile; git -C $M merge origin/ic3_13_patches
+#
+# `git merge` is exempt below, and the `-C` normalization at the git block exists
+# precisely to make `git -C <path> merge` work — but the `;` after the assignment
+# trips the operator scan below, which runs FIRST, so that fix was never reached.
+# The two gates were pushing the agent into each other: cwd-guard rejects the
+# `cd` form, this hook rejects the variable form of the alternative it named.
+#
+# The value must be a SINGLE token free of ( ) ` | & ; < > — so a substitution
+# (`M=$(cat f); …`) never peels and still blocks. Peeling only removes the
+# assignment; everything after it is scanned exactly as before, so `M=x; a; b`
+# still shows a bare `;`. Parameter expansions (`D=$HOME/src`) are allowed: they
+# print nothing and cannot introduce a command.
+#
+# Shares the loop with the `cd` peel so the two compose in any order.
 _ORIG_COMMAND="$COMMAND"
+_VARPEEL='^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]()`|&;<>]*[[:space:]]*(;|&&|'$'\n'')[[:space:]]*'
 while [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\"[^\"]*\"[[:space:]]*\&\&[[:space:]]* ]] || \
       [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\'[^\']*\'[[:space:]]*\&\&[[:space:]]* ]] || \
-      [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]]; do
+      [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]] || \
+      [[ "$COMMAND" =~ $_VARPEEL ]]; do
     COMMAND="${COMMAND#${BASH_REMATCH[0]}}"
 done
 # If the stripped command still has compound shell operators, do NOT exempt —
@@ -357,6 +379,37 @@ case "$COMMAND" in
   sed\ -i\ *|sed\ -i.*|gsed\ -i\ *|gsed\ -i.*)   _track_exempt inplace-edit; exit 0 ;;
   perl\ -*i*e\ *|perl\ -*i*\ -e\ *)              _track_exempt inplace-edit; exit 0 ;;
   ruby\ -*i*e\ *|awk\ -i\ inplace\ *)            _track_exempt inplace-edit; exit 0 ;;
+esac
+
+# File AUTHORING: a literal-emitting command redirected to a file. Same category
+# as the in-place editors above -- the bytes go to the file, not to stdout, so
+# there is no output to sandbox.
+#
+# This was not merely friction: the block message routes the command to
+# ctx_execute, and ctx_execute runs in a subprocess whose filesystem is
+# DISCARDED (see rules/ctx-rules.md and the file_writing_policy the harness
+# injects). So the suggested replacement did not write the file at all. A gate
+# whose recovery path silently drops the operation is worse than one with no
+# recovery path, because the agent believes it succeeded.
+#
+# Matched against $_OPCHECK, not $COMMAND, and that is load-bearing: _OPCHECK has
+# quoted spans removed, so `echo "a > b"` scrubs to `echo ` with no `>` and does
+# NOT match -- bare `echo` stays blocked, as 47-02 deliberately made it. Quoted
+# here-doc bodies are blanked there too, so `cat > f <<'EOF' … EOF` arrives as
+# `cat > f `. An UNQUOTED here-doc keeps its body visible and its newlines, so it
+# trips the compound scan above and never reaches here: fail-closed, deliberately.
+#
+# Only cat/echo/printf. A redirect does not make an arbitrary command silent --
+# `curl url > f` still downloads and still blocks.
+#
+# The `\>` escapes are REQUIRED, not stylistic: `>` is a metacharacter inside a
+# case pattern, so the unescaped form is a bash SYNTAX ERROR. That failure is
+# invisible in the obvious way to test for it -- a syntax error exits 2, which is
+# this hook's block code, so the whole suite's "expect exit 2" assertions still
+# passed and only the exemptions AFTER this line broke. A check that never ran,
+# reporting clean; the exact shape rules/ctx-rules.md warns about.
+case "$_OPCHECK" in
+  cat\ *\>*|echo\ *\>*|printf\ *\>*)             _track_exempt authoring; exit 0 ;;
 esac
 
 # run_in_background: Claude Code streams the output to a background task, so it
