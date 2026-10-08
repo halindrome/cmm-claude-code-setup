@@ -272,18 +272,31 @@ def check(text, language):
     # read as "the gate is broken".
     #
     # Accepted limitation, stated so nobody "fixes" it again without weighing
-    # this: a payload that merely MENTIONS the marker inside quotes
+    # this: a line that merely MENTIONS the marker inside quotes
     # (`grep -rn '# ctx-truncate-ok' hooks/ | head -5`) disarms the gate on
-    # itself. That is not a threat model -- the bypass is the operator's own,
-    # and an agent wanting it can simply add the comment -- whereas breaking the
-    # hatch for every payload containing an apostrophe is a real cost.
-    if EXEMPT.search(text):
-        return ("EXEMPT", "", "", "")
+    # that line. That is not a threat model -- an agent wanting the bypass can
+    # simply add the comment -- whereas breaking the hatch for every payload
+    # containing an apostrophe is a real cost.
+    #
+    # Exemption is per LINE, not per payload. Measured 2026-10-08: once the marker
+    # was in use, 72 of 704 exempted payloads carried truncations on lines with
+    # no marker of their own -- one `# ctx-truncate-ok` anywhere in a multi-line
+    # `code` whitelisted every pipe in it.
+    marked = {i for i, ln in enumerate(text.split("\n")) if EXEMPT.search(ln)}
+
+    def exempt(m):
+        # A span can cross a `\` continuation; the marker may sit on either end.
+        a, b = text.count("\n", 0, m.start()), text.count("\n", 0, m.end())
+        return any(i in marked for i in range(a, b + 1))
+
     scrubbed = scrub(text)
     pipes = list(PIPE_TRUNC.finditer(scrubbed))
     # A `| tee` means stdout still flows, so redirects on that payload are not
     # suppressing anything; pipe truncation is judged independently of it.
     redirects = [] if TEE.search(scrubbed) else list(redirect_hits(scrubbed, text))
+    saw_exempt = any(exempt(m) for m in pipes) or any(exempt(m) for m, _ in redirects)
+    pipes = [m for m in pipes if not exempt(m)]
+    redirects = [(m, t) for m, t in redirects if not exempt(m)]
     spans = [(m.start(), m.end()) for m in pipes]
     spans += [(m.start(), m.end()) for m, _ in redirects]
     if pipes:
@@ -294,7 +307,7 @@ def check(text, language):
         m, target = redirects[0]
         return ("redirect", text[m.start():m.end()].strip(), target,
                 _strip_all(text, spans))
-    return None
+    return ("EXEMPT", "", "", "") if saw_exempt else None
 
 
 try:
@@ -423,7 +436,6 @@ ${RECOVER}
 The pipe is dropped and ${ASK} added. Context Mode indexes the FULL output and returns only
 the sections matching your question, so truncating first throws data away for no context
 saving. Output over 5KB flips to FTS5 search-mode automatically.
-Bypass: add '# ctx-truncate-ok' when the truncated slice IS the answer.
 EOF
 else
   cat >&2 <<EOF
@@ -438,9 +450,13 @@ later and ${ASK} goes inert. If you genuinely need the file to persist, tee it s
 still flows:
   <command> 2>&1 | tee ${TARGET}
 Redirecting stderr (2> file, 2>/dev/null, 2>&1) is fine and never blocked.
-Bypass: add '# ctx-truncate-ok'.
 EOF
 fi
+# No bypass hint in either message, deliberately. Measured 2026-10-08: 702 of 704
+# `# ctx-truncate-ok` payloads came AFTER a guard block in the same transcript --
+# the message taught the hatch, and agents then tagged nearly every truncation,
+# outnumbering real blocks 2:1. The marker still works; it is documented for
+# operators (setup.sh, project-settings-example.json), not advertised to agents.
 
 bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "ctx_payload" 2>/dev/null || true
 

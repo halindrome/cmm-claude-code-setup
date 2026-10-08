@@ -353,6 +353,28 @@ _blocks "control: same payload without the marker still blocks" \
 make | head -5")"
 _blocks "exempt in one batch entry does not whitelist another" \
   "$(_batch "$PBATCH" 'a | head -5  # ctx-truncate-ok' 'b | head -5')"
+# Per LINE, not per payload: one marker used to whitelist every truncation in a
+# multi-line `code` (72 of 704 exempted payloads, measured 2026-10-08).
+_blocks "marker on one line does not whitelist another line" \
+  "$(_json "$PLUGIN" shell 'a | head -5  # ctx-truncate-ok
+b | head -5')"
+_blocks "a marker-only comment line exempts nothing" \
+  "$(_json "$PLUGIN" shell '# ctx-truncate-ok
+make | head -5')"
+_blocks "marked line does not exempt a redirect on another line" \
+  "$(_json "$PLUGIN" shell 'a | head -5  # ctx-truncate-ok
+cmd > out.log')"
+_allows "every truncating line marked -> allowed" \
+  "$(_json "$PLUGIN" shell 'a | head -5  # ctx-truncate-ok
+b | tail -3  # ctx-truncate-ok')"
+_allows "marker on the far end of a \\ continuation still exempts the span" \
+  "$(_json "$PLUGIN" shell 'make | \
+  head -5  # ctx-truncate-ok')"
+_allows "marker in a payload with no truncation is a no-op allow" \
+  "$(_json "$PLUGIN" shell 'git status  # ctx-truncate-ok')"
+JM="$(_json "$PLUGIN" shell 'a | head -5  # ctx-truncate-ok
+b | head -7')"
+_stderr_has "the block names the UNMARKED line's token" "$JM" 'head -7'
 
 echo ""
 echo "--- block message names the concrete replacement ---"
@@ -371,7 +393,11 @@ else
   pass "REPLACE WITH line is free of the truncation"
 fi
 _stderr_has   "message offers intent="              "$J" 'intent='
-_stderr_has   "message advertises the bypass"       "$J" 'ctx-truncate-ok'
+# Inverted 2026-10-08: advertising the bypass taught it -- 702/704 marked payloads
+# followed a block in the same transcript, outnumbering real blocks 2:1.
+_stderr_lacks "message does NOT advertise the bypass" "$J" 'ctx-truncate-ok'
+_stderr_lacks "redirect message does NOT advertise the bypass" \
+  "$(_json "$PLUGIN" shell 'cmd > out.log')" 'ctx-truncate-ok'
 _stderr_has   "message names the tool form used"    "$J" "$PLUGIN"
 JL="$(_json "$LEGACY" shell 'cmd | head -3')"
 _stderr_has   "legacy form echoed, not hardcoded plugin form" "$JL" "$LEGACY"
