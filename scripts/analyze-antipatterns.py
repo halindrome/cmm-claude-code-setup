@@ -404,7 +404,7 @@ def flatten(c):
     return "\n".join(out)
 
 
-def main(days):
+def main(days, model=None):
     cutoff = time.time() - days * 86400
     files = []
     for dirpath, _d, fnames in os.walk(ROOT):
@@ -428,7 +428,8 @@ def main(days):
     intent_x = collections.Counter()
     langs = collections.Counter()
 
-    print(f"corpus: {len(files)} transcripts touched in last {days}d\n")
+    print(f"corpus: {len(files)} transcripts touched in last {days}d"
+          + (f", tool calls from model {model} only" if model else "") + "\n")
 
     for path in files:
         dirty = {}
@@ -446,6 +447,8 @@ def main(days):
                 except Exception:
                     continue
                 if r.get("type") == "assistant":
+                    if model and (r.get("message") or {}).get("model") != model:
+                        continue
                     for b in (r.get("message") or {}).get("content") or []:
                         if not (isinstance(b, dict) and b.get("type") == "tool_use"):
                             continue
@@ -543,4 +546,7 @@ def main(days):
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         sys.exit(selftest())
-    sys.exit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 30))
+    args, model = sys.argv[1:], None
+    if "--model" in args:   # --model <id>: exact assistant message.model match
+        i = args.index("--model"); model = args[i + 1]; del args[i:i + 2]
+    sys.exit(main(int(args[0]) if args else 30, model))

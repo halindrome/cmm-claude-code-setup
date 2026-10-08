@@ -5,6 +5,9 @@ TESTS := $(sort $(wildcard tests/test-*.sh))
 
 # Window for `make measure`, in days. Override: make measure DAYS=120
 DAYS ?= 30
+# Restrict `make measure` to one model's tool calls (exact message.model id, as
+# listed in section 9 of the report). Override: make measure MODEL=claude-opus-5-5
+MODEL ?=
 
 # An empty TESTS would run nothing and exit 0 — a partial checkout or a `make -C`
 # from the wrong root would report clean having verified nothing. Fail loudly instead.
@@ -36,6 +39,6 @@ test:
 # silently leaves no trace, so absence is not proof it did not run.
 .PHONY: measure
 measure:
-	@python3 scripts/analyze-enforcement.py $(DAYS)
+	@python3 scripts/analyze-enforcement.py $(DAYS) $(if $(MODEL),--model $(MODEL))
 	@echo ""
-	@python3 scripts/analyze-antipatterns.py $(DAYS)
+	@python3 scripts/analyze-antipatterns.py $(DAYS) $(if $(MODEL),--model $(MODEL))
