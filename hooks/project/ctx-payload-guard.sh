@@ -49,7 +49,6 @@ ACCEPTED = {
 # redirects false-positives on ordinary code.
 SHELLY = {"shell", "bash", "sh", "zsh", "", None}
 
-EXEMPT = re.compile(r"#\s*ctx-truncate-ok\b")
 # `[\s\\]*` rather than `\s*`: a line continuation (`cmd | \` newline `head -5`)
 # puts a backslash between the pipe and the verb, which `\s*` will not cross.
 # That is a shape agents write naturally on long pipelines, so it is worth the
@@ -260,43 +259,23 @@ def _strip_all(text, spans):
 
 
 def check(text, language):
-    """-> (kind, token, target, suggested) | ("EXEMPT",...) | None."""
+    """-> (kind, token, target, suggested) | None."""
     if (language or "").lower() not in SHELLY:
         return None
-    # RAW text, deliberately. Running this against a scrub() to enforce that the
-    # marker is a real comment was tried in b9cc572 and reverted: scrub blanks
-    # from an unpaired quote to the end of the payload, so a single apostrophe
-    # anywhere earlier -- `# don't truncate` -- silently ate the marker. The
-    # operator then got a hard block whose message told them to add the very
-    # bypass they had already added, which is the failure mode most certain to
-    # read as "the gate is broken".
-    #
-    # Accepted limitation, stated so nobody "fixes" it again without weighing
-    # this: a line that merely MENTIONS the marker inside quotes
-    # (`grep -rn '# ctx-truncate-ok' hooks/ | head -5`) disarms the gate on
-    # that line. That is not a threat model -- an agent wanting the bypass can
-    # simply add the comment -- whereas breaking the hatch for every payload
-    # containing an apostrophe is a real cost.
-    #
-    # Exemption is per LINE, not per payload. Measured 2026-10-08: once the marker
-    # was in use, 72 of 704 exempted payloads carried truncations on lines with
-    # no marker of their own -- one `# ctx-truncate-ok` anywhere in a multi-line
-    # `code` whitelisted every pipe in it.
-    marked = {i for i, ln in enumerate(text.split("\n")) if EXEMPT.search(ln)}
-
-    def exempt(m):
-        # A span can cross a `\` continuation; the marker may sit on either end.
-        a, b = text.count("\n", 0, m.start()), text.count("\n", 0, m.end())
-        return any(i in marked for i in range(a, b + 1))
-
+    # NO BYPASS MARKER, deliberately. There was one (`# ctx-truncate-ok`) until
+    # 2026-10-08. Measured over 14 days: 704 marked payloads against ~338 real
+    # blocks, 702 of them AFTER a block in the same transcript -- the hatch was
+    # learned from the block message and then applied to nearly every
+    # truncation. Removing the hint could not reach sessions that had already
+    # learned it, and a renamed marker would be learned the same way. 68% of the
+    # marked truncations were `head` skims that intent= serves better; the
+    # positional `| tail -N` case has a non-truncating spelling (tee, then tail
+    # the file) that the block message names.
     scrubbed = scrub(text)
     pipes = list(PIPE_TRUNC.finditer(scrubbed))
     # A `| tee` means stdout still flows, so redirects on that payload are not
     # suppressing anything; pipe truncation is judged independently of it.
     redirects = [] if TEE.search(scrubbed) else list(redirect_hits(scrubbed, text))
-    saw_exempt = any(exempt(m) for m in pipes) or any(exempt(m) for m, _ in redirects)
-    pipes = [m for m in pipes if not exempt(m)]
-    redirects = [(m, t) for m, t in redirects if not exempt(m)]
     spans = [(m.start(), m.end()) for m in pipes]
     spans += [(m.start(), m.end()) for m, _ in redirects]
     if pipes:
@@ -307,7 +286,7 @@ def check(text, language):
         m, target = redirects[0]
         return ("redirect", text[m.start():m.end()].strip(), target,
                 _strip_all(text, spans))
-    return ("EXEMPT", "", "", "") if saw_exempt else None
+    return None
 
 
 try:
@@ -330,18 +309,11 @@ else:
     if isinstance(code, str):
         payloads.append(("code", ti.get("language"), code))
 
-# Exempt is per payload ENTRY: a marked command in a batch is skipped, but the
-# scan continues so it cannot whitelist its siblings. Only report EXEMPT (for the
-# counter) if nothing else in the call blocked.
-saw_exempt = False
 for label, lang, text in payloads:
     r = check(text, lang)
     if r is None:
         continue
     kind, token, target, suggested = r
-    if kind == "EXEMPT":
-        saw_exempt = True
-        continue
     # One field per line, and whitespace in the token collapsed. A tab-delimited
     # record broke when a multi-line payload put a newline inside the token: the
     # shell's `cut -f5` then read past the end of line 1 and rendered a message
@@ -372,9 +344,6 @@ for label, lang, text in payloads:
     sys.stdout.write("---PAYLOAD---\n")
     sys.stdout.write(suggested)
     sys.exit(0)
-
-if saw_exempt:
-    print("EXEMPT")
 PYEOF
 
 RESULT=$(printf '%s' "$INPUT" | python3 -c "$_PY" 2>/dev/null)
@@ -385,10 +354,6 @@ RESULT=$(printf '%s' "$INPUT" | python3 -c "$_PY" 2>/dev/null)
 VERDICT=$(printf '%s' "$RESULT" | sed -n '1p')
 
 case "$VERDICT" in
-  EXEMPT)
-    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "ctx_payload_exempt" 2>/dev/null || true
-    exit 0
-    ;;
   BLOCK) ;;
   *) exit 0 ;;
 esac
@@ -437,6 +402,16 @@ The pipe is dropped and ${ASK} added. Context Mode indexes the FULL output and r
 the sections matching your question, so truncating first throws data away for no context
 saving. Output over 5KB flips to FTS5 search-mode automatically.
 EOF
+  # Search mode answers "which sections match", not "the last N lines" -- the one
+  # thing a tail pipe does that intent= cannot. Name the spelling that keeps it.
+  case "$TOKEN" in
+    *tail*)
+      cat >&2 <<EOF
+Need the last lines specifically? Keep the output flowing and tail the copy:
+  <command> 2>&1 | tee run.log; tail -n 3 run.log
+EOF
+      ;;
+  esac
 else
   cat >&2 <<EOF
 [ctx-payload-guard] BLOCKED -- \`${TOKEN}\` sends stdout to a file, so nothing is captured.
@@ -452,11 +427,7 @@ still flows:
 Redirecting stderr (2> file, 2>/dev/null, 2>&1) is fine and never blocked.
 EOF
 fi
-# No bypass hint in either message, deliberately. Measured 2026-10-08: 702 of 704
-# `# ctx-truncate-ok` payloads came AFTER a guard block in the same transcript --
-# the message taught the hatch, and agents then tagged nearly every truncation,
-# outnumbering real blocks 2:1. The marker still works; it is documented for
-# operators (setup.sh, project-settings-example.json), not advertised to agents.
+# No bypass exists to advertise -- see the NO BYPASS MARKER note in check().
 
 bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "ctx_payload" 2>/dev/null || true
 

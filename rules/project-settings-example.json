@@ -125,7 +125,7 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/ctx-payload-guard.sh",
-            "_comment": "Hard-blocks output truncation inside ctx payloads (cmd | head/tail, stdout > file); stderr redirects and tee are never blocked. Bypass: '# ctx-truncate-ok'"
+            "_comment": "Hard-blocks output truncation inside ctx payloads (cmd | head/tail, stdout > file); stderr redirects and tee are never blocked. No bypass marker."
           }
         ]
       },
