@@ -48,7 +48,10 @@ branch is the one that needs the flag.
    `skills/cmm-rules/SKILL.md` and `rules/cmm-agent-preamble.md` say `search_code`
    "auto-converts multi-word input to a regex", and none of them mention `regex=true`.
    Add one line to the calling-convention section.
-4. Tests: assert the emitted line for `grep -nE 'a|b' src/x` contains `regex=true`, and the
+4. `find -name '*.py'` recovery: the find-name classifier strips the wildcards and
+   suggests `search_code(pattern=".py")`, which matches any `.py` substring (QA round 2,
+   R2-09; pre-existing). Suggest a `file_pattern="*.py"` search, or no search_code line.
+5. Tests: assert the emitted line for `grep -nE 'a|b' src/x` contains `regex=true`, and the
    one for `grep -n foo src/x` does not, in each of the three hook suites.
 
 ## Acceptance

@@ -179,15 +179,37 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   #     positived because the verb (cat) matched and a path token in the written
   #     body matched the source-path regex.
   #   - heredoc (`<<`): the body is written content, not a search target.
-  # We cut at the first `<<` and drop each output redirection WITH its target —
-  # NOT a bare single `<`. A bare `<` is an input redirect or process
-  # substitution (`grep foo < src/x`, `diff <(cat src/a.py)`) whose path IS real
-  # navigation and must still block (QA round 1, F-01). Output redirections used
-  # to be handled by cutting at the first `>`, which also discarded every LATER
-  # command: `echo hi > /tmp/x; grep -rn Foo src/` passed (2026-10-14 QA round 1,
-  # F-08).
-  BNAV_HEAD="${BASH_CMD%%<<*}"
-  BNAV_HEAD=$(printf '%s' "$BNAV_HEAD" | sed -E 's/[0-9]*>&[0-9-]+//g; s/(&|[0-9]*)>>?\|?[[:space:]]*[^[:space:];|&<>]*//g')
+  # We drop each heredoc (operator, delimiter, body -- only when its terminator
+  # line exists), each here-string with its word, and each output redirection
+  # WITH its target outside quotes — NOT a bare single `<`. A bare `<` is an input
+  # redirect or process substitution (`grep foo < src/x`, `diff <(cat src/a.py)`)
+  # whose path IS real navigation and must still block (QA round 1, F-01).
+  # Cutting at the first `>` or `<<` discarded every LATER command: `echo hi >
+  # /tmp/x; grep -rn Foo src/` and `x=$((1<<2)); grep -rn Foo src/` passed, and a
+  # sed strip of `>` inside quotes unbalanced them (QA rounds 1-2, F-08 / R2-02 /
+  # R2-07). Python missing -> the old cut, which errs toward passing.
+  BNAV_HEAD=$(BNAV_CMD="$BASH_CMD" python3 -c '
+import os, re
+s = os.environ["BNAV_CMD"]
+hd = re.compile(r"(?<!<)<<-?[ \t]*([\x22\x27]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+pos = 0
+while True:
+    m = hd.search(s, pos)
+    if not m:
+        break
+    eol = s.find("\n", m.end())
+    term = re.compile(r"^[ \t]*" + m.group(2) + r"[ \t]*$", re.M).search(s, eol + 1) if eol >= 0 else None
+    if term:
+        s = s[:m.start()] + s[m.end():eol + 1] + s[term.end() + 1:]
+        pos = m.start()
+    else:
+        pos = m.end()
+s = re.sub(r"<<<[ \t]*(\x22(?:\\.|[^\x22\\])*\x22|\x27[^\x27]*\x27|\S+)", " ", s)
+TOK = re.compile(r"(?P<q>\x27[^\x27]*\x27|\x22(?:\\.|[^\x22\\])*\x22|\\.)"
+                 r"|(?P<rd>(?:&|\b\d+)?>>?\|?[ \t]*(?:&\d+|&-|\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^\s;|&<>()]*))"
+                 r"|.", re.S)
+print("".join("" if m.lastgroup == "rd" else m.group(0) for m in TOK.finditer(s)))
+' 2>/dev/null) || BNAV_HEAD="${BASH_CMD%%<<*}"
   # Match the nav verb only in COMMAND position — at the start of the command or
   # right after a separator (whitespace, |, ;, &, '(') and followed by whitespace
   # or end. A bare regex like `(grep|...)` matched the verb as a SUBSTRING of an
@@ -242,36 +264,54 @@ NONCODE = (".md", ".markdown", ".json", ".yaml", ".yml", ".txt", ".log", ".csv",
            ".toml", ".lock", ".ini", ".cfg", ".conf", ".xml", ".env")
 def noncode(p):
     return p.lower().endswith(NONCODE)
-lx = shlex.shlex(os.environ["BNAV_SCAN"].replace(chr(10), " ; "), posix=False, punctuation_chars=";&|")
-lx.whitespace_split = True
 # A source path can also reach the verb through an earlier command: `cd src/ &&
 # grep -rn Foo .` or `D=src/; grep -rn Foo $D` (QA round 1 F-02). Track the cd
 # directory and simple assignments; expand $NAME / ${NAME} before judging.
-seg, env, cd_src = [], {}, False
+env, cd_src = {}, False
 def expand(x):
     return re.sub(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", lambda m: env.get(m.group(1), m.group(0)), x)
-for t in list(lx) + [";"]:
-    if not set(t) <= set(";&|"):
-        seg.append(t)
-        continue
-    bare = [expand(x.strip(chr(34) + chr(39) + "()")) for x in seg]
-    while bare and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", bare[0]):
-        k, v = bare.pop(0).split("=", 1)
-        env[k] = v
-    if bare[:1] == ["cd"]:
-        cd_src = len(bare) > 1 and bool(SRC.search(bare[1].rstrip("/") + "/"))
-    elif VERB.search(" ".join(seg)):
-        paths = [x for x in bare if SRC.search(x)]
-        globs = [x.split("=", 1)[1] for x in bare if x.startswith(("--include=", "--glob="))]
-        globs += [bare[i + 1] for i, x in enumerate(bare[:-1]) if x in ("--include", "-g", "--glob")]
-        globs = [g for g in globs if not g.startswith("!")]   # rg -g "!x" excludes
-        if globs and all(map(noncode, globs)):
-            pass
-        elif paths and not all(map(noncode, paths)):
-            sys.exit(0)
-        elif not paths and cd_src and len(bare) > 1 and not noncode(bare[-1]):
-            sys.exit(0)   # relative operand under a source dir we cd-ed into
+def check(text):
+    global cd_src
+    lx = shlex.shlex(text.replace(chr(10), " ; "), posix=False, punctuation_chars=";&|")
+    lx.whitespace_split = True
     seg = []
+    for t in list(lx) + [";"]:
+        if not set(t) <= set(";&|"):
+            seg.append(t)
+            continue
+        # A "$(...)" argument is its own command: its verb pairs only with its own
+        # paths. `git -C /r/apps/x commit -m "$(cat <<EOF ... EOF)"` leaves a bare
+        # `cat` in there (QA round 2, R2-07); `echo "$(cat apps/x.ts)"` still blocks.
+        subs = [x for x in seg if x.startswith(chr(34)) and "$(" in x]
+        seg = [x for x in seg if x not in subs]
+        for x in subs:
+            check(x[1:-1].replace("$(", " ; ").replace(")", " ; "))
+        bare = [expand(x.strip(chr(34) + chr(39) + "()")) for x in seg]
+        while bare and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", bare[0]):
+            k, v = bare.pop(0).split("=", 1)
+            env[k] = v
+        v = VERB.search(" ".join(seg))
+        if bare[:1] == ["cd"]:
+            cd_src = len(bare) > 1 and bool(SRC.search(bare[1].rstrip("/") + "/"))
+        elif v:
+            paths = [x for x in bare if SRC.search(x)]
+            globs = [x.split("=", 1)[1] for x in bare if x.startswith(("--include=", "--glob="))]
+            globs += [bare[i + 1] for i, x in enumerate(bare[:-1]) if x in ("--include", "-g", "--glob")]
+            globs = [g for g in globs if not g.startswith("!")]   # rg -g "!x" excludes
+            last = bare[-1] if len(bare) > 1 else ""
+            if globs and all(map(noncode, globs)):
+                pass
+            elif paths and not all(map(noncode, paths)):
+                sys.exit(0)
+            elif (not paths and cd_src and last and not noncode(last)
+                  and not last.startswith(("/", "~"))
+                  and (v.group(2) in ("grep", "rg", "find") or re.search(r"\.[A-Za-z0-9]+$", last))):
+                # Relative operand under a source dir we cd-ed into. Absolute paths
+                # do not live there, and a reader needs a code file -- `cd src &&
+                # tail -f /tmp/server.out`, `cd apps/web && cat Makefile` (R2-06).
+                sys.exit(0)
+        seg = []
+check(os.environ["BNAV_SCAN"])
 sys.exit(3)
 ' 2>/dev/null
     # Only an explicit 3 releases: a lexer error or a missing python3 exits with

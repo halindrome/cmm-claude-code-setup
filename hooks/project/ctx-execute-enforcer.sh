@@ -446,9 +446,12 @@ fi
 # first. `&>` never reaches here (the `&` trips the compound scan above), and a
 # literal `1> f` does not exempt: fail-closed, and rare.
 # A redirect to a terminal stream is not a file: `cat big.c > /dev/stdout` is
-# the flood itself (QA round 1 F-07).
-if [[ "$_OPCHECK" =~ (^|[^0-9])\> ]] \
-   && ! [[ "$_OPCHECK" =~ \>[[:space:]]*/dev/(stdout|stderr|tty|fd/[12]) ]]; then
+# the flood itself (QA round 1 F-07). Checked on the RAW command with /dev/null
+# removed, so a quoted or spelled-out stream -- > "/dev/stdout", /dev/./stdout,
+# /proc/self/fd/1 -- is caught too (QA round 2 R2-05).
+_RAWDEV="${COMMAND//\/dev\/null/}"
+_DEVRE='>[[:space:]]*["'\'']?/(dev|proc)/'
+if [[ "$_OPCHECK" =~ (^|[^0-9])\> ]] && ! [[ "$_RAWDEV" =~ $_DEVRE ]]; then
   case "$_OPCHECK" in
     cat\ *\>*|echo\ *\>*|printf\ *\>*)           _track_exempt authoring; exit 0 ;;
   esac

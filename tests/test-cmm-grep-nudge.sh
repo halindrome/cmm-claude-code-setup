@@ -272,6 +272,22 @@ _assert_exit "c53: cd /tmp && grep . allowed" 0 "$(_bash_cmd 'cd /tmp && grep -r
 _assert_exit "c54: echo > file; grep src/ blocked" 2 "$(_bash_cmd 'echo hi > /tmp/x; grep -rn Foo src/')"
 _assert_exit "c55: ls 2>/dev/null; grep src/ blocked" 2 "$(_bash_cmd 'ls 2>/dev/null; grep -rn Foo src/')"
 _assert_exit "c56: grep 2>&1 | head on src/ blocked" 2 "$(_bash_cmd 'grep -rn Foo src/ 2>&1 | head -5')"
+# QA round 2.
+_assert_exit "c57: R2-02 quoted > keeps quotes balanced" 0 "$(_bash_cmd 'grep -n "a > b" CHANGELOG.md; ls apps/')"
+_assert_exit "c58: R2-07 here-string does not hide a later grep" 2 "$(_bash_cmd 'cat <<< "$x"; grep -rn Foo src/')"
+_assert_exit "c59: R2-07 \$((1<<2)) does not hide a later grep" 2 "$(_bash_cmd 'x=$((1<<2)); grep -rn Foo src/')"
+_assert_exit "c60: R2-07 grep after a heredoc body blocked" 2 "$(_bash_cmd "cat > /tmp/n <<'EOF'
+note
+EOF
+grep -rn Foo src/")"
+_assert_exit "c61: R2-07 heredoc commit message allowed" 0 "$(_bash_cmd "git -C /repo/apps/mobile commit -m \"\$(cat <<'EOF'
+fix: src/ thing
+EOF
+)\"")"
+_assert_exit "c62: \"\$(cat apps/x.ts)\" still blocked" 2 "$(_bash_cmd 'echo "$(cat apps/x.ts)"')"
+_assert_exit "c63: R2-06 cd src && tail absolute log allowed" 0 "$(_bash_cmd 'cd src && tail -f /tmp/server.out')"
+_assert_exit "c64: R2-06 cd apps/web && cat Makefile allowed" 0 "$(_bash_cmd 'cd apps/web && cat Makefile')"
+_assert_exit "c65: cd src && cat main.py still blocked" 2 "$(_bash_cmd 'cd src && cat main.py')"
 
 echo "--- Test c18b: an --include glob never becomes the search term (QA r1 F-03) ---"
 # `.*` in the extractor was greedy, so it bound the LAST quoted string: a trailing

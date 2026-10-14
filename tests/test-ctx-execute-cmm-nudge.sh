@@ -145,6 +145,16 @@ _assert_exit "F-06 (grep ...)"                            2 "$(_ce '(grep -rn Fo
 _assert_exit "F-06 heredoc write then source grep"        2 "$(_ce "$(printf "cat > /tmp/qa-f <<'EOF'\nhello\nEOF\ngrep -rn Foo src/")")"
 _assert_exit "F-06 arithmetic shift then source grep"     2 "$(_ce 'x=$((1<<2)); grep -rn Foo src/')"
 _assert_exit "F-06 grep inside a heredoc body passes"     0 "$(_ce "$(printf "cat <<'EOF'\ngrep -rn Foo src/\nEOF")")"
+# QA round 2.
+_assert_exit "R2-01 python payload is not shell"          0 "$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"mcp__context-mode__ctx_execute","tool_input":{"language":"python","code":"import re\nrg = re.compile(\"x\")\nprint(open(\"src/a.py\").read())"},"cwd":sys.argv[1]}))' "$FIX")"
+_assert_exit "R2-03 here-string grep passes"              0 "$(_ce 'out=$(npm test); grep -c FAIL <<< "$out"')"
+_assert_exit "R2-04 grep of a mktemp var passes"          0 "$(_ce 'T=$(mktemp); npm test > $T 2>&1; grep -c FAIL $T')"
+_assert_exit "R2-04 grep of an assigned log path passes"  0 "$(_ce 'LOG=/tmp/run.log; grep -c FAIL $LOG')"
+_assert_exit "R2-04 loop over .md files passes"           0 "$(_ce 'for f in docs/*.md; do grep -n TODO "$f"; done')"
+_assert_exit "R2-04 loop over source dirs blocks"         2 "$(_ce 'for d in src lib; do grep -rn Foo $d; done')"
+_assert_exit "R2-04 mid-word loop var blocks"             2 "$(_ce 'for a in x y; do grep -rn Foo src/$a; done')"
+_assert_exit "R2-04 loop over \$(find) blocks"             2 "$(_ce 'for f in $(find src -name "*.ts"); do grep -n Foo $f; done')"
+_assert_exit "R2-08 unresolvable cd: src/ grep blocks"    2 "$(_ce 'R=$(git rev-parse --show-toplevel); cd $R; grep -rn Foo src/')"
 # Registered as a RELATIVE path (bash .claude/hooks/...) with the payload cwd in
 # a subdirectory: the lib must still load, or the gate fails open.
 _rel_rc=0

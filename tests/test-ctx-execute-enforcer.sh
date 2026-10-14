@@ -488,6 +488,13 @@ _assert_exit "cat > /dev/stdout blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"cat big.c > /dev/stdout"}}'
 _assert_exit "cat > /dev/stderr blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"cat big.c >/dev/stderr"}}'
+# QA round 2 R2-05: quoted or spelled-out stream paths.
+_assert_exit "cat > \"/dev/stdout\" blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c > \"/dev/stdout\""}}'
+_assert_exit "cat > /dev/./stdout blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c > /dev/./stdout"}}'
+_assert_exit "cat > /proc/self/fd/1 blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c > /proc/self/fd/1"}}'
 
 # An UNQUOTED heredoc keeps its body and newlines visible to the compound scan,
 # so it is blocked before it can reach the authoring case. Fail-closed.

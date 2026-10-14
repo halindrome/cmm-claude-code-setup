@@ -88,6 +88,14 @@ if not code.strip():
     emit(tool_name, 'empty', '', '', cwd)
     sys.exit(0)
 
+# Only shell is parsed as shell. A Python line 'rg = re.compile(...)' or Perl's
+# builtin grep at the start of a statement read as a search command and blocked
+# with a nonsense REPLACE WITH (QA round 2 R2-01). Batch commands are always
+# shell. Same scope as ctx-payload-guard.sh.
+if not tool_name.endswith('ctx_batch_execute') and (ti.get('language') or 'shell').lower() not in ('shell', 'bash', 'sh', 'zsh'):
+    emit(tool_name, 'other', '', '', cwd)
+    sys.exit(0)
+
 # Segment parser. This used to accept only a single pipe-less statement and fail
 # open on anything else -- which is how agents actually write sandbox searches.
 # Observed 2026-10-14: a subagent blocked on a Bash grep re-issued it as
@@ -343,12 +351,34 @@ def read_target(tokens):
 base = cwd
 read_file = ''
 hits = []
+env = {}
+
+def expand(t):
+    # Candidate values for a word: itself, or every substitution of the
+    # assigned / loop values of the \$NAMEs in it; [] when it references a
+    # variable we never saw set.
+    names = set(re.findall(r'\\\$\{?([A-Za-z_][A-Za-z0-9_]*)', t))
+    if not names:
+        return [] if '\$' in t else [t]
+    if not names <= set(env):
+        return []
+    outs = [t]
+    for n in names:
+        rx = re.compile(r'\\\$(\{' + n + r'\}|' + n + r'(?![A-Za-z0-9_]))')
+        outs = [rx.sub(lambda m, v=v: v, o) for o in outs for v in env[n]]
+    return outs[:20]
 try:
     segs = list(segments(strip_heredocs(code)))
 except ValueError:
     segs = []   # unbalanced quotes -> cannot tell -> fail open
 for raw, after_pipe in segs:
     if after_pipe or any('\$(' in t or chr(96) in t for t in raw):
+        # for x in \$(find ... -name '*.ts'): the values are unknown, but a list
+        # that names no file type, or any code type, is taken as files here so
+        # the loop body stays gated. One that names only non-code files is not.
+        if len(raw) > 3 and raw[0] == 'for' and raw[2] == 'in':
+            exts = [e.lower() for e in re.findall(r'\.([A-Za-z0-9]+)\b', ' '.join(raw[3:]))]
+            env[raw[1]] = [] if exts and all('.' + e in NONCODE for e in exts) else ['.']
         continue
     try:
         toks = shlex.split(' '.join(raw), posix=True)
@@ -362,14 +392,22 @@ for raw, after_pipe in segs:
     for t in toks:
         if skip:
             skip = False
-        elif re.fullmatch(r'\d*>>?|&>>?|\d*>\|', t):
-            skip = True
+        elif re.fullmatch(r'\d*>>?|&>>?|\d*>\||<<<', t):
+            skip = True   # <<< feeds a string, not a file (QA round 2 R2-03)
         elif not re.match(r'^(\d*[<>]|&>)', t):
             kept.append(t)
+    herestr = '<<<' in toks
     toks = kept
     # Wrapper words and a ( glued to the verb by the lexer (QA round 1 F-06).
+    # Assignments are remembered so a later \$NAME target can be resolved.
     while toks and (toks[0] in ('do','then','else','elif','if','while','until','{','(','!','sudo','time','command','env') or re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', toks[0])):
+        if '=' in toks[0] and toks[0][0] not in '({!':
+            k, v = toks[0].split('=', 1)
+            env[k] = [v]
         toks = toks[1:]
+    if len(toks) > 3 and toks[0] == 'for' and toks[2] == 'in':
+        env[toks[1]] = toks[3:]
+        continue
     if toks and toks[0].startswith('(') and len(toks[0]) > 1:
         toks[0] = toks[0].lstrip('(')
     if toks and toks[-1].endswith(')') and not toks[-1].startswith('('):
@@ -377,20 +415,30 @@ for raw, after_pipe in segs:
     if not toks:
         continue
     if toks[0] == 'cd' and len(toks) > 1:
-        base = os.path.join(base, toks[1])
+        # An unresolvable cd (cd \$R, cd \$PWD) leaves base unknown; targets
+        # then resolve against cwd rather than a path that does not exist
+        # (QA round 2 R2-08).
+        d = expand(toks[1])
+        base = os.path.join(base or '/', d[0]) if len(d) == 1 and (base or d[0].startswith('/')) else None
         continue
     rt = read_target(toks)
-    if rt and not read_file:
+    if rt and not read_file and base:
         rt = os.path.join(base, rt)
         if os.path.isfile(rt):
             read_file = rt
     hit = classify(toks)
+    if hit and herestr and not hit[2]:
+        hit = None   # grep FAIL <<< "\$out" searches the string, not cwd
     if hit:
         kind, pattern, target = hit
-        if base != cwd and not target.startswith('/'):
-            joined = os.path.join(base, target)
-            target = joined if os.path.exists(joined) else base
-        hits.append((kind, pattern, target))
+        # A \$NAME target expands to the assigned value or each loop value; one
+        # that cannot be resolved (\$(mktemp), a read variable) is not a source
+        # path we can name, so it is not gated (QA round 2 R2-04).
+        for t in expand(target):
+            if base and base != cwd and not t.startswith('/'):
+                joined = os.path.join(base, t)
+                t = joined if os.path.exists(joined) else (base if os.path.isdir(base) else t)
+            hits.append((kind, pattern, t))
 
 # Every search, not just the first: the shell side releases a hit whose target
 # is non-code or outside the repo, so stopping at the first one let
