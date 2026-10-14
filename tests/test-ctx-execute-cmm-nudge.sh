@@ -105,13 +105,27 @@ _assert_exit "go test ./..."                0 "{\"tool_name\":\"mcp__context-mod
 _assert_exit "find src -name *.log (non-code ext)" 0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"find src -name '*.log'\"},\"cwd\":\"$FIX\"}"
 
 echo ""
-echo "--- Conservative parser: ambiguous commands fail open (expect exit 0) ---"
-_assert_exit "multi-statement with semicolon" 0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo x; grep y src/\"},\"cwd\":\"$FIX\"}"
-_assert_exit "piped cat | grep"             0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cat foo | grep bar\"},\"cwd\":\"$FIX\"}"
-_assert_exit "&& chained"                   0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cd src && grep foo .\"},\"cwd\":\"$FIX\"}"
-_assert_exit "|| chained"                   0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep foo src/ || true\"},\"cwd\":\"$FIX\"}"
+# Compound commands are how agents actually write sandbox searches. They used to
+# fail open wholesale; observed 2026-10-14, a subagent ran 26 of them in a row.
+echo "--- Compound commands: every segment is classified (expect exit 2) ---"
+_assert_exit "multi-statement with semicolon" 2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo x; grep y src/\"},\"cwd\":\"$FIX\"}"
+_assert_exit "&& chained"                   2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cd src && grep foo .\"},\"cwd\":\"$FIX\"}"
+_assert_exit "|| chained"                   2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep foo src/ || true\"},\"cwd\":\"$FIX\"}"
+_assert_exit "for-loop"                     2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"for f in src/*; do grep foo \\\"\$f\\\"; done\"},\"cwd\":\"$FIX\"}"
+_assert_exit "newline-separated statements" 2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"ls src\\ngrep -rn foo src/\"},\"cwd\":\"$FIX\"}"
+_assert_exit "grep at pipeline head"        2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn foo src/ 2>&1 | grep -v spec\"},\"cwd\":\"$FIX\"}"
+_assert_stderr_contains "quoted pipe is pattern, not separator" \
+    "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep 'a|b' src/; echo done\"},\"cwd\":\"$FIX\"}" \
+    'search_code(pattern="a|b"'
+_assert_exit "incident payload (cd; for; do grep | grep)" 2 "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cd $FIX; ls; for a in src lib; do echo \\\"== \$a\\\"; grep -rnE \\\"\\\\\\\\.userID|userID\\\\\\\\]\\\" \$a --include=*.ts 2>/dev/null | grep -viE \\\"spec\\\\\\\\.ts\\\"; done\"},\"cwd\":\"$FIX\"}"
+_assert_exit "non-code file target passes"  0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cd $FIX; grep -n 'Phase' CHANGELOG.md; echo done\"},\"cwd\":\"$FIX\"}"
+_assert_exit "cd into another repo releases" 0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cd $NONIDX && grep -rn foo .\"},\"cwd\":\"$FIX\"}"
+
+echo ""
+echo "--- Still allowed inside compound commands (expect exit 0) ---"
+_assert_exit "grep as a pipe sink"          0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cat foo | grep bar\"},\"cwd\":\"$FIX\"}"
+_assert_exit "git log | grep sink"          0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git log --oneline | grep foo; echo done\"},\"cwd\":\"$FIX\"}"
 _assert_exit "heredoc containing grep"      0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cat <<EOF\\ngrep foo bar\\nEOF\"},\"cwd\":\"$FIX\"}"
-_assert_exit "for-loop"                     0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"for f in src/*; do grep foo \\\"\\$f\\\"; done\"},\"cwd\":\"$FIX\"}"
 _assert_exit "backtick subshell"            0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo \\\`grep foo src/\\\`\"},\"cwd\":\"$FIX\"}"
 _assert_exit "\$(...) subshell"             0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo \$(grep foo src/)\"},\"cwd\":\"$FIX\"}"
 

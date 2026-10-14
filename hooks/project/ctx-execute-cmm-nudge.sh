@@ -11,7 +11,7 @@
 #                      MCP-server-form (mcp__context-mode__ctx_execute) — see internal tool_name probe.
 #
 # Sibling of hooks/project/grep-cmm-gate.sh (Grep-tool hard block). Same REPLACE WITH: machine-readable recovery format.
-# Parser is intentionally conservative per 46-CONTEXT.md — single-statement, pipe-less, heredoc-less command lines only; anything else fails open.
+# Parser classifies every ; && || newline-separated command (pipeline heads only); heredocs and $(...) segments fail open.
 
 # --- Input Parsing ---
 INPUT=$(cat 2>/dev/null)
@@ -25,7 +25,7 @@ INPUT=$(cat 2>/dev/null)
 #   4: target_path (extracted last positional arg, or empty)
 #   5: cwd
 PARSED=$(echo "$INPUT" | python3 -c "
-import sys, json, re, shlex
+import sys, json, os, re, shlex
 
 def emit(tool_name='', kind='other', pattern='', target='', cwd=''):
     print(tool_name)
@@ -61,16 +61,9 @@ if tool_name.endswith('ctx_batch_execute'):
 else:
     _cmds.append(ti.get('code','') or '')
 
-# Classify on the first command that LOOKS like a code search, so one grep
-# hidden among several batch commands is still caught. This verb set mirrors
-# GREP_FAMILY below and must stay in lockstep with it.
-_SEARCH_VERBS = ('grep', 'egrep', 'fgrep', 'rg', 'ack', 'ag', 'ugrep', 'find')
-code = _cmds[0] if _cmds else ''
-for _c in _cmds:
-    _toks = _c.strip().split()
-    if _toks and _toks[0].rsplit('/', 1)[-1] in _SEARCH_VERBS:
-        code = _c
-        break
+# Every batch command is segmented below, so one grep hidden among several
+# batch commands is still caught.
+code = chr(10).join(_cmds)
 
 # Accept both install-form prefixes across all THREE ctx execution tools. The
 # install matcher in setup.sh, this set, and the 'case \$TOOL_NAME' block near
@@ -100,8 +93,15 @@ if '# cmm-exempt' in code:
     emit(tool_name, 'exempt', '', '', cwd)
     sys.exit(0)
 
-# Conservative parser: reject any ambiguity -> kind 'other' (fail open)
-# Reject: pipes, semicolons, &&, ||, heredocs, backticks, \$(...), multi-line, leading keyword
+# Segment parser. This used to accept only a single pipe-less statement and fail
+# open on anything else -- which is how agents actually write sandbox searches.
+# Observed 2026-10-14: a subagent blocked on a Bash grep re-issued it as
+# ctx_execute('cd apps; for a in ...; do grep -rnE ... | grep -v spec; done')
+# 26 times, and every call sailed through. Now every command separated by
+# ; && || or a newline is classified. Only a pipeline HEAD counts: a grep after
+# a pipe filters upstream output, it searches nothing.
+# Still fail open: heredocs (the body is content, not commands -- whole payload)
+# and \$(...) / backtick subshells (that segment only).
 # Metacharacters INSIDE quotes do NOT count as shell operators.
 def _strip_quoted(s):
     # Remove single/double-quoted substrings so subsequent metachar checks only see
@@ -137,50 +137,31 @@ def _strip_quoted(s):
         i += 1
     return ''.join(out)
 
-def is_simple_single_statement(s):
-    stripped = s.strip()
-    if not stripped:
-        return False
-    # Multi-line command text (more than one non-blank non-comment line)
-    non_blank_lines = [l for l in stripped.splitlines() if l.strip() and not l.strip().startswith('#')]
-    if len(non_blank_lines) != 1:
-        return False
-    line = non_blank_lines[0]
-    # Check metacharacters only OUTSIDE quotes
-    unquoted = _strip_quoted(line)
-    forbidden = ['|', ';', '&&', '||', '<<', '\`', '\$(']
-    for tok in forbidden:
-        if tok in unquoted:
-            return False
-    # Leading shell keywords that begin compound commands
-    first_word = line.split(None, 1)[0] if line.split() else ''
-    if first_word in ('for','while','if','case','until','select','function','{','('):
-        return False
-    return True
-
-if not is_simple_single_statement(code):
+if '<<' in _strip_quoted(code):
     emit(tool_name, 'other', '', '', cwd)
     sys.exit(0)
 
-line = [l for l in code.strip().splitlines() if l.strip() and not l.strip().startswith('#')][0]
+def segments(s):
+    # Yields (tokens, after_pipe) per command. Lexed non-posix so a QUOTED ; or |
+    # keeps its quotes and cannot pose as a separator, then re-split posix to
+    # strip them. A bare & also separates, so 2>&1 leaves a stray 2> (dropped
+    # below as a redirection) rather than swallowing the next command.
+    s = s.replace(chr(92) + chr(10), ' ').replace(chr(10), ' ; ')
+    lx = shlex.shlex(s, posix=False, punctuation_chars=';&|')
+    lx.whitespace_split = True
+    cur, after_pipe = [], False
+    for t in list(lx) + [';']:
+        if set(t) <= set(';&|'):
+            yield cur, after_pipe
+            cur, after_pipe = [], (t == '|')
+        else:
+            cur.append(t)
 
-# Tokenize respecting quotes
-try:
-    tokens = shlex.split(line, posix=True)
-except Exception:
-    emit(tool_name, 'other', '', '', cwd)
-    sys.exit(0)
-
-if not tokens:
-    emit(tool_name, 'other', '', '', cwd)
-    sys.exit(0)
-
-first = tokens[0]
-# Sub-command laundering: git <git-opts...> grep ... is still a grep invocation.
-# Skip leading git-level options (-c key=val, -C path, --git-dir=..., --work-tree=...,
-# --no-pager, -p/--paginate, --bare, --no-replace-objects, --exec-path[=...], --namespace[=...])
-# and unwrap to the subcommand. If the subcommand is grep, treat the remainder as a grep call.
-if first == 'git' and len(tokens) >= 2:
+def git_unwrap(tokens):
+    # Sub-command laundering: git <git-opts...> grep ... is still a grep invocation.
+    # Skip leading git-level options (-c key=val, -C path, --git-dir=..., --work-tree=...,
+    # --no-pager, -p/--paginate, --bare, --no-replace-objects, --exec-path[=...], --namespace[=...])
+    # and unwrap to the subcommand. If the subcommand is grep, treat the remainder as a grep call.
     git_value_opts = {'-c','-C','--git-dir','--work-tree','--namespace','--exec-path','--super-prefix','--list-cmds','--attr-source'}
     j = 1
     while j < len(tokens):
@@ -197,8 +178,9 @@ if first == 'git' and len(tokens) >= 2:
         # bare boolean flag
         j += 1
     if j < len(tokens) and tokens[j] == 'grep':
-        tokens = tokens[j:]
-        first = tokens[0]
+        return tokens[j:]
+    return tokens
+
 GREP_FAMILY = {'grep','egrep','fgrep','rg','ripgrep','ack','ag','ugrep'}
 
 def extract_grep_family(toks, tool_first):
@@ -292,21 +274,50 @@ def extract_find_name(toks):
     # Not a code extension -> not a code-search
     return (None, '', '')
 
-if first in GREP_FAMILY:
-    pattern, target = extract_grep_family(tokens, first)
-    if not pattern:
-        emit(tool_name, 'other', '', '', cwd)
-        sys.exit(0)
-    emit(tool_name, 'grep-family', pattern, target, cwd)
-    sys.exit(0)
+def classify(tokens):
+    first = tokens[0]
+    if first == 'git':
+        tokens = git_unwrap(tokens)
+        first = tokens[0]
+    if first in GREP_FAMILY:
+        pattern, target = extract_grep_family(tokens, first)
+        return ('grep-family', pattern, target) if pattern else None
+    if first == 'find':
+        kind, pat, target = extract_find_name(tokens)
+        return (kind, pat, target) if kind else None
+    return None
 
-if first == 'find':
-    kind, pat, target = extract_find_name(tokens)
-    if kind is None:
-        emit(tool_name, 'other', '', '', cwd)
+# A cd earlier in the payload moves where a relative target points; follow it so
+# the outside-repo and non-code-dir checks see the real directory. A target that
+# does not resolve (apps/\$a/src) falls back to the cd directory itself.
+base = cwd
+try:
+    segs = list(segments(code))
+except ValueError:
+    segs = []   # unbalanced quotes -> cannot tell -> fail open
+for raw, after_pipe in segs:
+    if after_pipe or any('\$(' in t or chr(96) in t for t in raw):
+        continue
+    try:
+        toks = shlex.split(' '.join(raw), posix=True)
+    except ValueError:
+        continue
+    toks = [t for t in toks if not re.match(r'^(\d*[<>]|&>)', t)]
+    while toks and (toks[0] in ('do','then','else','{','(','!','sudo') or re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', toks[0])):
+        toks = toks[1:]
+    if not toks:
+        continue
+    if toks[0] == 'cd' and len(toks) > 1:
+        base = os.path.join(base, toks[1])
+        continue
+    hit = classify(toks)
+    if hit:
+        kind, pattern, target = hit
+        if base != cwd and not target.startswith('/'):
+            joined = os.path.join(base, target)
+            target = joined if os.path.exists(joined) else base
+        emit(tool_name, kind, pattern, target, cwd)
         sys.exit(0)
-    emit(tool_name, kind, pat, target, cwd)
-    sys.exit(0)
 
 emit(tool_name, 'other', '', '', cwd)
 " 2>/dev/null)
@@ -404,6 +415,12 @@ case "$_PROBE_DIR" in
 esac
 case "$TARGET_PATH" in
     */node_modules/*|*/dist/*|*/build/*|*/.git/*|*/vendor/*|*/target/*|node_modules/*|dist/*|build/*|.git/*|vendor/*|target/*) exit 0 ;;
+esac
+# Non-code file targets: CMM has nothing to offer for them, and a block that
+# suggests search_graph(name_pattern=...) on CHANGELOG.md trains agents to reach
+# for '# cmm-exempt' reflexively. Same carve-out as the Grep gate.
+case "$TARGET_PATH" in
+    *.md|*.json|*.yaml|*.yml|*.txt|*.log|*.csv|*.toml|*.lock|*.ini|*.xml|*.env) exit 0 ;;
 esac
 
 # REPO_ROOT is already the resolved session project root (from project-root.sh).
