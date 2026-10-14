@@ -495,6 +495,18 @@ _assert_exit "cat > /dev/./stdout blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"cat big.c > /dev/./stdout"}}'
 _assert_exit "cat > /proc/self/fd/1 blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"cat big.c > /proc/self/fd/1"}}'
+# QA round 3 F-07: other spellings of the same stream.
+_assert_exit "cat > ''/dev/stdout blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c > '"''"'/dev/stdout"}}'
+_assert_exit "cat > //dev/stdout blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c > //dev/stdout"}}'
+_assert_exit "cat > /./dev/stdout blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c > /./dev/stdout"}}'
+# QA round 3 F-02: content that MENTIONS a stream is not a redirect to it.
+_assert_exit "heredoc body mentioning /dev/stderr allowed" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat > /tmp/s.sh <<'"'"'EOF'"'"'\necho oops > /dev/stderr\nEOF"}}'
+_assert_exit "echo of text mentioning /dev/stdout allowed" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo \"use > /dev/stdout\" > notes.md"}}'
 
 # An UNQUOTED heredoc keeps its body and newlines visible to the compound scan,
 # so it is blocked before it can reach the authoring case. Fail-closed.

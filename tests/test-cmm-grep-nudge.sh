@@ -288,6 +288,13 @@ _assert_exit "c62: \"\$(cat apps/x.ts)\" still blocked" 2 "$(_bash_cmd 'echo "$(
 _assert_exit "c63: R2-06 cd src && tail absolute log allowed" 0 "$(_bash_cmd 'cd src && tail -f /tmp/server.out')"
 _assert_exit "c64: R2-06 cd apps/web && cat Makefile allowed" 0 "$(_bash_cmd 'cd apps/web && cat Makefile')"
 _assert_exit "c65: cd src && cat main.py still blocked" 2 "$(_bash_cmd 'cd src && cat main.py')"
+# QA round 3.
+_assert_exit "c66: F-01 grep \"\$(pwd)/src/\" blocked" 2 "$(_bash_cmd 'grep -rn Foo "$(pwd)/src/"')"
+_assert_exit "c67: F-01 rg \"\$(git rev-parse)/apps/web\" blocked" 2 "$(_bash_cmd 'rg Foo "$(git rev-parse --show-toplevel)/apps/web"')"
+_assert_exit "c68: F-01 cat \"src/\$(echo main).py\" blocked" 2 "$(_bash_cmd 'cat "src/$(echo main).py"')"
+_assert_exit "c69: F-04 quoted <<< on a .md file allowed" 0 "$(_bash_cmd "grep -n '<<<<<<<' hooks/README.md")"
+_assert_exit "c70: F-05 cd inside \$(...) does not leak" 0 "$(_bash_cmd 'echo "$(cd src && pwd)"; cat main.py')"
+_assert_exit "c71: F-09 here-string running cat src/ blocked" 2 "$(_bash_cmd 'grep Foo <<< "$(cat src/main.py)"')"
 
 echo "--- Test c18b: an --include glob never becomes the search term (QA r1 F-03) ---"
 # `.*` in the extractor was greedy, so it bound the LAST quoted string: a trailing

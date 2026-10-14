@@ -351,12 +351,25 @@ def read_target(tokens):
 base = cwd
 read_file = ''
 hits = []
-env = {}
+# PWD and HOME are known, not unresolvable: grep -rn Foo \$PWD/src is the
+# common way to build a rooted path (QA round 3 F-03).
+env = {'PWD': [cwd], 'HOME': [os.path.expanduser('~')]}
+
+def toplevel():
+    # Nearest ancestor holding .git; no subprocess on the hook's hot path.
+    d = base or cwd
+    while d and d != '/':
+        if os.path.exists(os.path.join(d, '.git')):
+            return d
+        d = os.path.dirname(d)
+    return cwd
 
 def expand(t):
     # Candidate values for a word: itself, or every substitution of the
     # assigned / loop values of the \$NAMEs in it; [] when it references a
-    # variable we never saw set.
+    # variable we never saw set. \${N:-word} falls back to word (F-03).
+    t = re.sub(r'\\\$\{([A-Za-z_][A-Za-z0-9_]*):?[-=]([^}]*)\}',
+               lambda m: ('\$' + m.group(1)) if m.group(1) in env else m.group(2), t)
     names = set(re.findall(r'\\\$\{?([A-Za-z_][A-Za-z0-9_]*)', t))
     if not names:
         return [] if '\$' in t else [t]
@@ -376,9 +389,21 @@ for raw, after_pipe in segs:
         # for x in \$(find ... -name '*.ts'): the values are unknown, but a list
         # that names no file type, or any code type, is taken as files here so
         # the loop body stays gated. One that names only non-code files is not.
+        # Only glob words name the file type: \$(cat list.txt) says nothing about
+        # what the list holds (QA round 3 F-10).
         if len(raw) > 3 and raw[0] == 'for' and raw[2] == 'in':
-            exts = [e.lower() for e in re.findall(r'\.([A-Za-z0-9]+)\b', ' '.join(raw[3:]))]
+            globs = ' '.join(w for w in raw[3:] if '*' in w)
+            exts = [e.lower() for e in re.findall(r'\.([A-Za-z0-9]+)\b', globs)]
             env[raw[1]] = [] if exts and all('.' + e in NONCODE for e in exts) else ['.']
+        # ROOT=\$(git rev-parse ... toplevel) / D=\$(pwd) are known values;
+        # any other substitution (\$(mktemp)) stays unknown (QA round 3 F-03).
+        m = re.match(r'^(?:(?:export|local|declare|readonly|typeset)\s+)?([A-Za-z_][A-Za-z0-9_]*)=\x22?\\\$\((.*)\)\x22?$', ' '.join(raw))
+        if m:
+            sub = m.group(2).strip()
+            if sub == 'pwd':
+                env[m.group(1)] = [base or cwd]
+            elif re.fullmatch(r'git (-C \S+ )?rev-parse --show-toplevel', sub):
+                env[m.group(1)] = [toplevel()]
         continue
     try:
         toks = shlex.split(' '.join(raw), posix=True)
@@ -389,6 +414,7 @@ for raw, after_pipe in segs:
     # (QA round 1 F-05 -- the hook released on the redirect file). A bare '<' is
     # dropped alone so the file it feeds stays the grep target.
     kept, skip = [], False
+    herestr = any(t.startswith('<<<') for t in toks)   # also <<<\"\$out\" (R3 F-06)
     for t in toks:
         if skip:
             skip = False
@@ -396,11 +422,10 @@ for raw, after_pipe in segs:
             skip = True   # <<< feeds a string, not a file (QA round 2 R2-03)
         elif not re.match(r'^(\d*[<>]|&>)', t):
             kept.append(t)
-    herestr = '<<<' in toks
     toks = kept
     # Wrapper words and a ( glued to the verb by the lexer (QA round 1 F-06).
     # Assignments are remembered so a later \$NAME target can be resolved.
-    while toks and (toks[0] in ('do','then','else','elif','if','while','until','{','(','!','sudo','time','command','env') or re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', toks[0])):
+    while toks and (toks[0] in ('do','then','else','elif','if','while','until','{','(','!','sudo','time','command','env','export','local','declare','readonly','typeset') or re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', toks[0])):
         if '=' in toks[0] and toks[0][0] not in '({!':
             k, v = toks[0].split('=', 1)
             env[k] = [v]
@@ -420,6 +445,7 @@ for raw, after_pipe in segs:
         # (QA round 2 R2-08).
         d = expand(toks[1])
         base = os.path.join(base or '/', d[0]) if len(d) == 1 and (base or d[0].startswith('/')) else None
+        env['PWD'] = [base] if base else []
         continue
     rt = read_target(toks)
     if rt and not read_file and base:

@@ -446,12 +446,29 @@ fi
 # first. `&>` never reaches here (the `&` trips the compound scan above), and a
 # literal `1> f` does not exempt: fail-closed, and rare.
 # A redirect to a terminal stream is not a file: `cat big.c > /dev/stdout` is
-# the flood itself (QA round 1 F-07). Checked on the RAW command with /dev/null
-# removed, so a quoted or spelled-out stream -- > "/dev/stdout", /dev/./stdout,
-# /proc/self/fd/1 -- is caught too (QA round 2 R2-05).
-_RAWDEV="${COMMAND//\/dev\/null/}"
-_DEVRE='>[[:space:]]*["'\'']?/(dev|proc)/'
-if [[ "$_OPCHECK" =~ (^|[^0-9])\> ]] && ! [[ "$_RAWDEV" =~ $_DEVRE ]]; then
+# the flood itself (QA round 1 F-07). The real redirect targets are read from
+# the first line (a heredoc body follows it) by shlex, which resolves quoting
+# and normpath the spelling: > "/dev/stdout", ''/dev/stdout, //dev/stdout,
+# /proc/self/fd/1 are all caught, while `echo "> /dev/stdout" > notes.md` and
+# a heredoc body mentioning /dev/stderr are not (QA rounds 2-3, R2-05 / F-02 /
+# F-07). Unparseable -> no exemption.
+_devout() {
+  COMMAND="$COMMAND" python3 -c '
+import os, posixpath, shlex, sys
+line = os.environ["COMMAND"].split(chr(10))[0]
+lx = shlex.shlex(line, posix=True, punctuation_chars=True)
+lx.whitespace_split = True
+toks = list(lx)
+for i, t in enumerate(toks[:-1]):
+    if t in (">", ">>", ">|", "&>", "&>>"):
+        p = posixpath.normpath("/" + toks[i + 1].lstrip("/")) if toks[i + 1].startswith("/") else ""
+        if p.startswith(("/dev/", "/proc/")) and p != "/dev/null":
+            sys.exit(0)
+sys.exit(1)
+' 2>/dev/null
+  [ $? -ne 1 ]
+}
+if [[ "$_OPCHECK" =~ (^|[^0-9])\> ]] && ! _devout; then
   case "$_OPCHECK" in
     cat\ *\>*|echo\ *\>*|printf\ *\>*)           _track_exempt authoring; exit 0 ;;
   esac

@@ -155,6 +155,17 @@ _assert_exit "R2-04 loop over source dirs blocks"         2 "$(_ce 'for d in src
 _assert_exit "R2-04 mid-word loop var blocks"             2 "$(_ce 'for a in x y; do grep -rn Foo src/$a; done')"
 _assert_exit "R2-04 loop over \$(find) blocks"             2 "$(_ce 'for f in $(find src -name "*.ts"); do grep -n Foo $f; done')"
 _assert_exit "R2-08 unresolvable cd: src/ grep blocks"    2 "$(_ce 'R=$(git rev-parse --show-toplevel); cd $R; grep -rn Foo src/')"
+# QA round 3.
+_assert_exit "F-03 \$PWD/src blocks"                      2 "$(_ce 'grep -rn Foo $PWD/src')"
+_assert_exit "F-03 \"\${PWD}/src/\" blocks"                2 "$(_ce 'grep -rn Foo "${PWD}/src/"')"
+_assert_exit "F-03 \${D:-src} blocks"                     2 "$(_ce 'grep -rn Foo ${D:-src}')"
+_assert_exit "F-03 ROOT=\$(git rev-parse) blocks"         2 "$(_ce 'ROOT=$(git rev-parse --show-toplevel); grep -rn Foo $ROOT/src')"
+_assert_exit "F-03 export D=src blocks"                   2 "$(_ce 'export D=src; grep -rn Foo $D')"
+_assert_exit "F-03 local D=src blocks"                    2 "$(_ce 'local D=src; grep -rn Foo $D')"
+_assert_exit "F-03 batch \$PWD/src blocks"                2 "$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"mcp__plugin_context-mode_context-mode__ctx_batch_execute","tool_input":{"commands":[{"label":"a","command":"grep -rn Foo $PWD/src"}]},"cwd":sys.argv[1]}))' "$FIX")"
+_assert_exit "F-06 attached <<<\"\$out\" passes"           0 "$(_ce 'grep FAIL <<<"$out"')"
+_assert_exit "F-10 loop over \$(cat list.txt) blocks"     2 "$(_ce 'for f in $(cat list.txt); do grep -n Foo $f; done')"
+_assert_exit "F-10 loop over \$(find -name *.md) passes"  0 "$(_ce 'for f in $(find docs -name "*.md"); do grep -n Foo $f; done')"
 # Registered as a RELATIVE path (bash .claude/hooks/...) with the payload cwd in
 # a subdirectory: the lib must still load, or the gate fails open.
 _rel_rc=0

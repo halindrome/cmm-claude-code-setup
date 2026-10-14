@@ -204,11 +204,17 @@ while True:
         pos = m.start()
     else:
         pos = m.end()
-s = re.sub(r"<<<[ \t]*(\x22(?:\\.|[^\x22\\])*\x22|\x27[^\x27]*\x27|\S+)", " ", s)
+# A here-string word is data, unless it runs a command: <<< "$(cat src/x)" (R3 F-09).
+# Matched inside the quote-aware scan, so a quoted <<< is left alone (R3 F-04).
 TOK = re.compile(r"(?P<q>\x27[^\x27]*\x27|\x22(?:\\.|[^\x22\\])*\x22|\\.)"
+                 r"|(?P<hs><<<[ \t]*(?:\x22(?:\\.|[^\x22\\])*\x22|\x27[^\x27]*\x27|[^\s;|&]+))"
                  r"|(?P<rd>(?:&|\b\d+)?>>?\|?[ \t]*(?:&\d+|&-|\x22[^\x22]*\x22|\x27[^\x27]*\x27|[^\s;|&<>()]*))"
                  r"|.", re.S)
-print("".join("" if m.lastgroup == "rd" else m.group(0) for m in TOK.finditer(s)))
+def keep(m):
+    if m.lastgroup == "rd" or (m.lastgroup == "hs" and "$(" not in m.group(0)):
+        return " "
+    return m.group(0)[3:] if m.lastgroup == "hs" else m.group(0)
+print("".join(keep(m) for m in TOK.finditer(s)))
 ' 2>/dev/null) || BNAV_HEAD="${BASH_CMD%%<<*}"
   # Match the nav verb only in COMMAND position — at the start of the command or
   # right after a separator (whitespace, |, ;, &, '(') and followed by whitespace
@@ -282,10 +288,24 @@ def check(text):
         # A "$(...)" argument is its own command: its verb pairs only with its own
         # paths. `git -C /r/apps/x commit -m "$(cat <<EOF ... EOF)"` leaves a bare
         # `cat` in there (QA round 2, R2-07); `echo "$(cat apps/x.ts)"` still blocks.
+        # The literal rest of the word stays with the outer command, so
+        # grep Foo "$(pwd)/src/" still blocks (QA round 3, F-01). A cd or an
+        # assignment inside runs in a subshell and does not leak out (F-05).
         subs = [x for x in seg if x.startswith(chr(34)) and "$(" in x]
-        seg = [x for x in seg if x not in subs]
+        outer = []
+        for x in seg:
+            if x in subs:
+                y = x
+                while re.search(r"\$\([^()]*\)", y):
+                    y = re.sub(r"\$\([^()]*\)", "", y)
+                x = y.split("$(")[0] + (chr(34) if "$(" in y else "")
+            outer.append(x)
+        seg = outer
         for x in subs:
+            saved = (cd_src, dict(env))
             check(x[1:-1].replace("$(", " ; ").replace(")", " ; "))
+            cd_src, env_back = saved
+            env.clear(); env.update(env_back)
         bare = [expand(x.strip(chr(34) + chr(39) + "()")) for x in seg]
         while bare and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", bare[0]):
             k, v = bare.pop(0).split("=", 1)
