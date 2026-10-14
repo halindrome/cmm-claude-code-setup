@@ -291,15 +291,14 @@ def check(text):
         # The literal rest of the word stays with the outer command, so
         # grep Foo "$(pwd)/src/" still blocks (QA round 3, F-01). A cd or an
         # assignment inside runs in a subshell and does not leak out (F-05).
-        subs = [x for x in seg if x.startswith(chr(34)) and "$(" in x]
-        outer = []
-        for x in seg:
-            if x in subs:
-                y = x
-                while re.search(r"\$\([^()]*\)", y):
-                    y = re.sub(r"\$\([^()]*\)", "", y)
-                x = y.split("$(")[0] + (chr(34) if "$(" in y else "")
-            outer.append(x)
+        # A word the lexer split at an inner quote ("$(cat "src/x")") has an
+        # unclosed $( and is left whole in the outer command (QA round 4 F-02).
+        def shed(y):
+            while re.search(r"\$\([^()]*\)", y):
+                y = re.sub(r"\$\([^()]*\)", "", y)
+            return y
+        subs = [x for x in seg if x.startswith(chr(34)) and "$(" in x and "$(" not in shed(x)]
+        outer = [shed(x) if x in subs else x for x in seg]
         seg = outer
         for x in subs:
             saved = (cd_src, dict(env))

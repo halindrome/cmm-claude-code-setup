@@ -451,14 +451,19 @@ fi
 # and normpath the spelling: > "/dev/stdout", ''/dev/stdout, //dev/stdout,
 # /proc/self/fd/1 are all caught, while `echo "> /dev/stdout" > notes.md` and
 # a heredoc body mentioning /dev/stderr are not (QA rounds 2-3, R2-05 / F-02 /
-# F-07). Unparseable -> no exemption.
+# F-07). Unparseable -> no exemption: a lexer error exits 0 like a hit, not 1
+# like a miss, and `#` mid-word is not a comment (QA round 4 F-03 / F-04).
 _devout() {
   COMMAND="$COMMAND" python3 -c '
 import os, posixpath, shlex, sys
 line = os.environ["COMMAND"].split(chr(10))[0]
 lx = shlex.shlex(line, posix=True, punctuation_chars=True)
 lx.whitespace_split = True
-toks = list(lx)
+lx.commenters = ""
+try:
+    toks = list(lx)
+except ValueError:
+    sys.exit(0)
 for i, t in enumerate(toks[:-1]):
     if t in (">", ">>", ">|", "&>", "&>>"):
         p = posixpath.normpath("/" + toks[i + 1].lstrip("/")) if toks[i + 1].startswith("/") else ""

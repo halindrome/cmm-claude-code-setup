@@ -507,6 +507,11 @@ _assert_exit "heredoc body mentioning /dev/stderr allowed" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"cat > /tmp/s.sh <<'"'"'EOF'"'"'\necho oops > /dev/stderr\nEOF"}}'
 _assert_exit "echo of text mentioning /dev/stdout allowed" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"echo \"use > /dev/stdout\" > notes.md"}}'
+# QA round 4: an unparseable first line and a mid-word # do not exempt.
+_assert_exit "multi-line quote then > /dev/stdout blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo \"a\nb\" > /dev/stdout"}}'
+_assert_exit "mid-word # then > /dev/stdout blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo foo#bar > /dev/stdout"}}'
 
 # An UNQUOTED heredoc keeps its body and newlines visible to the compound scan,
 # so it is blocked before it can reach the authoring case. Fail-closed.

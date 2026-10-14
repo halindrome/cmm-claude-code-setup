@@ -166,6 +166,15 @@ _assert_exit "F-03 batch \$PWD/src blocks"                2 "$(python3 -c 'impor
 _assert_exit "F-06 attached <<<\"\$out\" passes"           0 "$(_ce 'grep FAIL <<<"$out"')"
 _assert_exit "F-10 loop over \$(cat list.txt) blocks"     2 "$(_ce 'for f in $(cat list.txt); do grep -n Foo $f; done')"
 _assert_exit "F-10 loop over \$(find -name *.md) passes"  0 "$(_ce 'for f in $(find docs -name "*.md"); do grep -n Foo $f; done')"
+# QA round 4.
+_assert_exit "R4 F-01 quoted '>' pattern blocks"          2 "$(_ce "grep -n '>' src/main.py")"
+_assert_exit "R4 F-01 quoted '2>' pattern blocks"         2 "$(_ce "grep -rn '2>' src/")"
+_assert_exit "R4 F-01 quoted '<<<' pattern blocks"        2 "$(_ce "grep -rn '<<<' src/")"
+_assert_exit "R4 F-05 toplevel of a non-repo dir passes"  0 "$(_ce 'R=$(git -C /nonexistent-qa4 rev-parse --show-toplevel); grep -rn Foo $R/src')"
+_assert_exit "R4 F-05 \$(pwd) after unknown cd passes"     0 "$(_ce 'cd "$OTHER"; D=$(pwd); grep -rn Foo $D/src')"
+_assert_exit "R4 F-06 loop over -name README.md passes"   0 "$(_ce 'for f in $(find docs -name README.md); do grep -n Foo $f; done')"
+_assert_exit "R4 F-07 declare -r D=src blocks"            2 "$(_ce 'declare -r D=src; grep -rn Foo $D')"
+_assert_exit "R4 F-07 D=\$(pwd)/src blocks"                2 "$(_ce 'D=$(pwd)/src; grep -rn Foo $D')"
 # Registered as a RELATIVE path (bash .claude/hooks/...) with the payload cwd in
 # a subdirectory: the lib must still load, or the gate fails open.
 _rel_rc=0

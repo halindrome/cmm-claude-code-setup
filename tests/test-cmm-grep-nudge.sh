@@ -295,6 +295,8 @@ _assert_exit "c68: F-01 cat \"src/\$(echo main).py\" blocked" 2 "$(_bash_cmd 'ca
 _assert_exit "c69: F-04 quoted <<< on a .md file allowed" 0 "$(_bash_cmd "grep -n '<<<<<<<' hooks/README.md")"
 _assert_exit "c70: F-05 cd inside \$(...) does not leak" 0 "$(_bash_cmd 'echo "$(cd src && pwd)"; cat main.py')"
 _assert_exit "c71: F-09 here-string running cat src/ blocked" 2 "$(_bash_cmd 'grep Foo <<< "$(cat src/main.py)"')"
+# QA round 4.
+_assert_exit "c72: R4 F-02 nested quotes in \"\$(cat \"src/x\")\" blocked" 2 "$(_bash_cmd 'echo "$(cat "src/main.py")"')"
 
 echo "--- Test c18b: an --include glob never becomes the search term (QA r1 F-03) ---"
 # `.*` in the extractor was greedy, so it bound the LAST quoted string: a trailing

@@ -355,14 +355,14 @@ hits = []
 # common way to build a rooted path (QA round 3 F-03).
 env = {'PWD': [cwd], 'HOME': [os.path.expanduser('~')]}
 
-def toplevel():
-    # Nearest ancestor holding .git; no subprocess on the hook's hot path.
-    d = base or cwd
+def toplevel(d):
+    # Nearest ancestor of d holding .git; no subprocess on the hook's hot path.
+    # None when d is unknown or not in a repo (QA round 4 F-05).
     while d and d != '/':
         if os.path.exists(os.path.join(d, '.git')):
             return d
         d = os.path.dirname(d)
-    return cwd
+    return None
 
 def expand(t):
     # Candidate values for a word: itself, or every substitution of the
@@ -391,41 +391,49 @@ for raw, after_pipe in segs:
         # the loop body stays gated. One that names only non-code files is not.
         # Only glob words name the file type: \$(cat list.txt) says nothing about
         # what the list holds (QA round 3 F-10).
+        # A -name operand names its file type even without a * (R4 F-06).
         if len(raw) > 3 and raw[0] == 'for' and raw[2] == 'in':
-            globs = ' '.join(w for w in raw[3:] if '*' in w)
+            ws = raw[3:]
+            globs = ' '.join(w for i, w in enumerate(ws) if '*' in w or (i and ws[i - 1] in ('-name', '-iname')))
             exts = [e.lower() for e in re.findall(r'\.([A-Za-z0-9]+)\b', globs)]
             env[raw[1]] = [] if exts and all('.' + e in NONCODE for e in exts) else ['.']
-        # ROOT=\$(git rev-parse ... toplevel) / D=\$(pwd) are known values;
+        # ROOT=\$(git rev-parse ... toplevel) / D=\$(pwd)[/sub] are known values;
         # any other substitution (\$(mktemp)) stays unknown (QA round 3 F-03).
-        m = re.match(r'^(?:(?:export|local|declare|readonly|typeset)\s+)?([A-Za-z_][A-Za-z0-9_]*)=\x22?\\\$\((.*)\)\x22?$', ' '.join(raw))
+        # From an unknown directory they stay unknown too (R4 F-05).
+        m = re.match(r'^(?:(?:export|local|declare|readonly|typeset)(?:\s+-\w+)*\s+)?([A-Za-z_][A-Za-z0-9_]*)=\x22?\\\$\(([^()]*)\)([^\s\x22]*)\x22?$', ' '.join(raw))
         if m:
-            sub = m.group(2).strip()
+            sub, val = m.group(2).strip(), None
+            gm = re.fullmatch(r'git (?:-C (\S+) )?rev-parse --show-toplevel', sub)
             if sub == 'pwd':
-                env[m.group(1)] = [base or cwd]
-            elif re.fullmatch(r'git (-C \S+ )?rev-parse --show-toplevel', sub):
-                env[m.group(1)] = [toplevel()]
+                val = base
+            elif gm:
+                val = toplevel(os.path.join(base or '/', gm.group(1)) if gm.group(1) else base)
+            if val:
+                env[m.group(1)] = [val + m.group(3)]
         continue
-    try:
-        toks = shlex.split(' '.join(raw), posix=True)
-    except ValueError:
-        continue
-    # Drop redirections. A detached OUTPUT operator also takes its target with
-    # it: in 'grep -rn Foo src/ 2> /dev/null' the target is src/, not /dev/null
-    # (QA round 1 F-05 -- the hook released on the redirect file). A bare '<' is
-    # dropped alone so the file it feeds stays the grep target.
+    # Drop redirections BEFORE unquoting: grep -n '>' src/x has a quoted pattern,
+    # not an operator, and dropping it took the target with it (R4 F-01). A
+    # detached OUTPUT operator also takes its target: in 'grep -rn Foo src/ 2>
+    # /dev/null' the target is src/, not /dev/null (QA round 1 F-05). A bare '<'
+    # is dropped alone so the file it feeds stays the grep target.
     kept, skip = [], False
-    herestr = any(t.startswith('<<<') for t in toks)   # also <<<\"\$out\" (R3 F-06)
-    for t in toks:
+    herestr = any(t.startswith('<<<') for t in raw)   # also <<<\"\$out\" (R3 F-06)
+    for t in raw:
         if skip:
             skip = False
         elif re.fullmatch(r'\d*>>?|&>>?|\d*>\||<<<', t):
             skip = True   # <<< feeds a string, not a file (QA round 2 R2-03)
         elif not re.match(r'^(\d*[<>]|&>)', t):
             kept.append(t)
-    toks = kept
+    try:
+        toks = shlex.split(' '.join(kept), posix=True)
+    except ValueError:
+        continue
     # Wrapper words and a ( glued to the verb by the lexer (QA round 1 F-06).
     # Assignments are remembered so a later \$NAME target can be resolved.
-    while toks and (toks[0] in ('do','then','else','elif','if','while','until','{','(','!','sudo','time','command','env','export','local','declare','readonly','typeset') or re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', toks[0])):
+    decl = False   # declare -r D=src: the flag must not stop the peel (R4 F-07)
+    while toks and (toks[0] in ('do','then','else','elif','if','while','until','{','(','!','sudo','time','command','env','export','local','declare','readonly','typeset') or (decl and toks[0].startswith('-')) or re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', toks[0])):
+        decl = decl or toks[0] in ('export','local','declare','readonly','typeset')
         if '=' in toks[0] and toks[0][0] not in '({!':
             k, v = toks[0].split('=', 1)
             env[k] = [v]
