@@ -1,7 +1,7 @@
 #!/bin/bash
 # cmm-grep-nudge.sh — PreToolUse:Grep+Bash hook (hard-blocking CMM navigation gate)
 # BLOCKING: exits 2 for code-targeted Grep or Bash navigation commands when CMM is
-# available, redirecting to graph tools. Honors # cmm-exempt override in Bash commands.
+# available, redirecting to graph tools. No bypass marker -- see the block message note.
 #
 # Install: cp hooks/global/cmm-grep-nudge.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/cmm-grep-nudge.sh
 # Register in ~/.claude/settings.json under both Grep and Bash matchers:
@@ -41,11 +41,6 @@ import sys,json
 d=json.load(sys.stdin)
 print(d.get('tool_input',{}).get('command','') or '')
 " 2>/dev/null)
-
-  # # cmm-exempt in command string bypasses the block
-  if echo "$BASH_CMD" | grep -q '# cmm-exempt'; then
-    exit 0
-  fi
 fi
 
 # --- Recovery-message helpers (shared by the Bash and Grep branches) ---
@@ -286,19 +281,18 @@ sys.exit(3)
       # "..." placeholder convert 13-25%, and gates naming no alternative ~0%,
       # sending 90-95% of blocks straight back to Read/Bash.
       _TERM=$(_extract_term "$BASH_CMD")
-      # The bypass is deliberately NOT the closing line. Observed 2026-09-04: a
-      # session read "Add # cmm-exempt to bypass" as the recommended next action,
-      # appended it to its next four commands -- including a source-code grep
-      # this gate exists to redirect -- and made no further CMM calls all
-      # session. The escape hatch must stay discoverable (removing it risks
-      # wedging a session), but it is for NON-CODE targets, and saying so is
-      # what stops it becoming the default.
+      # There is no bypass marker. '# cmm-exempt' was one, scoped in this message
+      # to non-code targets; agents learned it from the message and used it on
+      # source anyway -- 114 uses in 12 maintainx sessions, 77 on source code
+      # (2026-10-14). The non-code cases it served now pass on their own (the
+      # per-command check above), and Read is never blocked, so a session
+      # cannot wedge here. Same arc as ctx-payload-guard's '# ctx-truncate-ok'.
       cat >&2 <<EOF
 BLOCKED: Use CMM tools instead of Bash navigation for code search.
 $(_cmm_recovery_lines "$_TERM")$(_perl_note "$BASH_CMD")
 See skill \`cmm-rules\` for the full protocol.
-(If this target is NOT source code -- generated output, a build artifact, a
-data file -- add '# cmm-exempt' to the command. Do not use it to grep source.)
+(Non-code files -- .json, .yaml, .md, .log, config -- are not gated: name the
+file or restrict with --include='*.yaml'. To read a file, use Read.)
 EOF
       bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-nav" 2>/dev/null || true
       exit 2

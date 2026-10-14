@@ -9,7 +9,6 @@
 #   "hooks": { "PostToolUse": [{ "matcher": "mcp__codebase-memory-mcp__search_graph",
 #                                 "hooks": [{"type": "command", "command": "bash ~/.claude/hooks/cmm-orient-nudge.sh"}] }] }
 # Matcher: PostToolUse:mcp__codebase-memory-mcp__search_graph
-# Bypass: include literal '# cmm-exempt' anywhere in the tool_input payload.
 
 # --- Input Parsing (fail-open on every path) ---
 INPUT=$(cat 2>/dev/null)
@@ -63,11 +62,6 @@ case "$TOOL_NAME" in
         exit 0
         ;;
 esac
-
-# --- Bypass Marker ---
-if printf '%s' "$TOOL_INPUT_JSON" | grep -q "cmm-exempt"; then
-    exit 0
-fi
 
 # --- Project Hash + Session-Scoped Sentinel ---
 REPO_ROOT=$(git -C "${CWD:-.}" rev-parse --show-toplevel 2>/dev/null)

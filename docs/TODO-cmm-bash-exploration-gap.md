@@ -41,14 +41,14 @@ Make CMM-first navigation close to universal for indexed repos, without making t
 ## Proposed levers (low → high friction)
 
 1. **Strengthen the Scout prompt (lowest risk, do first).** In `agents/vbw-scout.md`, add an explicit ordering directive: "For any indexed codebase, you MUST orient with `get_architecture` and use `search_graph`/`search_code`/`trace_path` BEFORE any `Read`/`Bash`/`find`/`cat` exploration of source. Raw file reads are for non-code files, full-file context, or fetching a specific snippet CMM pointed you to." Mirror into the other agent defs (`vbw-lead.md`, `vbw-dev.md`, `vbw-debugger.md`) as appropriate.
-2. **Extend the Bash matcher** in `hooks/global/cmm-grep-nudge.sh` to also catch recursive/exploratory shell patterns over source trees: `find … -name '*.<codeext>'`, `cat`/`sed -n`/`awk` on source files, `ls -R`. Keep it advisory-with-redirect (point to `search_graph`/`search_code`), and **exempt** non-code paths, small files, and the existing `# cmm-exempt` bypass so config/markdown/JSON work isn't gated. Risk: false positives + friction; tune carefully and keep the bypass prominent.
+2. **Extend the Bash matcher** in `hooks/global/cmm-grep-nudge.sh` to also catch recursive/exploratory shell patterns over source trees: `find … -name '*.<codeext>'`, `cat`/`sed -n`/`awk` on source files, `ls -R`. Keep it advisory-with-redirect (point to `search_graph`/`search_code`), and **exempt** non-code paths and small files so config/markdown/JSON work isn't gated. Risk: false positives + friction; tune carefully. (The `# cmm-exempt` bypass this item originally relied on was removed 2026-10-14 — agents used it on source — so the non-code exemptions must stand on their own.)
 3. **(Optional) Promote the Read nudge toward a soft gate** for source files in indexed projects — e.g. after N raw Reads without a CMM call, escalate the nudge. Higher friction; only if 1+2 prove insufficient.
 4. **Note: ctx/context-mode was used by _none_ of the 4 Scouts** — the ctx counter stayed empty. Separately consider whether Scouts should be nudged toward `ctx_*` for large command output (or whether that's fine to leave optional). Track as a sub-item, not a blocker.
 
 ## Files likely to touch (this repo)
 
 - `agents/vbw-scout.md` (+ peers) — orient-first directive.
-- `hooks/global/cmm-grep-nudge.sh` — broaden Bash exploration matcher (with non-code exemptions + `# cmm-exempt` bypass intact).
+- `hooks/global/cmm-grep-nudge.sh` — broaden Bash exploration matcher (with non-code exemptions intact).
 - `hooks/global/cmm-nudge.sh` — optional Read escalation.
 - `rules/cmm-rules.md` — document the strengthened expectation.
 - `tests/` — add/adjust hook tests for the new matchers (don't regress the markdown/config exemptions).
@@ -57,7 +57,7 @@ Make CMM-first navigation close to universal for indexed repos, without making t
 ## Acceptance criteria
 
 - Re-running the 4-Scout map experiment, **≥3 of 4** (ideally 4/4) Scouts make at least one CMM navigation call and orient via `get_architecture` before raw source exploration.
-- Bash `find`/`cat` over source triggers the redirect; the same commands over `.md`/`.json`/config and the `# cmm-exempt` escape hatch still pass.
+- Bash `find`/`cat` over source triggers the redirect; the same commands over `.md`/`.json`/config still pass.
 - No regression in the existing hook test suite (markdown/config/small-file exemptions preserved).
 
 ## How to verify
@@ -68,4 +68,4 @@ Make CMM-first navigation close to universal for indexed repos, without making t
 
 ## Caveat
 
-Don't over-tighten. The whole point of the advisory style (see `docs/hook-advisory-style.md`) is to guide without blocking legitimate work. The fix should raise CMM adoption while keeping the non-code and `# cmm-exempt` paths frictionless.
+Don't over-tighten. The whole point of the advisory style (see `docs/hook-advisory-style.md`) is to guide without blocking legitimate work. The fix should raise CMM adoption while keeping the non-code paths frictionless.

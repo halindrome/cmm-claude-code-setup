@@ -94,17 +94,6 @@ else
     _fail "Test 5: missing session_id" "exit=$EC5 out_len=${#OUT5}"
 fi
 
-# --- Test 6: '# cmm-exempt' in tool_input silent ---
-echo "--- Test 6: cmm-exempt bypass silent ---"
-PAYLOAD6="{\"tool_name\":\"mcp__codebase-memory-mcp__search_graph\",\"session_id\":\"$SID4\",\"tool_input\":{\"name_pattern\":\"Foo # cmm-exempt\"}}"
-OUT6=$(echo "$PAYLOAD6" | bash "$HOOK" 2>/dev/null)
-EC6=$?
-if [ "$EC6" -eq 0 ] && [ -z "$OUT6" ]; then
-    _pass "Test 6: cmm-exempt silent"
-else
-    _fail "Test 6: cmm-exempt" "exit=$EC6 out=[$OUT6]"
-fi
-
 # --- Test 7: malformed JSON silent ---
 echo "--- Test 7: malformed JSON silent ---"
 OUT7=$(echo 'not-json-at-all' | bash "$HOOK" 2>/dev/null)

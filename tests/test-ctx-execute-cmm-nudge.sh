@@ -137,9 +137,9 @@ _assert_exit "backtick subshell"            0 "{\"tool_name\":\"mcp__context-mod
 _assert_exit "\$(...) subshell"             0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"echo \$(grep foo src/)\"},\"cwd\":\"$FIX\"}"
 
 echo ""
-echo "--- Exempt marker (expect exit 0) ---"
-_assert_exit "# cmm-exempt bypasses grep"   0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep foo src/ # cmm-exempt\"},\"cwd\":\"$FIX\"}"
-_assert_exit "# cmm-exempt bypasses find"   0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"find src -name '*.go' # cmm-exempt\"},\"cwd\":\"$FIX\"}"
+echo "--- Retired '# cmm-exempt' marker is ignored (expect exit 2) ---"
+_assert_exit "# cmm-exempt no longer bypasses grep" 2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep foo src/ # cmm-exempt\"},\"cwd\":\"$FIX\"}"
+_assert_exit "# cmm-exempt no longer bypasses find" 2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"find src -name '*.go' # cmm-exempt\"},\"cwd\":\"$FIX\"}"
 
 echo ""
 echo "--- Path exemptions (expect exit 0) ---"
@@ -262,7 +262,7 @@ _assert_exit "grep buried mid-batch still caught" 2 \
 _assert_exit "batch with no code search passes" 0 \
     "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"git status\"},{\"label\":\"b\",\"command\":\"date\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
 
-_assert_exit "cmm-exempt honoured inside a batch" 0 \
+_assert_exit "retired cmm-exempt ignored inside a batch" 2 \
     "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"grep -rn MyFunc src/  # cmm-exempt\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
 
 _assert_exit "non-code dir in a batch still passes" 0 \

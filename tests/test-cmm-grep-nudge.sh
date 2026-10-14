@@ -124,8 +124,8 @@ echo "--- Test c1: Bash grep against src/ + CMM ready -> exit 2 (BLOCKED) ---"
 _assert_exit "c1: Bash grep src/ blocked" 2 \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -r 'parse' src/\"},\"cwd\":\"$PROJ_REAL\"}"
 
-echo "--- Test c2: Bash grep with # cmm-exempt -> exit 0 (bypass) ---"
-_assert_exit "c2: Bash grep src/ cmm-exempt allowed" 0 \
+echo "--- Test c2: '# cmm-exempt' is no longer a bypass -> exit 2 (BLOCKED) ---"
+_assert_exit "c2: Bash grep src/ with retired marker still blocked" 2 \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -r 'parse' src/ # cmm-exempt\"},\"cwd\":\"$PROJ_REAL\"}"
 
 echo "--- Test c3: Bash find against hooks/ -> exit 2 (BLOCKED) ---"

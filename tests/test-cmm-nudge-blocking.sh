@@ -107,8 +107,6 @@ echo "--- Test 8: no .mcp.json at all -> allowed ---"
 _assert_exit "Test 8: no .mcp.json allowed" 0 "{\"tool_input\":{\"file_path\":\"$PROJ_NO_MCP/big.py\"}}" "CLAUDE_CONFIG_DIR=$FAKE_CONFIG"
 echo "--- Test 9: non-existent file allowed ---"
 _assert_exit "Test 9: non-existent allowed" 0 "{\"tool_input\":{\"file_path\":\"$PROJ/does-not-exist.py\"}}"
-echo "--- Test 10: '# cmm-exempt' marker allowed ---"
-_assert_exit "Test 10: cmm-exempt allowed" 0 "{\"tool_input\":{\"file_path\":\"$PROJ/big.py # cmm-exempt\"}}"
 
 # --- Code-file reads are ALWAYS allowed now (former hard-block cases -> exit 0) ---
 echo "--- Test 11: large .py allowed (no hard block) ---"
@@ -160,15 +158,6 @@ echo "--- Test 20: budget is per-session (fresh session -> silent) ---"
 rm -f /tmp/cmm-reads-sbfresh-* 2>/dev/null || true
 _assert_nudge "Test 20: fresh session first read silent" no \
     "{\"session_id\":\"sbfresh\",\"tool_input\":{\"file_path\":\"$PROJ/big.py\"}}"
-
-echo "--- Test 21: '# cmm-exempt' never nudges even when repeated ---"
-exempt_ok=yes
-for n in 1 2 3 4 5; do
-    out=$(echo "{\"session_id\":\"sbexempt\",\"tool_input\":{\"file_path\":\"$PROJ/big.py # cmm-exempt\"}}" | bash "$HOOK" 2>/dev/null) || true
-    case "$out" in *"times this session"*) exempt_ok=no ;; esac
-done
-if [ "$exempt_ok" = yes ]; then echo "PASS: Test 21: cmm-exempt never nudges"; PASS=$((PASS+1));
-else echo "FAIL: Test 21: cmm-exempt path emitted a nudge"; FAIL=$((FAIL+1)); fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

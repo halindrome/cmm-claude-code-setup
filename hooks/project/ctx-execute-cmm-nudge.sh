@@ -20,8 +20,8 @@ INPUT=$(cat 2>/dev/null)
 # Parse JSON + classify the code field in one python3 block.
 # Output (one per line):
 #   1: tool_name
-#   2: kind (grep-family | find-name | other | exempt | empty)
-#   3: pattern (extracted search term; empty when kind=other/exempt/empty)
+#   2: kind (grep-family | find-name | read | other | empty)
+#   3: pattern (extracted search term; empty when kind=other/empty)
 #   4: target_path (extracted last positional arg, or empty)
 #   5: cwd
 PARSED=$(echo "$INPUT" | python3 -c "
@@ -86,11 +86,6 @@ if tool_name not in _ACCEPTED:
 
 if not code.strip():
     emit(tool_name, 'empty', '', '', cwd)
-    sys.exit(0)
-
-# Exempt marker anywhere in code
-if '# cmm-exempt' in code:
-    emit(tool_name, 'exempt', '', '', cwd)
     sys.exit(0)
 
 # Segment parser. This used to accept only a single pipe-less statement and fail
@@ -489,8 +484,8 @@ case "$TARGET_PATH" in
     */node_modules/*|*/dist/*|*/build/*|*/.git/*|*/vendor/*|*/target/*|node_modules/*|dist/*|build/*|.git/*|vendor/*|target/*) exit 0 ;;
 esac
 # Non-code file targets: CMM has nothing to offer for them, and a block that
-# suggests search_graph(name_pattern=...) on CHANGELOG.md trains agents to reach
-# for '# cmm-exempt' reflexively. Same carve-out as the Grep gate.
+# suggests search_graph(name_pattern=...) on CHANGELOG.md teaches agents to route
+# around the gate. Same carve-out as the Grep gate.
 case "$TARGET_PATH" in
     *.md|*.markdown|*.json|*.yaml|*.yml|*.txt|*.log|*.csv|*.toml|*.lock|*.ini|*.cfg|*.conf|*.xml|*.env) exit 0 ;;
 esac
@@ -548,13 +543,13 @@ else
 fi
 
 # --- Block message (stderr, exit 2) ---
-# Bypass last and scoped to non-code: see the note in cmm-grep-nudge.sh.
+# No bypass marker: see the note in cmm-grep-nudge.sh.
 cat >&2 <<EOF
 [ctx-execute-cmm-nudge] BLOCKED -- source-code search via ctx_execute in indexed repo.
 ${FIRST_LINE}
 ${SECOND_LINE}
-(Non-code target -- a build artifact or a non-indexed path? Add '# cmm-exempt'
-to your code. Not for searching source.)
+(Non-code files -- .json, .yaml, .md, .log, config -- are not gated: name the
+file or restrict with --include='*.yaml'.)
 EOF
 
 # --- Block counter (best-effort, parity with siblings) ---

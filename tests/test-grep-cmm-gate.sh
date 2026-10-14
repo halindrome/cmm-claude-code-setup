@@ -207,8 +207,8 @@ _assert_exit "no-sentinel type=go allowed" 0 \
     "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"foo\",\"type\":\"go\"},\"cwd\":\"$PROJ_NO_SENT\"}" \
     "$ENV_NO_GLOBAL"
 
-echo "--- 11: '# cmm-exempt' in pattern bypasses (exit 0) ---"
-_assert_exit "cmm-exempt bypass" 0 \
+echo "--- 11: retired '# cmm-exempt' in pattern is ignored (exit 2) ---"
+_assert_exit "retired cmm-exempt ignored" 2 \
     "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"secret # cmm-exempt\",\"type\":\"go\"},\"cwd\":\"$PROJ\"}" \
     "$ENV_NO_GLOBAL"
 

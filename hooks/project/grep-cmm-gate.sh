@@ -43,11 +43,6 @@ CWD_FIELD=$(echo "$PARSED" | sed -n '6p')
 
 # --- Exempt fast paths ---
 
-# Bypass marker in pattern
-if echo "$PATTERN_FIELD" | grep -q '# cmm-exempt'; then
-    exit 0
-fi
-
 # Explicit non-code type → allow
 case "$TYPE_FIELD" in
   yaml|yml|json|toml|md|markdown|lock|xml|ini|cfg|conf|txt|html|css|env)
@@ -185,13 +180,13 @@ else
 fi
 
 # --- Block message (stderr, exit 2) ---
-# Bypass last and scoped to non-code: see the note in cmm-grep-nudge.sh.
+# No bypass marker: see the note in cmm-grep-nudge.sh.
 cat >&2 <<EOF
 [grep-cmm-gate] BLOCKED -- source-code search in indexed repo.
 ${FIRST_LINE}
 ${SECOND_LINE}
-(Non-code target? Use an explicit non-code type/glob, or add '# cmm-exempt' to
-your pattern. Not for searching source.)
+(Non-code target? Set a non-code glob/type such as glob='*.yaml'. To read a
+file, use Read.)
 EOF
 
 # --- Block counter (best-effort, parity with cmm-grep-nudge.sh) ---

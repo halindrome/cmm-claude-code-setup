@@ -42,11 +42,6 @@ SESSION_ID=$(echo "$PARSED" | sed -n '2p')
 
 [ -z "$FILE_PATH" ] && exit 0
 
-# Operator bypass marker (mirrors ctx-exempt in ctx-execute-enforcer.sh).
-if echo "$FILE_PATH" | grep -q '# cmm-exempt'; then
-  exit 0
-fi
-
 # --- Exception: Meta/Config Files (check BEFORE extension match) ---
 BASENAME=$(basename "$FILE_PATH")
 case "$BASENAME" in
