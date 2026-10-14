@@ -179,13 +179,15 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   #     positived because the verb (cat) matched and a path token in the written
   #     body matched the source-path regex.
   #   - heredoc (`<<`): the body is written content, not a search target.
-  # We cut at the first `>` and the first `<<` ONLY — NOT a bare single `<`. A bare
-  # `<` is an input redirect or process substitution (`grep foo < src/x`,
-  # `diff <(cat src/a.py)`) whose path IS real navigation and must still block
-  # (QA round 1, F-01). `2>/dev/null` is safe: the source path precedes the `2>`,
-  # so it survives in the head.
-  BNAV_HEAD="${BASH_CMD%%>*}"
-  BNAV_HEAD="${BNAV_HEAD%%<<*}"
+  # We cut at the first `<<` and drop each output redirection WITH its target —
+  # NOT a bare single `<`. A bare `<` is an input redirect or process
+  # substitution (`grep foo < src/x`, `diff <(cat src/a.py)`) whose path IS real
+  # navigation and must still block (QA round 1, F-01). Output redirections used
+  # to be handled by cutting at the first `>`, which also discarded every LATER
+  # command: `echo hi > /tmp/x; grep -rn Foo src/` passed (2026-10-14 QA round 1,
+  # F-08).
+  BNAV_HEAD="${BASH_CMD%%<<*}"
+  BNAV_HEAD=$(printf '%s' "$BNAV_HEAD" | sed -E 's/[0-9]*>&[0-9-]+//g; s/(&|[0-9]*)>>?\|?[[:space:]]*[^[:space:];|&<>]*//g')
   # Match the nav verb only in COMMAND position — at the start of the command or
   # right after a separator (whitespace, |, ;, &, '(') and followed by whitespace
   # or end. A bare regex like `(grep|...)` matched the verb as a SUBSTRING of an
@@ -242,19 +244,33 @@ def noncode(p):
     return p.lower().endswith(NONCODE)
 lx = shlex.shlex(os.environ["BNAV_SCAN"].replace(chr(10), " ; "), posix=False, punctuation_chars=";&|")
 lx.whitespace_split = True
-seg = []
+# A source path can also reach the verb through an earlier command: `cd src/ &&
+# grep -rn Foo .` or `D=src/; grep -rn Foo $D` (QA round 1 F-02). Track the cd
+# directory and simple assignments; expand $NAME / ${NAME} before judging.
+seg, env, cd_src = [], {}, False
+def expand(x):
+    return re.sub(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", lambda m: env.get(m.group(1), m.group(0)), x)
 for t in list(lx) + [";"]:
     if not set(t) <= set(";&|"):
         seg.append(t)
         continue
-    if VERB.search(" ".join(seg)):
-        bare = [x.strip(chr(34) + chr(39) + "()") for x in seg]
+    bare = [expand(x.strip(chr(34) + chr(39) + "()")) for x in seg]
+    while bare and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", bare[0]):
+        k, v = bare.pop(0).split("=", 1)
+        env[k] = v
+    if bare[:1] == ["cd"]:
+        cd_src = len(bare) > 1 and bool(SRC.search(bare[1].rstrip("/") + "/"))
+    elif VERB.search(" ".join(seg)):
         paths = [x for x in bare if SRC.search(x)]
         globs = [x.split("=", 1)[1] for x in bare if x.startswith(("--include=", "--glob="))]
         globs += [bare[i + 1] for i, x in enumerate(bare[:-1]) if x in ("--include", "-g", "--glob")]
         globs = [g for g in globs if not g.startswith("!")]   # rg -g "!x" excludes
-        if paths and not all(map(noncode, paths)) and not (globs and all(map(noncode, globs))):
+        if globs and all(map(noncode, globs)):
+            pass
+        elif paths and not all(map(noncode, paths)):
             sys.exit(0)
+        elif not paths and cd_src and len(bare) > 1 and not noncode(bare[-1]):
+            sys.exit(0)   # relative operand under a source dir we cd-ed into
     seg = []
 sys.exit(3)
 ' 2>/dev/null
@@ -262,7 +278,9 @@ sys.exit(3)
     # something else and keeps the block.
     [ $? -ne 3 ]
   }
-  if echo "$BNAV_SCAN" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)' \
+  # The path prefilter also admits a bare dir word (`cd src && …`), so the
+  # per-command check sees the cd case; that check makes the real decision.
+  if echo "$BNAV_SCAN" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src|app|apps|lib|pkg|internal|hooks|agents|scripts)(/|[[:space:]]|$)' \
      && _bnav_source_segment "$BNAV_SCAN"; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)

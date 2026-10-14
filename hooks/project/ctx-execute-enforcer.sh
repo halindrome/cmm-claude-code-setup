@@ -206,11 +206,33 @@ _OPCHECK=$(COMMAND="$COMMAND" python3 <<'PY' 2>/dev/null
 import os, re, sys
 c = os.environ.get("COMMAND", "")
 
+HEREDOC = re.compile(r"""<<-?\s*(['"])(\w+)\1""")
+
 def strip_quoted_heredocs(text):
+    # Quote state is tracked across lines: a <<'Z' INSIDE a quoted argument is
+    # text, not a heredoc. Treating it as one blanked every following line, so
+    # `git commit -m "x <<'Z'"` + newline + `npm test` scanned as one bounded
+    # command and ran unsandboxed behind the exempt prefix (QA round 1 F-04).
     lines = text.split("\n")
-    out, i = [], 0
+    out, i, q = [], 0, None
     while i < len(lines):
-        m = re.search(r"""<<-?\s*(['"])(\w+)\1""", lines[i])
+        ln, m, j = lines[i], None, 0
+        while j < len(ln):
+            ch = ln[j]
+            if q:
+                if ch == q:
+                    q = None
+                elif ch == "\\" and q == '"':
+                    j += 1
+            elif ch in "'\"":
+                q = ch
+            elif ch == "\\":
+                j += 1
+            elif ln.startswith("<<", j):
+                m = HEREDOC.match(ln, j)
+                if m:
+                    break
+            j += 1
         if not m:
             out.append(lines[i]); i += 1; continue
         term = m.group(2)
@@ -375,11 +397,20 @@ esac
 # times or forty, so Edit (which requires the exact bytes and fails loudly on a
 # miss) remains the better tool for a source edit. That is a correctness
 # argument, and it belongs in a correctness gate -- not smuggled into this one.
+#
+# For perl/ruby the `-i` must sit in the FIRST switch cluster, built only from
+# switch letters that cannot carry a name (`-pi`, `-0pi`, `-i.bak`, `-0777pi`).
+# The old glob `perl -*i*e *` matched any `i` before ` -e `, so
+# `perl -MFile::Find -e 'print …'` and `ruby -ropen-uri -e 'puts …'` -- which
+# print, and edit nothing -- were exempted (QA round 1 F-03).
 case "$COMMAND" in
   sed\ -i\ *|sed\ -i.*|gsed\ -i\ *|gsed\ -i.*)   _track_exempt inplace-edit; exit 0 ;;
-  perl\ -*i*e\ *|perl\ -*i*\ -e\ *)              _track_exempt inplace-edit; exit 0 ;;
-  ruby\ -*i*e\ *|awk\ -i\ inplace\ *)            _track_exempt inplace-edit; exit 0 ;;
+  awk\ -i\ inplace\ *)                           _track_exempt inplace-edit; exit 0 ;;
 esac
+if [[ "$COMMAND" =~ ^(perl|ruby)[[:space:]]+-[0-9lnpaws]*i[^[:space:]]*[[:space:]].*-e ]] \
+   || [[ "$COMMAND" =~ ^(perl|ruby)[[:space:]]+-[0-9lnpaws]*i[0-9lnpaws]*e[[:space:]] ]]; then
+  _track_exempt inplace-edit; exit 0
+fi
 
 # File AUTHORING: a literal-emitting command redirected to a file. Same category
 # as the in-place editors above -- the bytes go to the file, not to stdout, so
@@ -414,7 +445,10 @@ esac
 # most common idioms an agent writes. Guard on a `>` not preceded by a digit
 # first. `&>` never reaches here (the `&` trips the compound scan above), and a
 # literal `1> f` does not exempt: fail-closed, and rare.
-if [[ "$_OPCHECK" =~ (^|[^0-9])\> ]]; then
+# A redirect to a terminal stream is not a file: `cat big.c > /dev/stdout` is
+# the flood itself (QA round 1 F-07).
+if [[ "$_OPCHECK" =~ (^|[^0-9])\> ]] \
+   && ! [[ "$_OPCHECK" =~ \>[[:space:]]*/dev/(stdout|stderr|tty|fd/[12]) ]]; then
   case "$_OPCHECK" in
     cat\ *\>*|echo\ *\>*|printf\ *\>*)           _track_exempt authoring; exit 0 ;;
   esac

@@ -127,6 +127,31 @@ _assert_exit "--include unknown ext blocks"   2 "{\"tool_name\":\"mcp__context-m
 _assert_exit "--include mixed blocks"         2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn foo --include='*.conf' --include '*.pm' .\"},\"cwd\":\"$FIX\"}"
 _assert_exit "rg -g '!*.md' exclusion blocks" 2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"rg foo -g '!*.md' src/\"},\"cwd\":\"$FIX\"}"
 _assert_exit "rg -g '*.json' passes"          0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"rg foo -g '*.json' src/\"},\"cwd\":\"$FIX\"}"
+# QA round 1. F-01: a released first search must not release the rest.
+_ce() { python3 -c 'import json,sys; print(json.dumps({"tool_name":"mcp__context-mode__ctx_execute","tool_input":{"code":sys.argv[1]},"cwd":sys.argv[2]}))' "$1" "$FIX"; }
+_assert_exit "F-01 non-code grep then source grep blocks" 2 "$(_ce 'grep -n hi CHANGELOG.md; grep -rn Foo src/')"
+_assert_exit "F-01 outside-repo grep then source grep"    2 "$(_ce 'grep foo /tmp/nonexistent-qa.log; grep -rn Foo src/')"
+_assert_exit "F-01 batch: non-code then source"           2 "$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"mcp__plugin_context-mode_context-mode__ctx_batch_execute","tool_input":{"commands":[{"label":"a","command":"grep -n x CHANGELOG.md"},{"label":"b","command":"grep -rn Foo src/"}]},"cwd":sys.argv[1]}))' "$FIX")"
+_assert_exit "F-01 only non-code greps still pass"        0 "$(_ce 'grep -n hi CHANGELOG.md; grep -c x /tmp/nonexistent-qa.log')"
+# F-05: a detached output redirect's file is not the grep target.
+_assert_exit "F-05 2> /dev/null keeps src/ target"        2 "$(_ce 'grep -rn Foo src/ 2> /dev/null')"
+_assert_exit "F-05 > out.log; cat out.log blocks"         2 "$(_ce 'grep -rn Foo src/ > out.log; cat out.log')"
+# F-06: wrapper words, a glued (, and heredocs ahead of a search.
+_assert_exit "F-06 if grep ...; then"                     2 "$(_ce 'if grep -rn Foo src/; then echo y; fi')"
+_assert_exit "F-06 time grep"                             2 "$(_ce 'time grep -rn Foo src/')"
+_assert_exit "F-06 env grep"                              2 "$(_ce 'env grep -rn Foo src/')"
+_assert_exit "F-06 command grep"                          2 "$(_ce 'command grep -rn Foo src/')"
+_assert_exit "F-06 (grep ...)"                            2 "$(_ce '(grep -rn Foo src/)')"
+_assert_exit "F-06 heredoc write then source grep"        2 "$(_ce "$(printf "cat > /tmp/qa-f <<'EOF'\nhello\nEOF\ngrep -rn Foo src/")")"
+_assert_exit "F-06 arithmetic shift then source grep"     2 "$(_ce 'x=$((1<<2)); grep -rn Foo src/')"
+_assert_exit "F-06 grep inside a heredoc body passes"     0 "$(_ce "$(printf "cat <<'EOF'\ngrep -rn Foo src/\nEOF")")"
+# Registered as a RELATIVE path (bash .claude/hooks/...) with the payload cwd in
+# a subdirectory: the lib must still load, or the gate fails open.
+_rel_rc=0
+( cd "$SCRIPT_DIR/.." && python3 -c 'import json,sys; print(json.dumps({"tool_name":"mcp__context-mode__ctx_execute","tool_input":{"code":"grep -rn Foo ."},"cwd":sys.argv[1]}))' "$FIX/src" \
+    | bash hooks/project/ctx-execute-cmm-nudge.sh >/dev/null 2>&1 ) || _rel_rc=$?
+if [ "$_rel_rc" -eq 2 ]; then echo "PASS: relative hook path, subdir cwd still gates"; PASS=$((PASS+1))
+else echo "FAIL: relative hook path, subdir cwd still gates (expected exit 2, got $_rel_rc)"; FAIL=$((FAIL+1)); fi
 
 echo ""
 echo "--- Still allowed inside compound commands (expect exit 0) ---"

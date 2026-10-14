@@ -11,7 +11,7 @@
 #                      MCP-server-form (mcp__context-mode__ctx_execute) — see internal tool_name probe.
 #
 # Sibling of hooks/project/grep-cmm-gate.sh (Grep-tool hard block). Same REPLACE WITH: machine-readable recovery format.
-# Parser classifies every ; && || newline-separated command (pipeline heads only); heredocs and $(...) segments fail open.
+# Parser classifies every ; && || newline-separated command (pipeline heads only) and gates on any search that is not released; heredoc bodies are skipped, $(...) segments fail open.
 
 # --- Input Parsing ---
 INPUT=$(cat 2>/dev/null)
@@ -95,8 +95,8 @@ if not code.strip():
 # 26 times, and every call sailed through. Now every command separated by
 # ; && || or a newline is classified. Only a pipeline HEAD counts: a grep after
 # a pipe filters upstream output, it searches nothing.
-# Still fail open: heredocs (the body is content, not commands -- whole payload)
-# and \$(...) / backtick subshells (that segment only).
+# Heredoc bodies are content, not commands, and are skipped (strip_heredocs).
+# Still fail open: \$(...) / backtick subshells (that segment only).
 # Metacharacters INSIDE quotes do NOT count as shell operators.
 def _strip_quoted(s):
     # Remove single/double-quoted substrings so subsequent metachar checks only see
@@ -132,9 +132,26 @@ def _strip_quoted(s):
         i += 1
     return ''.join(out)
 
-if '<<' in _strip_quoted(code):
-    emit(tool_name, 'other', '', '', cwd)
-    sys.exit(0)
+def strip_heredocs(s):
+    # A heredoc body is content, not commands: drop it, keep classifying the
+    # rest. This used to fail open for the WHOLE payload on any <<, so writing
+    # a file first (cat > f <<EOF ... EOF; grep -rn Foo src/) disarmed the gate,
+    # and so did arithmetic like 1<<2 (QA round 1 F-06). A << whose terminator
+    # never appears is not a heredoc and is left alone.
+    lines = s.split(chr(10))
+    out, i = [], 0
+    while i < len(lines):
+        ln = lines[i]
+        out.append(ln)
+        i += 1
+        if '<<' not in _strip_quoted(ln):
+            continue
+        for m in re.finditer(r'<<(-?)[ \t]*[\x27\x22]?([A-Za-z_][A-Za-z0-9_]*)', ln):
+            end = next((j for j in range(i, len(lines))
+                        if (lines[j].lstrip(chr(9)) if m.group(1) else lines[j]) == m.group(2)), None)
+            if end is not None:
+                i = end + 1
+    return chr(10).join(out)
 
 def segments(s):
     # Yields (tokens, after_pipe) per command. Lexed non-posix so a QUOTED ; or |
@@ -325,8 +342,9 @@ def read_target(tokens):
 # does not resolve (apps/\$a/src) falls back to the cd directory itself.
 base = cwd
 read_file = ''
+hits = []
 try:
-    segs = list(segments(code))
+    segs = list(segments(strip_heredocs(code)))
 except ValueError:
     segs = []   # unbalanced quotes -> cannot tell -> fail open
 for raw, after_pipe in segs:
@@ -336,9 +354,26 @@ for raw, after_pipe in segs:
         toks = shlex.split(' '.join(raw), posix=True)
     except ValueError:
         continue
-    toks = [t for t in toks if not re.match(r'^(\d*[<>]|&>)', t)]
-    while toks and (toks[0] in ('do','then','else','{','(','!','sudo') or re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', toks[0])):
+    # Drop redirections. A detached OUTPUT operator also takes its target with
+    # it: in 'grep -rn Foo src/ 2> /dev/null' the target is src/, not /dev/null
+    # (QA round 1 F-05 -- the hook released on the redirect file). A bare '<' is
+    # dropped alone so the file it feeds stays the grep target.
+    kept, skip = [], False
+    for t in toks:
+        if skip:
+            skip = False
+        elif re.fullmatch(r'\d*>>?|&>>?|\d*>\|', t):
+            skip = True
+        elif not re.match(r'^(\d*[<>]|&>)', t):
+            kept.append(t)
+    toks = kept
+    # Wrapper words and a ( glued to the verb by the lexer (QA round 1 F-06).
+    while toks and (toks[0] in ('do','then','else','elif','if','while','until','{','(','!','sudo','time','command','env') or re.match(r'^[A-Za-z_][A-Za-z0-9_]*=', toks[0])):
         toks = toks[1:]
+    if toks and toks[0].startswith('(') and len(toks[0]) > 1:
+        toks[0] = toks[0].lstrip('(')
+    if toks and toks[-1].endswith(')') and not toks[-1].startswith('('):
+        toks[-1] = toks[-1].rstrip(')') or toks[-1]
     if not toks:
         continue
     if toks[0] == 'cd' and len(toks) > 1:
@@ -355,8 +390,18 @@ for raw, after_pipe in segs:
         if base != cwd and not target.startswith('/'):
             joined = os.path.join(base, target)
             target = joined if os.path.exists(joined) else base
-        emit(tool_name, kind, pattern, target, cwd)
-        sys.exit(0)
+        hits.append((kind, pattern, target))
+
+# Every search, not just the first: the shell side releases a hit whose target
+# is non-code or outside the repo, so stopping at the first one let
+# 'grep -n x README.md; grep -rn Foo src/' through (QA round 1 F-01). Line 2-5
+# carry the first hit; each hit then follows on its own line, fields split by
+# the unit separator.
+if hits:
+    emit(tool_name, hits[0][0], hits[0][1], hits[0][2], cwd)
+    for h in hits:
+        print(chr(31).join(x.replace(chr(10), ' ') for x in h))
+    sys.exit(0)
 
 # No search anywhere in the payload: a source READ is handed to the Read hook's
 # soft budget below rather than blocked -- see the read branch in the shell part.
@@ -441,6 +486,10 @@ for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/.
 done
 # Partial install -> cannot tell -> fail open. Never block on our own absence.
 [ -n "$_PRLIB" ] || exit 0
+# Absolute BEFORE the cd below: the hook is registered as a relative path
+# (bash .claude/hooks/...), so when the payload cwd is a subdirectory the relative
+# source failed, PROJECT_ROOT came back empty and the gate failed open.
+_PRLIB="$(cd "$(dirname "$_PRLIB")" && pwd -P)/$(basename "$_PRLIB")"
 # project-root.sh resolves from $(pwd). The hook's own cwd is normally the
 # session cwd, but the payload states it explicitly — honour the declared value
 # so resolution does not depend on how the hook happens to be invoked.
@@ -453,42 +502,54 @@ source "$_PRLIB"
 cd "$_ORIG_PWD" 2>/dev/null || true
 REPO_ROOT="$PROJECT_ROOT"
 
-# Resolve the target so the non-code-dir exemptions below can inspect it, and so
-# a target OUTSIDE this project can be released: our sentinel says nothing about
-# another repo's index.
-if [ -n "$TARGET_PATH" ]; then
-    case "$TARGET_PATH" in
-        /*) _ABS="$TARGET_PATH" ;;
-        *)  _ABS="${CWD_FIELD%/}/$TARGET_PATH" ;;
-    esac
-    if [ ! -e "$_ABS" ]; then
-        # Absolute target that doesn't exist -> don't misattribute to this repo (QA m1).
-        case "$TARGET_PATH" in
-            /*) exit 0 ;;
+# _released <target> -> 0 when this one search should pass, 1 when it gates.
+_released() {
+    local t="$1" abs resolved
+    # Resolve the target so the non-code-dir exemptions below can inspect it, and
+    # so a target OUTSIDE this project can be released: our sentinel says nothing
+    # about another repo's index.
+    if [ -n "$t" ]; then
+        case "$t" in
+            /*) abs="$t" ;;
+            *)  abs="${CWD_FIELD%/}/$t" ;;
         esac
-    else
-        _RESOLVED="$(cd "$(dirname "$_ABS")" 2>/dev/null && pwd -P)/$(basename "$_ABS")"
-        case "$_RESOLVED" in
-            "$REPO_ROOT"|"$REPO_ROOT"/*) ;;   # inside this project — gate it
-            *) exit 0 ;;                      # another repo entirely — fail open
-        esac
+        if [ ! -e "$abs" ]; then
+            # Absolute target that doesn't exist -> don't misattribute to this repo (QA m1).
+            case "$t" in /*) return 0 ;; esac
+        else
+            resolved="$(cd "$(dirname "$abs")" 2>/dev/null && pwd -P)/$(basename "$abs")"
+            case "$resolved" in
+                "$REPO_ROOT"|"$REPO_ROOT"/*) ;;   # inside this project — gate it
+                *) return 0 ;;                    # another repo entirely — fail open
+            esac
+        fi
     fi
-fi
-_PROBE_DIR="$REPO_ROOT"
+    case "$t" in
+        */node_modules/*|*/dist/*|*/build/*|*/.git/*|*/vendor/*|*/target/*|node_modules/*|dist/*|build/*|.git/*|vendor/*|target/*) return 0 ;;
+    esac
+    # Non-code file targets: CMM has nothing to offer for them, and a block that
+    # suggests search_graph(name_pattern=...) on CHANGELOG.md teaches agents to
+    # route around the gate. Same carve-out as the Grep gate.
+    case "$t" in
+        *.md|*.markdown|*.json|*.yaml|*.yml|*.txt|*.log|*.csv|*.toml|*.lock|*.ini|*.cfg|*.conf|*.xml|*.env) return 0 ;;
+    esac
+    return 1
+}
 
 # Exempt non-code dirs anywhere in the probe path
-case "$_PROBE_DIR" in
+case "$REPO_ROOT" in
     */node_modules/*|*/dist/*|*/build/*|*/.git/*|*/vendor/*|*/target/*) exit 0 ;;
 esac
-case "$TARGET_PATH" in
-    */node_modules/*|*/dist/*|*/build/*|*/.git/*|*/vendor/*|*/target/*|node_modules/*|dist/*|build/*|.git/*|vendor/*|target/*) exit 0 ;;
-esac
-# Non-code file targets: CMM has nothing to offer for them, and a block that
-# suggests search_graph(name_pattern=...) on CHANGELOG.md teaches agents to route
-# around the gate. Same carve-out as the Grep gate.
-case "$TARGET_PATH" in
-    *.md|*.markdown|*.json|*.yaml|*.yml|*.txt|*.log|*.csv|*.toml|*.lock|*.ini|*.cfg|*.conf|*.xml|*.env) exit 0 ;;
-esac
+
+# Gate on the first search that is not released; its term goes in the message.
+_GATED=false
+while IFS=$'\x1f' read -r _k _p _t; do
+    if ! _released "$_t"; then
+        KIND="$_k"; PATTERN_FIELD="$_p"; TARGET_PATH="$_t"; _GATED=true
+        break
+    fi
+done < <(printf '%s\n' "$PARSED" | sed -n '6,$p')
+[ "$_GATED" = true ] || exit 0
 
 # REPO_ROOT is already the resolved session project root (from project-root.sh).
 # It is deliberately NOT re-derived from the target here — that re-derivation was

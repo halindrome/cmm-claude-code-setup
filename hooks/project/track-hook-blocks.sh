@@ -1,7 +1,7 @@
 #!/bin/bash
 # track-hook-blocks.sh — Inline call from blocking hooks to increment block counts
 # Usage: bash .claude/hooks/track-hook-blocks.sh <type> [reason]
-#   types: read | bash | ctx_payload | ctx_payload_exempt | bash_exempt | bash_unarmed
+#   types: read | bash | ctx_payload | bash_exempt | bash_unarmed
 # Silent, never blocks, always exits 0.
 #
 # Install: cp hooks/project/track-hook-blocks.sh .claude/hooks/ && chmod +x .claude/hooks/track-hook-blocks.sh
@@ -120,8 +120,7 @@ BLOCK_KEYS = {
 # Types that record an ALLOW, not a block. Handled before the total_blocks bump
 # so they can never inflate it. Genuinely unknown types land here too: recording
 # nothing is correct, silently counting them as a block is not.
-if (hook_type in ALLOW_TYPES
-        or (hook_type not in BLOCK_KEYS and hook_type != 'ctx_payload_exempt')):
+if hook_type in ALLOW_TYPES or hook_type not in BLOCK_KEYS:
     if hook_type in ALLOW_TYPES:
         # Reason is hook-supplied, but sanitise before it becomes a JSON key.
         reason = re.sub(r'[^a-z0-9-]', '', (hook_reason or 'unspecified').lower())[:32] or 'unspecified'
@@ -134,18 +133,9 @@ if (hook_type in ALLOW_TYPES
 
 # Increment counters
 data['total_blocks'] = data.get('total_blocks', 0) + 1
-
-if hook_type == 'ctx_payload_exempt':
-    # An exempt use is NOT a block -- undo the unconditional total bump above.
-    # The regression signal for ctx-payload-guard is the exempt:block ratio, not
-    # the block count: a high block count is the gate working as measured, but a
-    # rising exempt ratio means the agent keeps judging the gate wrong.
-    data['total_blocks'] = data.get('total_blocks', 1) - 1
-    data.setdefault('by_hook', {})['ctx-payload-guard-exempt'] = data.get('by_hook', {}).get('ctx-payload-guard-exempt', 0) + 1
-else:
-    bucket, hook_key = BLOCK_KEYS[hook_type]
-    data[bucket] = data.get(bucket, 0) + 1
-    data.setdefault('by_hook', {})[hook_key] = data.get('by_hook', {}).get(hook_key, 0) + 1
+bucket, hook_key = BLOCK_KEYS[hook_type]
+data[bucket] = data.get(bucket, 0) + 1
+data.setdefault('by_hook', {})[hook_key] = data.get('by_hook', {}).get(hook_key, 0) + 1
 
 # Write to temp file
 with open(temp_path, 'w') as f:

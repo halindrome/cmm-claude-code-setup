@@ -315,6 +315,25 @@ _assert_exit "perl -pe WITHOUT -i (prints) still blocked" 2 \
 _assert_exit "awk -i inplace exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"awk -i inplace {print} f.txt"}}'
 
+# QA round 1 F-03: an `i` inside a -M module / -r library name is not -i.
+_assert_exit "perl -pi.bak -e exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -pi.bak -e s/a/b/ f.pl"}}'
+_assert_exit "perl -pie (cluster) exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -pie s/a/b/ f.pl"}}'
+_assert_exit "perl -MFile::Find -e (prints) blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -MFile::Find -e find(sub{print},q(.))"}}'
+_assert_exit "perl -Mwarnings -e (prints) blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -Mwarnings -e print"}}'
+_assert_exit "ruby -ropen-uri -e (prints) blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"ruby -ropen-uri -e puts(1)"}}'
+_assert_exit "ruby -pi -e exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"ruby -pi -e gsub(/a/,%q(b)) f.rb"}}'
+# F-04: a <<'Z' inside a quoted argument is not a heredoc.
+_assert_exit "quoted <<'Z' cannot hide the next line" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"x <<'"'"'Z'"'"'\"\nnpm test"}}'
+_assert_exit "quoted <<'Z' in a cd path cannot hide the next line" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cd \"/tmp<<'"'"'Z'"'"'\"\nnpm test"}}'
+
 # --- run_in_background exempt (expect exit 0) ---
 # Output goes to a background task, never into the conversation, so sandboxing
 # buys nothing. No hook in this stack read this field before 2026-09-04.
@@ -463,6 +482,12 @@ _assert_exit "echo with only a stderr redirect still blocked" 2 \
 # ...but a real stdout redirect alongside a stderr one is still authoring.
 _assert_exit "echo > file with 2>/dev/null still exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"echo hello > f.txt 2>/dev/null"}}'
+
+# QA round 1 F-07: a terminal stream is not a file.
+_assert_exit "cat > /dev/stdout blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c > /dev/stdout"}}'
+_assert_exit "cat > /dev/stderr blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c >/dev/stderr"}}'
 
 # An UNQUOTED heredoc keeps its body and newlines visible to the compound scan,
 # so it is blocked before it can reach the authoring case. Fail-closed.

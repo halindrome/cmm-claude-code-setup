@@ -261,6 +261,17 @@ _assert_exit "c46: source grep later in a compound still blocked" 2 \
     "$(_bash_cmd 'cd /tmp; echo start; grep -rn handler src/')"
 _assert_exit "c47: quoted separator does not split the command" 2 \
     "$(_bash_cmd "grep -n 'a;b' src/main.py")"
+# QA round 1 F-02: the source dir can arrive via cd or a variable.
+_assert_exit "c48: cd src/ && grep . still blocked" 2 "$(_bash_cmd 'cd src/ && grep -rn Foo .')"
+_assert_exit "c49: cd src && grep (no slash) blocked" 2 "$(_bash_cmd 'cd src && grep -rn Foo .')"
+_assert_exit "c50: cd apps/web && grep src blocked" 2 "$(_bash_cmd 'cd apps/web && grep -rn Foo src')"
+_assert_exit "c51: D=src/; grep \$D blocked" 2 "$(_bash_cmd 'D=src/; grep -rn Foo $D')"
+_assert_exit "c52: cd src/ && cat a.json allowed" 0 "$(_bash_cmd 'cd src/ && cat settings.json')"
+_assert_exit "c53: cd /tmp && grep . allowed" 0 "$(_bash_cmd 'cd /tmp && grep -rn Foo . ; ls src/')"
+# F-08: an earlier redirect must not hide a later command.
+_assert_exit "c54: echo > file; grep src/ blocked" 2 "$(_bash_cmd 'echo hi > /tmp/x; grep -rn Foo src/')"
+_assert_exit "c55: ls 2>/dev/null; grep src/ blocked" 2 "$(_bash_cmd 'ls 2>/dev/null; grep -rn Foo src/')"
+_assert_exit "c56: grep 2>&1 | head on src/ blocked" 2 "$(_bash_cmd 'grep -rn Foo src/ 2>&1 | head -5')"
 
 echo "--- Test c18b: an --include glob never becomes the search term (QA r1 F-03) ---"
 # `.*` in the extractor was greedy, so it bound the LAST quoted string: a trailing

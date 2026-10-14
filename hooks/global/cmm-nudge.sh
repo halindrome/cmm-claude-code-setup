@@ -88,7 +88,11 @@ case "$FILE_PATH" in
 esac
 # Check project extra_extensions from .codebase-memory.json
 if [ "$_IS_CODE" = false ] && [ -n "$REPO_ROOT" ]; then
-  _EXT_CACHE="/tmp/cmm-user-ext-$(echo -n "$REPO_ROOT" | md5 -q 2>/dev/null || echo -n "$REPO_ROOT" | md5sum 2>/dev/null | cut -d' ' -f1)"
+  # Keyed on the config's mtime too, as in cmm-grep-nudge.sh (GNU stat first --
+  # see the note there): a root-only key made the first read permanent, so a
+  # newly added extension was never seen (QA round 1 F-09).
+  _CFG_MTIME=$(stat -c %Y "${REPO_ROOT}/.codebase-memory.json" 2>/dev/null || stat -f %m "${REPO_ROOT}/.codebase-memory.json" 2>/dev/null || echo 0)
+  _EXT_CACHE="/tmp/cmm-user-ext-$(echo -n "$REPO_ROOT" | md5 -q 2>/dev/null || echo -n "$REPO_ROOT" | md5sum 2>/dev/null | cut -d' ' -f1)-${_CFG_MTIME}"
   if [ ! -f "$_EXT_CACHE" ]; then
     python3 -c "
 import json, os
