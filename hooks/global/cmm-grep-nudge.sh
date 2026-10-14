@@ -227,7 +227,47 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   BNAV_SCAN=$(printf '%s ' "$BNAV_HEAD" \
     | sed -E 's/\|[[:space:]]*(grep|rg|find|cat|head|tail|wc)[[:space:]]/| _sink_ /g' \
     | sed -E 's/(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)[[:space:]]*$/\1_dangling_ /')
-  if echo "$BNAV_SCAN" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
+  #
+  # The two greps below still take the verb and the path from the WHOLE head, so
+  # `M=apps/x; cat $M/tsconfig.spec.json` or `grep FAIL /tmp/verify.log; ls apps/`
+  # paired a verb from one command with a path from another. _bnav_source_segment
+  # re-checks per command (quote-aware, split on ; & | and newlines): some single
+  # command must hold both, and its path operands must not all be non-code files
+  # (nor its --include / -g globs all non-code). Measured 2026-10-14: agents met
+  # those false positives with '# cmm-exempt' and then kept the marker for real
+  # source greps. Unparseable (unbalanced quotes) -> keep the block.
+  _bnav_source_segment() {
+    BNAV_SCAN="$1" python3 -c '
+import os, re, shlex, sys
+VERB = re.compile(r"(^|[\s|;&(])(grep|rg|find|cat|head|tail|wc)(\s|$)")
+SRC = re.compile(r"(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)")
+NONCODE = (".md", ".markdown", ".json", ".yaml", ".yml", ".txt", ".log", ".csv",
+           ".toml", ".lock", ".ini", ".cfg", ".conf", ".xml", ".env")
+def noncode(p):
+    return p.lower().endswith(NONCODE)
+lx = shlex.shlex(os.environ["BNAV_SCAN"].replace(chr(10), " ; "), posix=False, punctuation_chars=";&|")
+lx.whitespace_split = True
+seg = []
+for t in list(lx) + [";"]:
+    if not set(t) <= set(";&|"):
+        seg.append(t)
+        continue
+    if VERB.search(" ".join(seg)):
+        bare = [x.strip(chr(34) + chr(39) + "()") for x in seg]
+        paths = [x for x in bare if SRC.search(x)]
+        globs = [x.split("=", 1)[1] for x in bare if x.startswith(("--include=", "--glob="))]
+        globs += [bare[i + 1] for i, x in enumerate(bare[:-1]) if x in ("--include", "-g", "--glob")]
+        if paths and not all(map(noncode, paths)) and not (globs and all(map(noncode, globs))):
+            sys.exit(0)
+    seg = []
+sys.exit(3)
+' 2>/dev/null
+    # Only an explicit 3 releases: a lexer error or a missing python3 exits with
+    # something else and keeps the block.
+    [ $? -ne 3 ]
+  }
+  if echo "$BNAV_SCAN" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)' \
+     && _bnav_source_segment "$BNAV_SCAN"; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)
     BASH_CWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)

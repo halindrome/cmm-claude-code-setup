@@ -240,6 +240,26 @@ _assert_exit "c15c: 'ls src/ | cat' not blocked" 0 \
 _assert_exit "c15d: 'grep -rn foo src/ | cat' still blocked" 2 \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -rn foo src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
 
+# --- Verb and path must belong to the SAME command, and that path must be code ---
+# Shapes from the 2026-10-14 maintainx replay that blocked a non-code read.
+_bash_cmd() { python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.argv[1]},"cwd":sys.argv[2]}))' "$1" "$PROJ_REAL"; }
+_assert_exit "c40: verb and src/ path in different commands allowed" 0 \
+    "$(_bash_cmd 'M=apps/mobile; cat $M/tsconfig.spec.json')"
+_assert_exit "c41: log grep in a compound that mentions apps/ allowed" 0 \
+    "$(_bash_cmd 'grep -c FAIL /tmp/qa/verify.log; ls apps/ | wc -l')"
+_assert_exit "c42: cat of a non-code file under src/ allowed" 0 \
+    "$(_bash_cmd 'cat src/config/settings.json')"
+_assert_exit "c43: grep restricted to non-code --include globs allowed" 0 \
+    "$(_bash_cmd "grep -rn externalEvents --include='*.conf' --include='*.yaml' apps/")"
+_assert_exit "c44: a code --include glob still blocked" 2 \
+    "$(_bash_cmd "grep -rn externalEvents --include='*.conf' --include='*.pm' apps/")"
+_assert_exit "c45: code file alongside a non-code one still blocked" 2 \
+    "$(_bash_cmd 'grep -n foo src/a.json src/main.py')"
+_assert_exit "c46: source grep later in a compound still blocked" 2 \
+    "$(_bash_cmd 'cd /tmp; echo start; grep -rn handler src/')"
+_assert_exit "c47: quoted separator does not split the command" 2 \
+    "$(_bash_cmd "grep -n 'a;b' src/main.py")"
+
 echo "--- Test c18b: an --include glob never becomes the search term (QA r1 F-03) ---"
 # `.*` in the extractor was greedy, so it bound the LAST quoted string: a trailing
 # --include='*.pl' produced search_graph(name_pattern="*.pl"), a call that returns
