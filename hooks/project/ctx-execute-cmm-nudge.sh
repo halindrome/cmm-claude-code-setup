@@ -287,10 +287,35 @@ def classify(tokens):
         return (kind, pat, target) if kind else None
     return None
 
+def read_target(tokens):
+    # Line-range / whole-file reads: sed -n 'a,bp' F, head/tail [-n N] F, cat F,
+    # awk 'NR>=a' F. Returns the file operand or None. sed needs -n so an
+    # in-place edit (sed -i) is never mistaken for a read.
+    verb = tokens[0]
+    if verb not in ('sed','head','tail','cat','awk'):
+        return None
+    if verb == 'sed' and not any(t.startswith('-') and not t.startswith('--') and 'n' in t for t in tokens[1:]):
+        return None
+    pos, skip = [], False
+    for t in tokens[1:]:
+        if skip:
+            skip = False
+            continue
+        if t in ('-n','-c','-e','-f','-v','-F'):
+            skip = verb in ('head','tail','awk') or t in ('-e','-f')
+            continue
+        if t.startswith('-'):
+            continue
+        pos.append(t)
+    if verb in ('sed','awk') and len(pos) < (1 if '-e' in tokens or '-f' in tokens else 2):
+        return None
+    return pos[-1] if pos else None
+
 # A cd earlier in the payload moves where a relative target points; follow it so
 # the outside-repo and non-code-dir checks see the real directory. A target that
 # does not resolve (apps/\$a/src) falls back to the cd directory itself.
 base = cwd
+read_file = ''
 try:
     segs = list(segments(code))
 except ValueError:
@@ -310,6 +335,11 @@ for raw, after_pipe in segs:
     if toks[0] == 'cd' and len(toks) > 1:
         base = os.path.join(base, toks[1])
         continue
+    rt = read_target(toks)
+    if rt and not read_file:
+        rt = os.path.join(base, rt)
+        if os.path.isfile(rt):
+            read_file = rt
     hit = classify(toks)
     if hit:
         kind, pattern, target = hit
@@ -318,6 +348,12 @@ for raw, after_pipe in segs:
             target = joined if os.path.exists(joined) else base
         emit(tool_name, kind, pattern, target, cwd)
         sys.exit(0)
+
+# No search anywhere in the payload: a source READ is handed to the Read hook's
+# soft budget below rather than blocked -- see the read branch in the shell part.
+if read_file:
+    emit(tool_name, 'read', '', read_file, cwd)
+    sys.exit(0)
 
 emit(tool_name, 'other', '', '', cwd)
 " 2>/dev/null)
@@ -343,6 +379,28 @@ case "$TOOL_NAME" in
     mcp__context-mode__ctx_batch_execute) ;;
     *) exit 0 ;;
 esac
+
+# --- Source reads: advisory, via the Read hook's own budget ---
+# sed -n 'a,bp' / head / tail / cat on a source file is the sandbox spelling of
+# Read. Read is deliberately never blocked (cmm-nudge.sh header: the hard Read
+# gate was measured net-negative, and a block just moves a bounded read to the
+# Read tool -- or, for sed's multi-range form, to several of them). So hand it to
+# cmm-nudge.sh as a Read of the same file: one counter per (session, file) across
+# both routes, the same exemptions, the same back-off. Absent -> silent.
+if [ "$KIND" = "read" ]; then
+    for _n in "$(dirname "${BASH_SOURCE[0]}")/cmm-nudge.sh" "$(dirname "${BASH_SOURCE[0]}")/../global/cmm-nudge.sh"; do
+        if [ -f "$_n" ]; then
+            echo "$INPUT" | TARGET="$TARGET_PATH" python3 -c "
+import json, os, sys
+d = json.load(sys.stdin)
+print(json.dumps({'tool_name': 'Read', 'tool_input': {'file_path': os.environ['TARGET']},
+                  'session_id': d.get('session_id', ''), 'cwd': d.get('cwd', '')}))
+" 2>/dev/null | bash "$_n" 2>/dev/null
+            break
+        fi
+    done
+    exit 0
+fi
 
 # Fail-open for anything other than a classified code-search kind
 case "$KIND" in

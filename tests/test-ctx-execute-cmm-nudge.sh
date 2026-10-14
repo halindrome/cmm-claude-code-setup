@@ -264,6 +264,25 @@ _assert_exit "non-code dir in a batch still passes" 0 \
 _assert_exit "non-indexed repo still fails open on batch" 0 \
     "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"grep -rn MyFunc src/\"}],\"queries\":[\"q\"]},\"cwd\":\"$NONIDX\"}"
 
+# --- Source reads: advisory via cmm-nudge.sh's shared per-file budget ---
+# sed -n / head / cat on source never blocks (Read doesn't either); past the
+# Read budget it gets the same nudge Read would.
+echo ""
+echo "--- Source reads: advisory, shared budget with Read ---"
+for i in $(seq 1 60); do echo "line $i"; done > "$FIX/src/big.ts"
+_SID="ctxread-test-$$"
+_rd() { echo "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_execute\",\"tool_input\":{\"code\":\"$1\"},\"session_id\":\"$_SID\",\"cwd\":\"$FIX\"}"; }
+_assert_exit "sed -n read is allowed" 0 "$(_rd "cd $FIX/src; sed -n '10,20p;40,45p' big.ts")"
+_assert_exit "head read is allowed"   0 "$(_rd "head -n 30 src/big.ts")"
+_out=$(_rd "cat src/big.ts" | bash "$HOOK" 2>/dev/null)
+if [ -z "$_out" ]; then echo "PASS: third read under budget is silent"; PASS=$((PASS+1)); else echo "FAIL: third read nudged: $_out"; FAIL=$((FAIL+1)); fi
+_out=$(_rd "sed -n 1,5p src/big.ts" | bash "$HOOK" 2>/dev/null)
+if echo "$_out" | grep -q "read 'big.ts' 4 times"; then echo "PASS: fourth read gets the Read nudge"; PASS=$((PASS+1)); else echo "FAIL: fourth read not nudged: $_out"; FAIL=$((FAIL+1)); fi
+_out=$(_rd "sed -i 's/a/b/' src/big.ts" | bash "$HOOK" 2>/dev/null)
+if [ -z "$_out" ]; then echo "PASS: sed -i is not a read"; PASS=$((PASS+1)); else echo "FAIL: sed -i counted as read"; FAIL=$((FAIL+1)); fi
+_assert_exit "read + grep in one payload still blocks" 2 "$(_rd "sed -n 1,5p src/big.ts; grep -rn foo src/")"
+rm -f /tmp/cmm-reads-${_SID}-* 2>/dev/null
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

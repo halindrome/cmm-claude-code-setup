@@ -2087,8 +2087,9 @@ install_project() {
   #   index-root-gate.sh — PreToolUse:mcp__codebase-memory-mcp__index_repository hard-block for subtree indexing in monorepos (phase 65)
   #   ctx-payload-guard.sh — PreToolUse on all three ctx execution tools (both name forms):
   #     hard-blocks output truncation inside ctx payloads (cmd | head/tail, stdout > file).
-  #     Deliberately separate from ctx-execute-cmm-nudge.sh, whose parser fails OPEN on pipes
-  #     by design; this one must fire ON them. No bypass marker.
+  #     Deliberately separate from ctx-execute-cmm-nudge.sh, which asks a different question
+  #     (is a pipeline HEAD a code search?) and ignores pipe sinks; this one must fire ON
+  #     the sink. No bypass marker.
   #   ctx-shell-compat.sh — PreToolUse on the same six ctx tool names, ADVISORY (never blocks):
   #     warns when a shell payload uses bash-only syntax. context-mode resolves one "shell"
   #     runtime ($SHELL when allowlisted, else bash), so payloads run zsh on a default macOS
