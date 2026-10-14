@@ -182,6 +182,8 @@ def git_unwrap(tokens):
     return tokens
 
 GREP_FAMILY = {'grep','egrep','fgrep','rg','ripgrep','ack','ag','ugrep'}
+NONCODE = ('.md', '.markdown', '.json', '.yaml', '.yml', '.txt', '.log', '.csv',
+           '.toml', '.lock', '.ini', '.cfg', '.conf', '.xml', '.env')
 
 def extract_grep_family(toks, tool_first):
     # First non-flag positional arg is the pattern; last remaining positional is target path.
@@ -196,6 +198,7 @@ def extract_grep_family(toks, tool_first):
     if tool_first in ('rg','ripgrep'):
         value_flags = value_flags | {'-r'}
     explicit_pattern = None
+    includes = []
     while i < len(toks):
         t = toks[i]
         if skip_next:
@@ -214,12 +217,16 @@ def extract_grep_family(toks, tool_first):
                 skip_next = True
                 i += 1
                 continue
-            # --include=... attached-value form: ignore
+            # --include=... attached-value form: kept only as a file filter
             if '=' in t:
+                if t.startswith(('--include=', '--glob=')):
+                    includes.append(t.split('=', 1)[1])
                 i += 1
                 continue
             # Other value-taking flags we recognize
             if t in value_flags and i+1 < len(toks):
+                if t in ('--include', '-g', '--glob'):
+                    includes.append(toks[i+1])
                 skip_next = True
                 i += 1
                 continue
@@ -233,10 +240,10 @@ def extract_grep_family(toks, tool_first):
         target = positionals[-1] if positionals else ''
     else:
         if not positionals:
-            return ('', '')
+            return ('', '', includes)
         pattern = positionals[0]
         target = positionals[-1] if len(positionals) > 1 else ''
-    return (pattern, target)
+    return (pattern, target, includes)
 
 def extract_find_name(toks):
     # Look for '-name GLOB'. Target is the first positional directory before any flag.
@@ -280,7 +287,14 @@ def classify(tokens):
         tokens = git_unwrap(tokens)
         first = tokens[0]
     if first in GREP_FAMILY:
-        pattern, target = extract_grep_family(tokens, first)
+        pattern, target, includes = extract_grep_family(tokens, first)
+        # Restricted to non-code files by --include / -g: a config search CMM has
+        # nothing to offer for. An allowlist, not 'no code extension' -- CODE_EXTS
+        # lacks extra_extensions, so --include='*.cgi' must still block. A '!glob'
+        # excludes rather than restricts, so it does not count.
+        includes = [g for g in includes if not g.startswith('!')]
+        if includes and all(g.lower().endswith(NONCODE) for g in includes):
+            return None
         return ('grep-family', pattern, target) if pattern else None
     if first == 'find':
         kind, pat, target = extract_find_name(tokens)
@@ -478,7 +492,7 @@ esac
 # suggests search_graph(name_pattern=...) on CHANGELOG.md trains agents to reach
 # for '# cmm-exempt' reflexively. Same carve-out as the Grep gate.
 case "$TARGET_PATH" in
-    *.md|*.json|*.yaml|*.yml|*.txt|*.log|*.csv|*.toml|*.lock|*.ini|*.xml|*.env) exit 0 ;;
+    *.md|*.markdown|*.json|*.yaml|*.yml|*.txt|*.log|*.csv|*.toml|*.lock|*.ini|*.cfg|*.conf|*.xml|*.env) exit 0 ;;
 esac
 
 # REPO_ROOT is already the resolved session project root (from project-root.sh).

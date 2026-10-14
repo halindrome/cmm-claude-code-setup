@@ -253,6 +253,8 @@ _assert_exit "c43: grep restricted to non-code --include globs allowed" 0 \
     "$(_bash_cmd "grep -rn externalEvents --include='*.conf' --include='*.yaml' apps/")"
 _assert_exit "c44: a code --include glob still blocked" 2 \
     "$(_bash_cmd "grep -rn externalEvents --include='*.conf' --include='*.pm' apps/")"
+_assert_exit "c44b: an rg -g exclusion is not a non-code restriction" 2 \
+    "$(_bash_cmd "rg foo -g '!*.md' src/")"
 _assert_exit "c45: code file alongside a non-code one still blocked" 2 \
     "$(_bash_cmd 'grep -n foo src/a.json src/main.py')"
 _assert_exit "c46: source grep later in a compound still blocked" 2 \

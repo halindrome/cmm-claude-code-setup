@@ -120,6 +120,13 @@ _assert_stderr_contains "quoted pipe is pattern, not separator" \
 _assert_exit "incident payload (cd; for; do grep | grep)" 2 "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cd $FIX; ls; for a in src lib; do echo \\\"== \$a\\\"; grep -rnE \\\"\\\\\\\\.userID|userID\\\\\\\\]\\\" \$a --include=*.ts 2>/dev/null | grep -viE \\\"spec\\\\\\\\.ts\\\"; done\"},\"cwd\":\"$FIX\"}"
 _assert_exit "non-code file target passes"  0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cd $FIX; grep -n 'Phase' CHANGELOG.md; echo done\"},\"cwd\":\"$FIX\"}"
 _assert_exit "cd into another repo releases" 0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"cd $NONIDX && grep -rn foo .\"},\"cwd\":\"$FIX\"}"
+# --include restricted to non-code files: a config search. Allowlist only, so an
+# extension the parser does not know (.cgi, via extra_extensions) still blocks.
+_assert_exit "--include non-code only passes" 0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn externalEvents --include='*.conf' --include=*.yaml .\"},\"cwd\":\"$FIX\"}"
+_assert_exit "--include unknown ext blocks"   2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn checkSession --include='*.cgi' .\"},\"cwd\":\"$FIX\"}"
+_assert_exit "--include mixed blocks"         2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn foo --include='*.conf' --include '*.pm' .\"},\"cwd\":\"$FIX\"}"
+_assert_exit "rg -g '!*.md' exclusion blocks" 2 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"rg foo -g '!*.md' src/\"},\"cwd\":\"$FIX\"}"
+_assert_exit "rg -g '*.json' passes"          0 "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"rg foo -g '*.json' src/\"},\"cwd\":\"$FIX\"}"
 
 echo ""
 echo "--- Still allowed inside compound commands (expect exit 0) ---"

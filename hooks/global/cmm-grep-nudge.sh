@@ -257,6 +257,7 @@ for t in list(lx) + [";"]:
         paths = [x for x in bare if SRC.search(x)]
         globs = [x.split("=", 1)[1] for x in bare if x.startswith(("--include=", "--glob="))]
         globs += [bare[i + 1] for i, x in enumerate(bare[:-1]) if x in ("--include", "-g", "--glob")]
+        globs = [g for g in globs if not g.startswith("!")]   # rg -g "!x" excludes
         if paths and not all(map(noncode, paths)) and not (globs and all(map(noncode, globs))):
             sys.exit(0)
     seg = []
