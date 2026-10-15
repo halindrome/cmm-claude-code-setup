@@ -357,8 +357,10 @@ env = {'PWD': [cwd], 'HOME': [os.path.expanduser('~')]}
 
 def toplevel(d):
     # Nearest ancestor of d holding .git; no subprocess on the hook's hot path.
-    # None when d is unknown or not in a repo (QA round 4 F-05).
-    while d and d != '/':
+    # None when d is unknown, missing, or not in a repo (QA rounds 4-5, F-05 / F-03).
+    if not d or not os.path.isdir(d):
+        return None
+    while d != '/':
         if os.path.exists(os.path.join(d, '.git')):
             return d
         d = os.path.dirname(d)
@@ -401,30 +403,59 @@ for raw, after_pipe in segs:
         # any other substitution (\$(mktemp)) stays unknown (QA round 3 F-03).
         # From an unknown directory they stay unknown too (R4 F-05).
         m = re.match(r'^(?:(?:export|local|declare|readonly|typeset)(?:\s+-\w+)*\s+)?([A-Za-z_][A-Za-z0-9_]*)=\x22?\\\$\(([^()]*)\)([^\s\x22]*)\x22?$', ' '.join(raw))
+        # The -C operand is expanded and must resolve; anything unknown clears
+        # the name rather than keeping an older value (QA round 5 F-03).
         if m:
             sub, val = m.group(2).strip(), None
             gm = re.fullmatch(r'git (?:-C (\S+) )?rev-parse --show-toplevel', sub)
             if sub == 'pwd':
                 val = base
+            elif gm and gm.group(1):
+                d = expand(gm.group(1).strip(chr(34) + chr(39)))
+                if len(d) == 1 and (base or d[0].startswith('/')):
+                    val = toplevel(os.path.join(base or '/', d[0]))
             elif gm:
-                val = toplevel(os.path.join(base or '/', gm.group(1)) if gm.group(1) else base)
-            if val:
-                env[m.group(1)] = [val + m.group(3)]
+                val = toplevel(base)
+            env[m.group(1)] = [val + m.group(3)] if val else []
         continue
     # Drop redirections BEFORE unquoting: grep -n '>' src/x has a quoted pattern,
     # not an operator, and dropping it took the target with it (R4 F-01). A
     # detached OUTPUT operator also takes its target: in 'grep -rn Foo src/ 2>
     # /dev/null' the target is src/, not /dev/null (QA round 1 F-05). A bare '<'
     # is dropped alone so the file it feeds stays the grep target.
-    kept, skip = [], False
+    # The raw lexer splits a word whose quote starts mid-word (-e'x > 0',
+    # >/tmp/'a b', an escaped space), so quote state is tracked across pieces: an
+    # operator only counts outside quotes, and a dropped word takes its
+    # continuation pieces with it (QA round 5 F-02).
+    def qstate(s, st):
+        i = 0
+        while i < len(s):
+            c = s[i]
+            if c == chr(92) and st != chr(39):
+                i += 1
+            elif st == '' and c in (chr(34), chr(39)):
+                st = c
+            elif c == st:
+                st = ''
+            i += 1
+        return st
+    kept, st, cont, keep, pending = [], '', False, True, False
     herestr = any(t.startswith('<<<') for t in raw)   # also <<<\"\$out\" (R3 F-06)
     for t in raw:
-        if skip:
-            skip = False
+        if st or cont:
+            if keep:
+                kept.append(t)
+        elif pending:
+            pending, keep = False, False
         elif re.fullmatch(r'\d*>>?|&>>?|\d*>\||<<<', t):
-            skip = True   # <<< feeds a string, not a file (QA round 2 R2-03)
-        elif not re.match(r'^(\d*[<>]|&>)', t):
+            pending, keep = True, False   # <<< feeds a string, not a file (R2-03)
+        elif re.match(r'^(\d*[<>]|&>)', t):
+            keep = False
+        else:
+            keep = True
             kept.append(t)
+        st = qstate(t, st)
+        cont = not st and (len(t) - len(t.rstrip(chr(92)))) % 2 == 1
     try:
         toks = shlex.split(' '.join(kept), posix=True)
     except ValueError:

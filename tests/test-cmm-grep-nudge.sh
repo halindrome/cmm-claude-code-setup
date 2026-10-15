@@ -297,6 +297,10 @@ _assert_exit "c70: F-05 cd inside \$(...) does not leak" 0 "$(_bash_cmd 'echo "$
 _assert_exit "c71: F-09 here-string running cat src/ blocked" 2 "$(_bash_cmd 'grep Foo <<< "$(cat src/main.py)"')"
 # QA round 4.
 _assert_exit "c72: R4 F-02 nested quotes in \"\$(cat \"src/x\")\" blocked" 2 "$(_bash_cmd 'echo "$(cat "src/main.py")"')"
+# QA round 5 F-01: a nested-quoted $(...) is still its own command.
+_assert_exit "c73: R5 git -C apps/web commit -m \"\$(cat \"\$MSG\")\" allowed" 0 "$(_bash_cmd 'git -C apps/web commit -m "$(cat "$MSG")"')"
+_assert_exit "c74: R5 scripts/release.py \"\$(cat \"VERSION\")\" allowed" 0 "$(_bash_cmd 'python3 scripts/release.py --version "$(cat "VERSION")"')"
+_assert_exit "c75: R5 sed -i on src/ with \"\$(cat \"VERSION\")\" allowed" 0 "$(_bash_cmd 'sed -i "" "s/__VER__/$(cat "VERSION")/" src/version.py')"
 
 echo "--- Test c18b: an --include glob never becomes the search term (QA r1 F-03) ---"
 # `.*` in the extractor was greedy, so it bound the LAST quoted string: a trailing

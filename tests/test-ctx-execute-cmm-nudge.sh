@@ -175,6 +175,15 @@ _assert_exit "R4 F-05 \$(pwd) after unknown cd passes"     0 "$(_ce 'cd "$OTHER"
 _assert_exit "R4 F-06 loop over -name README.md passes"   0 "$(_ce 'for f in $(find docs -name README.md); do grep -n Foo $f; done')"
 _assert_exit "R4 F-07 declare -r D=src blocks"            2 "$(_ce 'declare -r D=src; grep -rn Foo $D')"
 _assert_exit "R4 F-07 D=\$(pwd)/src blocks"                2 "$(_ce 'D=$(pwd)/src; grep -rn Foo $D')"
+# QA round 5.
+_assert_exit "R5 F-02 -e'x > 0' pattern blocks"           2 "$(_ce "grep -rn -e'if x > 0' src/")"
+_assert_exit "R5 F-02 --regexp='a > b' blocks"            2 "$(_ce "grep -rn --regexp='a > b' src/")"
+_assert_exit "R5 F-02 --regexp='Array <string>' blocks"   2 "$(_ce "grep -rn --regexp='Array <string>' src/")"
+_assert_exit "R5 F-02 >/tmp/\"out file\" blocks"          2 "$(_ce 'grep -rn Foo src/ >/tmp/"out file"')"
+_assert_exit "R5 F-02 > escaped-space file blocks"        2 "$(_ce 'grep -rn Foo src/ > /tmp/my\ out.txt')"
+_assert_exit "R5 F-03 -C \"\$OTHER\" toplevel passes"       0 "$(_ce 'R=$(git -C "$OTHER" rev-parse --show-toplevel); grep -rn Foo $R/src')"
+_assert_exit "R5 F-03 -C nosuch toplevel passes"          0 "$(_ce 'R=$(git -C nosuch rev-parse --show-toplevel); grep -rn Foo $R/src')"
+_assert_exit "R5 F-03 unknown \$(pwd) clears D"            0 "$(_ce 'D=src; cd "$X"; D=$(pwd); grep -rn Foo $D')"
 # Registered as a RELATIVE path (bash .claude/hooks/...) with the payload cwd in
 # a subdirectory: the lib must still load, or the gate fails open.
 _rel_rc=0
