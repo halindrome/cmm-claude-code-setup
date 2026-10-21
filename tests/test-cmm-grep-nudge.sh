@@ -217,7 +217,7 @@ _msg_of() { echo "$1" | bash "$HOOK" 2>&1 >/dev/null || true; }
 
 echo "--- Test c18: Grep block echoes the real search term ---"
 _M=$(_msg_of "{\"tool_input\":{\"pattern\":\"handleRequest\",\"glob\":\"*.ts\",\"path\":\"$PROJ\"}}")
-if printf '%s' "$_M" | grep -qF 'search_graph(name_pattern="handleRequest")'; then
+if printf '%s' "$_M" | grep -qF 'search_graph(name_pattern="handleRequest", project="'; then
     echo "PASS: c18: block names the concrete search_graph call"; PASS=$((PASS+1))
 else
     echo "FAIL: c18: block still prints a placeholder"; FAIL=$((FAIL+1))
@@ -316,6 +316,98 @@ echo '{"extra_extensions":{".cgi":"perl"}}' > "$PROJ/.codebase-memory.json"
 _assert_exit "c23: declared .cgi blocked without clearing the cache" 2 \
     "{\"tool_input\":{\"pattern\":\"handler\",\"glob\":\"*.cgi\",\"path\":\"$PROJ\"}}"
 rm -f "$PROJ/.codebase-memory.json"
+
+# --- c24: the search term comes from the SEGMENT that owns the search verb ---
+# Compound commands are routinely narrated with echo labels. _extract_term took
+# the FIRST quoted string in the whole command, so an echo label ahead of the
+# grep supplied the term: the block fired correctly and then suggested
+#   search_code(pattern="=== spec: changeTarget/_fetch coverage ===")
+# which runs and returns nothing. Same class as the --include='*.pl' fix (c18b):
+# a plausible-but-wrong term converts worse than a bare "..." placeholder.
+# Observed live 2026-09-04 in liverpool-cleanup.
+echo ""
+echo "--- Test c24: echo labels must not hijack the extracted term ---"
+
+_c24_term_is() {
+    local label="$1" cmd="$2" want="$3"
+    local msg
+    msg=$(_msg_of "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"cwd\":\"$PROJ_REAL\"}")
+    if printf '%s' "$msg" | grep -qF "\"$want\""; then
+        echo "PASS: c24: $label"; PASS=$((PASS+1))
+    else
+        echo "FAIL: c24: $label (term not '$want')"
+        echo "    msg: $msg"
+        FAIL=$((FAIL+1))
+    fi
+}
+
+_c24_term_is "bare grep keeps its own term" \
+    "grep -n 'changeTarget' src/main.py" "changeTarget"
+_c24_term_is "echo label BEFORE the grep does not win" \
+    "echo '=== coverage ==='; grep -n 'changeTarget' src/main.py" "changeTarget"
+_c24_term_is "echo labels on both sides" \
+    "echo '=== a ==='; grep -n 'changeTarget' src/main.py; echo '=== b ==='" "changeTarget"
+_c24_term_is "grep keeps its pipe sink in the same segment" \
+    "grep -n 'changeTarget' src/main.py | head -40" "changeTarget"
+# A leading `git -C <dir> <non-grep>` owns no search term; selecting it would
+# yield the placeholder and lose the real term further along.
+_c24_term_is "leading git -C branch does not claim the segment" \
+    "git -C src branch --show-current && echo '=== hdr ==='; grep -n 'changeTarget' src/main.py" "changeTarget"
+# Uses `git grep … src/` rather than `git -C src grep … .`: the outer gate
+# requires a source-path fragment to classify the command as navigation at all,
+# and `.` is not one. That predates this fix and is a separate behaviour.
+_c24_term_is "git grep IS a search verb" \
+    "echo '=== hdr ==='; git grep -n 'changeTarget' src/" "changeTarget"
+
+# And a compound with no code search at all must still pass through untouched.
+_assert_exit "c24: git branch + status compound not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git -C src branch --show-current && git -C src status --porcelain\"},\"cwd\":\"$PROJ_REAL\"}"
+
+# --- c25: a nav verb left DANGLING by the `<<` cut owns no path ---
+# BNAV_HEAD is cut at the first `<<`, so
+#   git -C /repo/apps/mobile commit --no-edit -m "$(cat <<'EOF' … EOF)"
+# became `… -m "$(cat `. The bare `cat` (preceded by `(`, in the separator class)
+# satisfied the VERB test while `apps/` from the `git -C` PATH satisfied the path
+# test -- the two taken from different commands. Observed live 2026-09-04 in
+# liverpool-cleanup, blocking a commit whose message body came from a here-doc:
+# exactly the shape ctx-execute-enforcer.sh was fixed for in 4d26952, blocked
+# here instead, so that fix bought the agent nothing.
+echo ""
+echo "--- Test c25: dangling nav verb after the here-doc cut ---"
+
+# Built via a quoted here-doc, then JSON-encoded in python: the payload contains
+# both `"` and `$(`, and hand-escaping those through a bash double-quoted string
+# into JSON is how the earlier fixtures in this file grew unreadable.
+_c25_json() {
+    _C25_CMD="$1" _C25_CWD="$PROJ_REAL" python3 -c 'import json, os
+print(json.dumps({"tool_name": "Bash",
+                  "tool_input": {"command": os.environ["_C25_CMD"]},
+                  "cwd": os.environ["_C25_CWD"]}))'
+}
+
+read -r -d '' _C25_COMMIT <<'C25EOF' || true
+git -C __PROJ__/apps/mobile commit --no-edit -m "$(cat <<'EOF'
+fix(comms): correct _fetch change target
+
+Body line that mentions src/main.py on purpose.
+EOF
+)"
+C25EOF
+_C25_COMMIT="${_C25_COMMIT//__PROJ__/$PROJ_REAL}"
+
+_assert_exit "c25: here-doc commit message not blocked as navigation" 0 \
+    "$(_c25_json "$_C25_COMMIT")"
+
+# The fix must not disarm the gate. Each of these keeps its argument, so the verb
+# and the path belong to the SAME command and the block must stand.
+_assert_exit "c25: cat inside \$() WITH a path still blocked" 2 \
+    "$(_c25_json 'echo "$(cat apps/mobile/src/foo.ts)"')"
+_assert_exit "c25: bare input redirect still blocked (F-01)" 2 \
+    "$(_c25_json 'cat < src/main.py')"
+_assert_exit "c25: plain cat of a source path still blocked" 2 \
+    "$(_c25_json 'cat src/main.py')"
+_assert_exit "c25: grep with its own term still blocked" 2 \
+    "$(_c25_json 'grep -n changeTarget apps/mobile/src/comms.service.spec.ts')"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

@@ -141,19 +141,19 @@ echo ""
 echo "--- REPLACE WITH ordering (stderr content checks) ---"
 _assert_stderr_contains "bare identifier -> search_graph first" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn 'MyFunc' src/\"},\"cwd\":\"$FIX\"}" \
-    'REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern="MyFunc")'
+    'REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern="MyFunc", project="'
 _assert_stderr_contains "bare identifier -> search_code second" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn 'MyFunc' src/\"},\"cwd\":\"$FIX\"}" \
-    'OR:           mcp__codebase-memory-mcp__search_code(query="MyFunc")'
+    'OR:           mcp__codebase-memory-mcp__search_code(pattern="MyFunc", project="'
 _assert_stderr_contains "regex alternation -> search_code first" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep 'password|PASSWORD' src/\"},\"cwd\":\"$FIX\"}" \
-    'REPLACE WITH: mcp__codebase-memory-mcp__search_code(query="password|PASSWORD")'
+    'REPLACE WITH: mcp__codebase-memory-mcp__search_code(pattern="password|PASSWORD", project="'
 _assert_stderr_contains "regex alternation -> search_graph second" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep 'password|PASSWORD' src/\"},\"cwd\":\"$FIX\"}" \
-    'OR:           mcp__codebase-memory-mcp__search_graph(name_pattern="password|PASSWORD")'
+    'OR:           mcp__codebase-memory-mcp__search_graph(name_pattern="password|PASSWORD", project="'
 _assert_stderr_contains "find -name *.go -> search_code first (no bare id)" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"find src -name '*.go'\"},\"cwd\":\"$FIX\"}" \
-    'REPLACE WITH: mcp__codebase-memory-mcp__search_code(query='
+    'REPLACE WITH: mcp__codebase-memory-mcp__search_code(pattern='
 _assert_stderr_contains "block message prefix" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn 'MyFunc' src/\"},\"cwd\":\"$FIX\"}" \
     '[ctx-execute-cmm-nudge] BLOCKED'
@@ -172,7 +172,7 @@ _assert_exit "grep -o <pat> <target> blocks" 2 \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -o foo src/\"},\"cwd\":\"$FIX\"}"
 _assert_stderr_contains "grep -o keeps pattern, not target" \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -o foo src/\"},\"cwd\":\"$FIX\"}" \
-    'query="foo"'
+    'pattern="foo"'
 # rg -r IS value-taking (--replace), so next token is consumed.
 _assert_exit "rg -r <repl> <pat> <target> blocks on pat" 2 \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"rg -r REPLACED MyFunc src/\"},\"cwd\":\"$FIX\"}"
@@ -211,6 +211,44 @@ _assert_exit "git --git-dir=... grep blocks" 2 \
 # git with leading opts whose subcommand is not grep stays allowed.
 _assert_exit "git -c foo=bar log still allowed" 0 \
     "{\"tool_name\":\"mcp__context-mode__ctx_execute\",\"tool_input\":{\"code\":\"git -c foo.bar=baz log --oneline\"},\"cwd\":\"$FIX\"}"
+
+# --- Registration-gap regression (2026-09-04) ---
+# ctx-execute-cmm-nudge was registered for ctx_execute ONLY, so a blocked Bash
+# grep re-issued as ctx_batch_execute(grep ...) bypassed the gate entirely --
+# reported by a live session as "the two hooks compose into a hole rather than a
+# fence". Three layers must agree: the setup.sh matcher, the python _ACCEPTED
+# set, and the shell TOOL_NAME case. These pin all three.
+echo ""
+echo "--- Registration gap: all three ctx tools must gate a source search ---"
+
+_assert_exit "ctx_execute gates a source grep" 2 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_execute\",\"tool_input\":{\"code\":\"grep -rn MyFunc src/\"},\"cwd\":\"$FIX\"}"
+
+_assert_exit "ctx_execute_file gates a source grep" 2 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_execute_file\",\"tool_input\":{\"path\":\"src/a.ts\",\"code\":\"grep -rn MyFunc src/\"},\"cwd\":\"$FIX\"}"
+
+_assert_exit "ctx_batch_execute gates a source grep (THE hole)" 2 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"f\",\"command\":\"grep -rn MyFunc src/\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+_assert_exit "legacy-form ctx_batch_execute gates too" 2 \
+    "{\"tool_name\":\"mcp__context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"f\",\"command\":\"grep -rn MyFunc src/\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+# One grep hidden among innocuous commands must still be caught -- otherwise the
+# bypass is just "put git status first".
+_assert_exit "grep buried mid-batch still caught" 2 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"git status\"},{\"label\":\"b\",\"command\":\"grep -rn MyFunc src/\"},{\"label\":\"c\",\"command\":\"date\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+_assert_exit "batch with no code search passes" 0 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"git status\"},{\"label\":\"b\",\"command\":\"date\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+_assert_exit "cmm-exempt honoured inside a batch" 0 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"grep -rn MyFunc src/  # cmm-exempt\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+_assert_exit "non-code dir in a batch still passes" 0 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"grep -rn MyFunc node_modules/lib/\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
+
+_assert_exit "non-indexed repo still fails open on batch" 0 \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"grep -rn MyFunc src/\"}],\"queries\":[\"q\"]},\"cwd\":\"$NONIDX\"}"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

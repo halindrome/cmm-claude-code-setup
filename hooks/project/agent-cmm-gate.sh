@@ -107,28 +107,37 @@ tool is used, not which strategy. Paste the block into every agent() call and
 
 --- Copy-paste the following into your agent prompt ---
 
-Use codebase-memory-mcp (CMM) tools for code exploration. Available tools:
+Use codebase-memory-mcp (CMM) tools for code exploration. EVERY tool below
+except index_repository takes a REQUIRED project= argument; a call without it
+fails with "project is required". search_code takes `pattern`, NOT `query` —
+there is no `query` parameter. Replace <PROJECT> below with the project name:
+it is the repo's absolute path with the leading "/" removed and every "/"
+replaced by "-" (/Users/me/src/app -> Users-me-src-app), and it is returned as
+the "project" field by index_repository and listed by list_projects.
 
 1. search_graph — Find functions/classes by name pattern, filter by degree
-   Example: search_graph(name_pattern=".*Handler.*", label="Function")
+   Example: search_graph(name_pattern=".*Handler.*", label="Function", project="<PROJECT>")
 
 2. get_code_snippet — Retrieve source code for a function/class by name
-   Example: get_code_snippet(qualified_name="main.HandleRequest")
+   Example: get_code_snippet(qualified_name="main.HandleRequest", project="<PROJECT>")
 
 3. trace_path — Trace who calls a function and what it calls
-   Example: trace_path(function_name="ProcessOrder", direction="both")
+   Example: trace_path(function_name="ProcessOrder", direction="both", project="<PROJECT>")
 
 4. get_architecture — Get codebase architecture overview
-   Example: get_architecture(aspects=["packages", "hotspots"])
+   Example: get_architecture(aspects=["packages", "hotspots"], project="<PROJECT>")
 
 5. query_graph — Execute Cypher-like graph queries
-   Example: query_graph(query="MATCH (f:Function)-[:CALLS]->(g:Function) WHERE f.name = 'main' RETURN g.name LIMIT 20")
+   Example: query_graph(query="MATCH (f:Function)-[:CALLS]->(g:Function) WHERE f.name = 'main' RETURN g.name LIMIT 20", project="<PROJECT>")
 
-6. detect_changes — Map uncommitted changes to affected graph symbols
-   Example: detect_changes(scope="all")
+6. search_code — Graph-augmented text search (string literals, error messages)
+   Example: search_code(pattern="connection refused", project="<PROJECT>")
 
-7. index_repository — Index or refresh the code graph
-   Example: index_repository()
+7. detect_changes — Map uncommitted changes to affected graph symbols
+   Example: detect_changes(scope="all", project="<PROJECT>")
+
+8. index_repository — Index or refresh the code graph (takes repo_path, not project)
+   Example: index_repository(repo_path="<monorepo root>")
 
 Workflow: search_graph → trace_path → get_code_snippet
 Prefer these over Read/Grep for understanding code structure and relationships.

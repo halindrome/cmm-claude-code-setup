@@ -107,11 +107,25 @@ fi
 # Trade-off, stated plainly: enforcement does not arm until the first successful
 # ctx_* call of a session. That is the point — a hook must not mandate a tool it
 # has never seen work. Same rule as hooks/lib/context-mode-detect.sh.
+#
+# MEASUREMENT NOTE (2026-09-04): an unarmed exit 0 is indistinguishable in the
+# transcript from an armed hook that chose to allow the command. Both leave no
+# trace, so scripts/analyze-enforcement.py scores an unarmed window as "the hook
+# did not fire" and its COVERAGE number silently mixes the two. Observed in a
+# real session: 13 of 20 post-install Bash calls ran while unarmed, reported as
+# 16.7% coverage. That is the exact failure analyze-antipatterns.py's own
+# docstring warns about — a check that never ran, reporting clean. Record the
+# reason so the two are separable after the fact. Counter only: emitting to
+# stderr here would inject noise into every allowed Bash call.
+_unarmed() {
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash_unarmed" "$1" 2>/dev/null || true
+    exit 0
+}
 CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
 CONTEXT_MODE_TTL_MIN="${CTX_ENFORCER_TTL_MIN:-30}"
-[ -f "$CONTEXT_MODE_SENTINEL" ] || exit 0
-grep -q '^live$' "$CONTEXT_MODE_SENTINEL" 2>/dev/null || exit 0
-[ -n "$(find "$CONTEXT_MODE_SENTINEL" -mmin "-${CONTEXT_MODE_TTL_MIN}" 2>/dev/null)" ] || exit 0
+[ -f "$CONTEXT_MODE_SENTINEL" ] || _unarmed absent
+grep -q '^live$' "$CONTEXT_MODE_SENTINEL" 2>/dev/null || _unarmed notlive
+[ -n "$(find "$CONTEXT_MODE_SENTINEL" -mmin "-${CONTEXT_MODE_TTL_MIN}" 2>/dev/null)" ] || _unarmed stale
 
 # --- Bypass Marker ---
 # Internal bypass marker — undocumented, for operator use only.
@@ -126,11 +140,35 @@ fi
 # matched against exemption patterns below. Anything still compound after
 # peeling falls through to the default block — exemption patterns assume a
 # single bounded command.
+#
+# A leading VARIABLE ASSIGNMENT peels for the same reason (2026-09-04). Observed
+# live, immediately after cwd-guard.sh blocked the `cd` form and told the agent
+# to use `git -C`:
+#
+#   M=/Users/…/apps/mobile; git -C $M merge origin/ic3_13_patches
+#
+# `git merge` is exempt below, and the `-C` normalization at the git block exists
+# precisely to make `git -C <path> merge` work — but the `;` after the assignment
+# trips the operator scan below, which runs FIRST, so that fix was never reached.
+# The two gates were pushing the agent into each other: cwd-guard rejects the
+# `cd` form, this hook rejects the variable form of the alternative it named.
+#
+# The value must be a SINGLE token free of ( ) ` | & ; < > — so a substitution
+# (`M=$(cat f); …`) never peels and still blocks. Peeling only removes the
+# assignment; everything after it is scanned exactly as before, so `M=x; a; b`
+# still shows a bare `;`. Parameter expansions (`D=$HOME/src`) are allowed: they
+# print nothing and cannot introduce a command.
+#
+# Shares the loop with the `cd` peel so the two compose in any order.
 _ORIG_COMMAND="$COMMAND"
+_VARPEEL='^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]()`|&;<>]*[[:space:]]*(;|&&|'$'\n'')[[:space:]]*'
 while [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\"[^\"]*\"[[:space:]]*\&\&[[:space:]]* ]] || \
       [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\'[^\']*\'[[:space:]]*\&\&[[:space:]]* ]] || \
-      [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]]; do
-    COMMAND="${COMMAND#${BASH_REMATCH[0]}}"
+      [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]] || \
+      [[ "$COMMAND" =~ $_VARPEEL ]]; do
+    # Quoted: unquoted, the match is a glob, and a value like `[ab]` does not
+    # match its own text -- nothing strips and the loop never ends.
+    COMMAND="${COMMAND#"${BASH_REMATCH[0]}"}"
 done
 # If the stripped command still has compound shell operators, do NOT exempt —
 # fall straight through to the default block path. Detected operators:
@@ -145,11 +183,50 @@ done
 # not false-positive blocked. Quoted spans may cross newlines (e.g. a multi-line
 # `git commit -m "..."`), so the scrub is whole-string, not line-based: a
 # line-based sed leaves the embedded newline in place and false-positives the
-# newline check above. No attempt to handle escape sequences or here-docs.
+# newline check above. No attempt to handle escape sequences.
+#
+# QUOTED here-doc bodies are blanked (2026-09-04). `git commit -F - <<'EOF' …
+# EOF` is a git-write, already exempt, producing two lines of output — but the
+# heredoc's newlines tripped the compound check, so committing with a message
+# body was blocked outright. Same shape as the sed -i case: an exempt operation
+# defeated by its syntax rather than its effect.
+#
+# ONLY quoted heredocs (<<'W', <<"W", <<-'W') are blanked, and the distinction is
+# load-bearing: an UNQUOTED <<W expands parameters and command substitutions, so
+# `$(rm -rf …)` inside its body is live code and must stay visible to the operator
+# scan below. Quoted bodies are literal text and cannot execute anything.
+#
+# Runs BEFORE the quote scrub, because that scrub would otherwise eat the quotes
+# in <<'EOF' and hide the heredoc from this pass — the same ordering trap
+# ctx-payload-guard.sh documents.
+#
+# Only the heredoc BODY and its operator token are removed. Anything after the
+# terminator survives, so `git commit -F - <<'EOF' … EOF; rm -rf /` still shows
+# a bare `;` to the scan and is still blocked.
 # Falls back to the raw command (safe — may over-block) if python3 is absent.
 _OPCHECK=$(COMMAND="$COMMAND" python3 <<'PY' 2>/dev/null
 import os, re, sys
 c = os.environ.get("COMMAND", "")
+
+def strip_quoted_heredocs(text):
+    lines = text.split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        m = re.search(r"""<<-?\s*(['"])(\w+)\1""", lines[i])
+        if not m:
+            out.append(lines[i]); i += 1; continue
+        term = m.group(2)
+        # Keep the line minus the heredoc operator; drop the body.
+        out.append(lines[i][:m.start()] + lines[i][m.end():])
+        i += 1
+        # A terminator must be alone on its line; anything else continues the body.
+        while i < len(lines) and lines[i].strip() != term:
+            i += 1
+        if i < len(lines):
+            i += 1          # consume the terminator itself
+    return "\n".join(out)
+
+c = strip_quoted_heredocs(c)
 c = re.sub(r"'[^']*'", "", c, flags=re.S)
 c = re.sub(r'"[^"]*"', "", c, flags=re.S)
 sys.stdout.write(c)
@@ -277,6 +354,96 @@ case "$COMMAND" in
   mkdir\ *|rmdir\ *|rm\ *|mv\ *|cp\ *|ln\ *|chmod\ *|chown\ *)  _track_exempt filesystem; exit 0 ;;
   touch\ *|install\ -m*|mktemp*)                                 _track_exempt filesystem; exit 0 ;;
 esac
+
+# In-place editors: mutate a file, print NOTHING. Same category as mv/cp above.
+#
+# This follows upstream context-mode's own rule for curl/wget
+# (hooks/core/routing.mjs, issue #166): "allow silent file-output downloads,
+# block stdout floods". An in-place edit is the canonical silent-file-output
+# case, so blocking it for "output sandboxing" was incoherent -- there is no
+# output to sandbox. Upstream does not hard-block Bash at all; it nudges once
+# per session via guidanceOnce().
+#
+# The `-i` is load-bearing and matched EXPLICITLY, never a bare `sed`/`perl`:
+# `sed 's/a/b/' big.c` prints the whole file to stdout, which is precisely what
+# this hook exists to stop. One flag apart, opposite verdicts.
+#
+# BSD vs GNU differ and both forms are accepted here:
+#   GNU: sed -i 's/a/b/' f        sed -i.bak 's/a/b/' f
+#   BSD: sed -i '' 's/a/b/' f     (the '' IS the backup suffix on macOS)
+#
+# NOTE this exemption is about CONTEXT only. It does not endorse blind regex
+# edits on source: `perl -0pi -e 's{X}{Y}'` exits 0 whether it matched zero
+# times or forty, so Edit (which requires the exact bytes and fails loudly on a
+# miss) remains the better tool for a source edit. That is a correctness
+# argument, and it belongs in a correctness gate -- not smuggled into this one.
+#
+# perl/ruby: `-i` must be a real switch -- a leading option token made only of
+# no-argument switch letters (-i, -pi, -0pi, -0777pi, -i.bak). A glob like
+# `perl -*i*e *` also matched the `i` in `-Mstrict` or `print`, so
+# `perl -ne 'print …' big.c` was exempted and flooded stdout.
+_INPLACE_RE='^(perl|ruby)([[:space:]]+-[^[:space:]]+)*[[:space:]]+-[0-9alnpsw]*i[^[:space:]]*[[:space:]]'
+case "$COMMAND" in
+  sed\ -i\ *|sed\ -i.*|gsed\ -i\ *|gsed\ -i.*)   _track_exempt inplace-edit; exit 0 ;;
+  awk\ -i\ inplace\ *)                           _track_exempt inplace-edit; exit 0 ;;
+esac
+if [[ "$COMMAND" =~ $_INPLACE_RE ]]; then
+  _track_exempt inplace-edit; exit 0
+fi
+
+# File AUTHORING: a literal-emitting command redirected to a file. Same category
+# as the in-place editors above -- the bytes go to the file, not to stdout, so
+# there is no output to sandbox.
+#
+# This was not merely friction: the block message routes the command to
+# ctx_execute, and ctx_execute runs in a subprocess whose filesystem is
+# DISCARDED (see rules/ctx-rules.md and the file_writing_policy the harness
+# injects). So the suggested replacement did not write the file at all. A gate
+# whose recovery path silently drops the operation is worse than one with no
+# recovery path, because the agent believes it succeeded.
+#
+# Matched against $_OPCHECK, not $COMMAND, and that is load-bearing: _OPCHECK has
+# quoted spans removed, so `echo "a > b"` scrubs to `echo ` with no `>` and does
+# NOT match -- bare `echo` stays blocked, as 47-02 deliberately made it. Quoted
+# here-doc bodies are blanked there too, so `cat > f <<'EOF' … EOF` arrives as
+# `cat > f `. An UNQUOTED here-doc keeps its body visible and its newlines, so it
+# trips the compound scan above and never reaches here: fail-closed, deliberately.
+#
+# Only cat/echo/printf. A redirect does not make an arbitrary command silent --
+# `curl url > f` still downloads and still blocks.
+#
+# The `\>` escapes are REQUIRED, not stylistic: `>` is a metacharacter inside a
+# case pattern, so the unescaped form is a bash SYNTAX ERROR. That failure is
+# invisible in the obvious way to test for it -- a syntax error exits 2, which is
+# this hook's block code, so the whole suite's "expect exit 2" assertions still
+# passed and only the exemptions AFTER this line broke. A check that never ran,
+# reporting clean; the exact shape rules/ctx-rules.md warns about.
+# The `>` must be a STDOUT redirect. A case glob cannot see the fd digit, so
+# `cat big.c 2>/dev/null` matched as "cat " + "big.c 2" + ">" + "/dev/null" and
+# was exempted -- opening the exact hole this hook exists to close, on one of the
+# most common idioms an agent writes. Guard on a `>` not preceded by a digit
+# first. `&>` never reaches here (the `&` trips the compound scan above), and a
+# literal `1> f` does not exempt: fail-closed, and rare. `>` is excluded from the
+# preceding character too, or the second `>` of `2>>log` would qualify.
+if [[ "$_OPCHECK" =~ (^|[^0-9>])\> ]]; then
+  case "$_OPCHECK" in
+    cat\ *\>*|echo\ *\>*|printf\ *\>*)           _track_exempt authoring; exit 0 ;;
+  esac
+fi
+
+# run_in_background: Claude Code streams the output to a background task, so it
+# never enters the conversation. Sandboxing it buys nothing, and redirecting a
+# long-running process (a dev server) into ctx_execute fights the user's intent
+# -- observed 2026-09-04: `ng serve` took five blocked calls to start, and the
+# FIRST attempt already carried run_in_background=true. No hook in this stack
+# read that field before now.
+if [ "$(printf '%s' "$INPUT" | python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: print("false"); raise SystemExit
+print("true" if d.get("tool_input",{}).get("run_in_background") is True else "false")' 2>/dev/null)" = "true" ]; then
+    _track_exempt background
+    exit 0
+fi
 
 # Navigation and short queries (output is bounded)
 case "$COMMAND" in

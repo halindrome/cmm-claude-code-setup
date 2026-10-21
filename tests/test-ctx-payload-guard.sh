@@ -316,43 +316,34 @@ else
 fi
 
 echo ""
-echo "--- escape hatch ---"
-_allows "'# ctx-truncate-ok' bypasses" \
+echo "--- no escape hatch ---"
+# Removed 2026-10-08: agents learned `# ctx-truncate-ok` from the block message and
+# then tagged nearly every truncation (704 bypasses vs ~338 blocks in 14 days).
+# Sessions that already learned it must now be blocked, not waved through.
+_blocks "'# ctx-truncate-ok' no longer bypasses" \
   "$(_json "$PLUGIN" shell 'cmd | head -20  # ctx-truncate-ok')"
-# The bypass is a NEW marker on purpose. `# ctx-exempt` is ctx-execute-enforcer's
-# operator-only key, matched there as a bare substring anywhere in a command;
-# honouring it here would hand agents the master key to that hook's 2,510 blocks.
+_blocks "'# ctx-truncate-ok' no longer bypasses a redirect" \
+  "$(_json "$PLUGIN" shell 'cmd > out.log  # ctx-truncate-ok')"
+_blocks "'# ctx-truncate-ok' no longer bypasses inside a batch" \
+  "$(_batch "$PBATCH" 'a | head -5  # ctx-truncate-ok')"
+# `# ctx-exempt` is ctx-execute-enforcer's operator-only key, matched there as a
+# bare substring anywhere in a command; honouring it here would hand agents the
+# master key to that hook's blocks.
 _blocks "'# ctx-exempt' does NOT bypass this guard" \
   "$(_json "$PLUGIN" shell 'ls -la /usr/bin | head -5 # ctx-exempt')"
-# The marker is matched against RAW text, so an apostrophe anywhere earlier must
-# not eat it. Enforcing "must be a real comment" by scrubbing first was tried and
-# reverted (QA round 2): scrub blanks from an unpaired quote to end of payload,
-# so `# don't truncate` silently disarmed the hatch and the operator got a block
-# telling them to add the bypass they had already added.
-# The apostrophe must be on a SEPARATE line from the truncation. Putting both on
-# one line is not a discriminating test: the same unpaired quote that eats the
-# marker also eats the pipe, so the payload is allowed either way and the
-# assertion pins nothing. (It is also invalid shell and could never run.) Here
-# the truncation is real and visible; only the marker's survival is at stake.
-_allows "bypass survives an apostrophe earlier in the payload" \
-  "$(_json "$PLUGIN" shell "# don't truncate
-make | head -5  # ctx-truncate-ok")"
-# The quote has to sit inside a COMMENT for this to discriminate, and that is the
-# actual mechanism of the bug: the main scan drops comments before it ever sees
-# the quote, so the truncation stays visible — while the EXEMPT scan kept
-# comments, processed the quote, and blanked to end of payload, eating the
-# marker. A bare top-level unpaired quote hides the truncation too, so the
-# payload is allowed either way and pins nothing.
-_allows "bypass survives an unpaired double quote earlier" \
-  "$(_json "$PLUGIN" shell '# he said "5 inches of rain
-make | head -3  # ctx-truncate-ok')"
-# Control: the same payloads WITHOUT the marker must still block, or the two
-# assertions above would be passing on the truncation being invisible.
-_blocks "control: same payload without the marker still blocks" \
+# An unpaired quote inside an earlier COMMENT must not hide a later truncation:
+# the main scan drops comments before it sees the quote.
+_blocks "apostrophe in an earlier comment does not hide a truncation" \
   "$(_json "$PLUGIN" shell "# don't truncate
 make | head -5")"
-_blocks "exempt in one batch entry does not whitelist another" \
-  "$(_batch "$PBATCH" 'a | head -5  # ctx-truncate-ok' 'b | head -5')"
+# The positional case intent= cannot answer ("the last N lines") has a spelling
+# that keeps stdout flowing; the tail block names it, and it must pass.
+_allows "tee then tail the copy is allowed" \
+  "$(_json "$PLUGIN" shell 'make test 2>&1 | tee run.log; tail -n 3 run.log')"
+_stderr_has   "tail block names the tee-then-tail spelling" \
+  "$(_json "$PLUGIN" shell 'make test | tail -1')" 'tee run.log; tail -n 3 run.log'
+_stderr_lacks "head block does not carry the tail hint" \
+  "$(_json "$PLUGIN" shell 'make test | head -5')" 'tee run.log'
 
 echo ""
 echo "--- block message names the concrete replacement ---"
@@ -371,7 +362,11 @@ else
   pass "REPLACE WITH line is free of the truncation"
 fi
 _stderr_has   "message offers intent="              "$J" 'intent='
-_stderr_has   "message advertises the bypass"       "$J" 'ctx-truncate-ok'
+# Advertising a bypass taught it -- 702/704 marked payloads followed a block in
+# the same transcript. There is no bypass now; keep the messages from naming one.
+_stderr_lacks "message does NOT advertise a bypass" "$J" 'ctx-truncate-ok'
+_stderr_lacks "redirect message does NOT advertise the bypass" \
+  "$(_json "$PLUGIN" shell 'cmd > out.log')" 'ctx-truncate-ok'
 _stderr_has   "message names the tool form used"    "$J" "$PLUGIN"
 JL="$(_json "$LEGACY" shell 'cmd | head -3')"
 _stderr_has   "legacy form echoed, not hardcoded plugin form" "$JL" "$LEGACY"

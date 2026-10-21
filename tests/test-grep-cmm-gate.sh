@@ -57,6 +57,27 @@ _assert_stderr_grep() {
     fi
 }
 
+# _assert_stderr_not_grep LABEL JSON REGEX [ENV_PREFIX]
+# Passes when stderr does NOT match REGEX (via grep -E). Inverse of the above;
+# used for regression guards on call signatures we must never emit again.
+_assert_stderr_not_grep() {
+    local label="$1" json="$2" regex="$3" env_prefix="${4:-}"
+    local err
+    if [ -n "$env_prefix" ]; then
+        err=$(echo "$json" | env $env_prefix bash "$HOOK" 2>&1 >/dev/null || true)
+    else
+        err=$(echo "$json" | bash "$HOOK" 2>&1 >/dev/null || true)
+    fi
+    if echo "$err" | grep -Eq "$regex"; then
+        echo "FAIL: $label (stderr unexpectedly matched: $regex)"
+        echo "    stderr: $err"
+        FAIL=$((FAIL+1))
+    else
+        echo "PASS: $label"
+        PASS=$((PASS+1))
+    fi
+}
+
 # _assert_stderr_order LABEL JSON FIRST_REGEX SECOND_REGEX
 # Passes when FIRST_REGEX line appears before SECOND_REGEX in stderr.
 _assert_stderr_order() {
@@ -208,9 +229,29 @@ _assert_stderr_order "identifier MyClassName order" \
     'OR:.*mcp__codebase-memory-mcp__search_code'
 
 echo "--- 15: identifier pattern MyFunc — pattern appears verbatim in first line ---"
+# project= is REQUIRED on search_graph, so the emitted call carries it. Asserting
+# the old `name_pattern="MyFunc")` closing paren pinned a call that FAILS with
+# "project is required" -- the defect this suite should be catching, not locking in.
 _assert_stderr_grep "MyFunc name_pattern verbatim" \
     "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"MyFunc\",\"type\":\"go\"},\"cwd\":\"$PROJ\"}" \
-    'search_graph\(name_pattern="MyFunc"\)' \
+    'search_graph\(name_pattern="MyFunc"' \
+    "$ENV_NO_GLOBAL"
+
+echo "--- 15b: emitted calls are RUNNABLE (project= present, search_code uses pattern=) ---"
+_assert_stderr_grep "search_graph carries project=" \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"MyFunc\",\"type\":\"go\"},\"cwd\":\"$PROJ\"}" \
+    'search_graph\(name_pattern="MyFunc", project="[^"]+"\)' \
+    "$ENV_NO_GLOBAL"
+_assert_stderr_grep "search_code uses pattern= not query=" \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"MyFunc\",\"type\":\"go\"},\"cwd\":\"$PROJ\"}" \
+    'search_code\(pattern="MyFunc", project="[^"]+"\)' \
+    "$ENV_NO_GLOBAL"
+# Regression guard: `query=` is not a parameter on search_code at all. A gate that
+# emits it hands back a call failing with "pattern is required", then a second
+# time with "project is required" -- two failures is where agents abandon CMM.
+_assert_stderr_not_grep "never emits search_code(query=" \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"MyFunc\",\"type\":\"go\"},\"cwd\":\"$PROJ\"}" \
+    'search_code\(query=' \
     "$ENV_NO_GLOBAL"
 
 echo "--- 16: regex pattern with alternation → search_code first, search_graph second ---"

@@ -20,7 +20,11 @@ Everything below counts hooks that EMITTED.
 import json, os, re, sys, time, collections
 
 ROOT = os.path.expanduser("~/.config/claude-code/projects")
-DAYS = int(sys.argv[1]) if len(sys.argv) > 1 else 30
+_args = sys.argv[1:]
+MODEL = None   # --model <id>: only count tool calls from assistant turns with this exact model id
+if "--model" in _args:
+    _i = _args.index("--model"); MODEL = _args[_i + 1]; del _args[_i:_i + 2]
+DAYS = int(_args[0]) if _args else 30
 CUTOFF = time.time() - DAYS * 86400
 
 # ---------------------------------------------------------------- fingerprints
@@ -38,6 +42,8 @@ STACK_FP = [
     ("index-root-gate",        "gate",   "[index-root-gate] BLOCKED"),
     ("cwd-guard",              "gate",   "BLOCKED: persistent 'cd' detected"),
     ("webfetch-nudge",         "gate",   "BLOCKED: Use Context Mode instead of WebFetch"),
+    ("ctx-payload-guard",      "gate",   "[ctx-payload-guard] BLOCKED"),
+    ("ctx-shell-compat",       "nudge",  "[ctx-shell-compat] This payload runs under"),
     ("subagent-cmm-startup",   "inject", "Prefer CMM graph tools"),
     ("subagent-ctx-startup",   "inject", "[ctx-startup] Context Mode is active"),
     ("skill-nudge",            "nudge",  "Invoke Skill('cmm-rules')"),
@@ -115,6 +121,7 @@ spawn_gate = collections.defaultdict(S)   # tier -> Agent/Workflow spawn gating
 eligible = collections.defaultdict(S)   # eligible calls / covered calls
 proj_stack = collections.Counter()
 versions_seen = collections.defaultdict(collections.Counter)
+models_seen = collections.Counter()   # assistant turns per model id, before --model filtering
 # per-session behaviour rows for the adoption table
 sess_rows = []
 
@@ -131,7 +138,8 @@ for dirpath, dirnames, fnames in os.walk(ROOT):
             continue
         files.append(p)
 
-print(f"corpus: {len(files)} transcripts touched in last {DAYS}d\n")
+print(f"corpus: {len(files)} transcripts touched in last {DAYS}d"
+      + (f", tool calls from model {MODEL} only" if MODEL else "") + "\n")
 
 for path in files:
     rel = os.path.relpath(path, ROOT)
@@ -143,6 +151,8 @@ for path in files:
     tool_seq = []          # (tool_name, tool_use_id, is_explore_eligible)
     blocked_ids = collections.defaultdict(set)   # tool_use_id -> {gate hook ids}
     hookrecs = []
+    kept_ids = set()       # tool_use ids that passed the --model filter
+    dropped_ids = set()    # tool_use ids from other models' turns
     version = None
     cwd = None
     nrec = 0
@@ -178,6 +188,11 @@ for path in files:
                 a = r.get("attachment") or {}
                 at = a.get("type")
                 if at in ("hook_success", "hook_error", "hook_additional_context"):
+                    # Skip only attachments on ANOTHER model's tool call. Session- and
+                    # prompt-level hooks carry a synthetic `hook-…` toolUseID that is
+                    # never an assistant tool_use id, so "not in kept_ids" would drop them.
+                    if MODEL and a.get("toolUseID") in dropped_ids:
+                        continue
                     txt = a.get("content")
                     txt = flatten(txt) if not isinstance(txt, str) else txt
                     if isinstance(a.get("content"), list):
@@ -193,8 +208,14 @@ for path in files:
 
             elif typ == "assistant":
                 msg = r.get("message") or {}
+                models_seen[msg.get("model") or "?"] += 1
+                if MODEL and msg.get("model") != MODEL:
+                    dropped_ids.update(b.get("id") for b in (msg.get("content") or [])
+                                       if isinstance(b, dict) and b.get("type") == "tool_use")
+                    continue
                 for b in (msg.get("content") or []):
                     if isinstance(b, dict) and b.get("type") == "tool_use":
+                        kept_ids.add(b.get("id"))
                         name = b.get("name", "?")
                         inp = b.get("input") or {}
                         elig = False
@@ -213,6 +234,8 @@ for path in files:
                 msg = r.get("message") or {}
                 for b in (msg.get("content") or []):
                     if isinstance(b, dict) and b.get("type") == "tool_result":
+                        if MODEL and b.get("tool_use_id") not in kept_ids:
+                            continue
                         txt = flatten(b.get("content"))
                         hits = classify_hook(txt or "")
                         if any(k == "gate" for _, k in hits):
@@ -222,7 +245,7 @@ for path in files:
                                     hookrecs.append((hid, "gate", b.get("tool_use_id")))
                                     stack_seen.add(hid)
 
-    if nrec == 0:
+    if nrec == 0 or (MODEL and not kept_ids):
         continue
 
     tier_sessions[tier].add((project, sid, os.path.basename(path)))
@@ -408,3 +431,10 @@ print("8. TOP PROJECTS by stack-enabled transcript count")
 print("=" * 78)
 for p, c in proj_stack.most_common(15):
     print(f"   {c:6d}  {p}")
+
+print()
+print("=" * 78)
+print("9. MODELS -- assistant turns per model id (pass one to --model to split)")
+print("=" * 78)
+for m, c in models_seen.most_common():
+    print(f"   {c:7d}  {m}")

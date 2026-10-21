@@ -56,8 +56,52 @@ fi
 # _extract_term <command-or-pattern> -> a best-effort search term, possibly empty.
 # Prefers the first quoted string (grep -n "reqStatus" foo.pl), else the first
 # non-flag, non-path token after the navigation verb.
+# _narrow_to_search_segment <command> -> the sub-command that does the searching.
+#
+# Compound commands are routinely narrated with echo labels:
+#   git -C apps/mobile status | head -20; echo "=== spec coverage ==="; \
+#   grep -n "changeTarget" apps/mobile/src/.../comms.service.spec.ts
+# _extract_term takes the FIRST quoted string in the command, which here is the
+# echo label — so the block correctly fired and then suggested
+#   search_code(pattern="=== spec: changeTarget/_fetch coverage ===")
+# a call that runs and returns nothing. Observed live 2026-09-04.
+#
+# Same failure class the --include='*.pl' fix already addressed: a
+# plausible-but-wrong term converts worse than a bare "..." placeholder, because
+# it looks correct. Narrow to the segment owning the search verb first.
+#
+# Splits on ; && || and newlines only — NOT on a single `|`, because a grep and
+# its pipe sink belong to the same segment (`grep foo src/ | head -40`).
+_narrow_to_search_segment() {
+  local s="$1" seg stripped
+  local nl=$'\n'
+  local tmp="${s//&&/$nl}"
+  tmp="${tmp//||/$nl}"
+  tmp="${tmp//;/$nl}"
+  while IFS= read -r seg; do
+    # Strip leading whitespace, env assignments and sudo before reading the verb.
+    stripped=$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)+//; s/^sudo[[:space:]]+//')
+    case "$stripped" in
+      grep\ *|egrep\ *|fgrep\ *|rg\ *|ack\ *|ag\ *|ugrep\ *|find\ *)
+        printf '%s' "$seg"; return 0 ;;
+    esac
+    # `git grep` counts, but only when grep is the SUBCOMMAND. A bare `git -C dir
+    # branch` must not win the segment: it owns no search term, so selecting it
+    # yields the "..." placeholder and loses the real one further along. Peel the
+    # repo/config-selection global flags, then require grep.
+    if printf '%s' "$stripped" | grep -qE '^git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|--git-dir=[^[:space:]]+|--work-tree=[^[:space:]]+|--no-pager|-c[[:space:]]+[^[:space:]]+))*[[:space:]]+grep([[:space:]]|$)'; then
+        printf '%s' "$seg"; return 0
+    fi
+  done <<< "$tmp"
+  # No segment clearly owns a search verb -> unchanged (previous behaviour).
+  printf '%s' "$s"
+}
+
 _extract_term() {
   local s="$1" t=""
+  # Narrow BEFORE the filter-flag strip below, so an echo label in a sibling
+  # segment cannot supply the term.
+  s="$(_narrow_to_search_segment "$s")"
   # Drop value-carrying filter flags BEFORE looking for a quoted term: their
   # argument is a glob or a file type, never the thing being searched for.
   # `grep -rn 'foo' src/ --include='*.pl'` must yield foo, not *.pl -- and a
@@ -79,25 +123,37 @@ _extract_term() {
 # _cmm_recovery_lines <term> -> the two-or-three CMM call lines for the message.
 # An identifier-shaped term goes to search_graph first (it resolves definitions);
 # anything with regex metacharacters goes to search_code first.
+#
+# Every emitted call carries project= -- it is a REQUIRED argument on all of
+# these tools, and the search term goes in search_code's `pattern`, not `query`
+# (there is no `query` parameter). See cmm_project_name() in
+# hooks/lib/cmm-registered.sh for why printing a call that cannot run is worse
+# than printing no call at all.
 _cmm_recovery_lines() {
   local term="$1"
+  local proj; proj="$(cmm_project_name 2>/dev/null)"
+  # Omit the argument entirely when the root is unknown; project="" fails the
+  # same way a missing project does, and a visibly-empty argument reads as a
+  # tool defect rather than a prompt to supply the value.
+  local p=""
+  [ -n "$proj" ] && p=", project=\"${proj}\""
   if [ -z "$term" ]; then
     printf '%s\n%s\n%s' \
-      '  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern="...")' \
-      '  - Text search:    mcp__codebase-memory-mcp__search_code(query="...")' \
-      '  - Fetch source:   mcp__codebase-memory-mcp__get_code_snippet(qualified_name="...")'
+      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"...\"${p})" \
+      "  - Text search:    mcp__codebase-memory-mcp__search_code(pattern=\"...\"${p})" \
+      "  - Fetch source:   mcp__codebase-memory-mcp__get_code_snippet(qualified_name=\"...\"${p})"
     return
   fi
   local is_ident=false
   if printf '%s' "$term" | grep -qE '^[A-Za-z_][A-Za-z0-9_:]{1,63}$'; then is_ident=true; fi
   if [ "$is_ident" = true ]; then
     printf '%s\n%s' \
-      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\")" \
-      "  - Text search:    mcp__codebase-memory-mcp__search_code(query=\"${term}\")"
+      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\"${p})" \
+      "  - Text search:    mcp__codebase-memory-mcp__search_code(pattern=\"${term}\"${p})"
   else
     printf '%s\n%s' \
-      "  - Text search:    mcp__codebase-memory-mcp__search_code(query=\"${term}\")" \
-      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\")"
+      "  - Text search:    mcp__codebase-memory-mcp__search_code(pattern=\"${term}\"${p})" \
+      "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\"${p})"
   fi
 }
 
@@ -151,7 +207,26 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # what actually names paths (`cat src/a.py | grep foo`), still matches normally.
   # Quoted pipes are safe: `grep 'a|b' src/x` leaves `b` unmatched, and
   # `grep 'a|cat' src/x` fails the trailing-whitespace requirement.
-  BNAV_SCAN=$(printf '%s ' "$BNAV_HEAD" | sed -E 's/\|[[:space:]]*(grep|rg|find|cat|head|tail|wc)[[:space:]]/| _sink_ /g')
+  #
+  # A verb left DANGLING at the end of the head — no argument after it — owns no
+  # path, so it cannot be navigation. This is what the `<<` cut above creates:
+  #
+  #   git -C /repo/apps/mobile commit --no-edit -m "$(cat <<'EOF' … EOF)"
+  #
+  # cuts to `… -m "$(cat `, and the bare `cat` (preceded by `(`, which is in the
+  # separator class) then matched the verb test while `apps/` in the `git -C`
+  # PATH satisfied the path test — verb and path taken from two different
+  # commands. Observed live 2026-09-04 blocking a commit whose message body came
+  # from a here-doc: the same shape ctx-execute-enforcer.sh was fixed for in
+  # 4d26952, blocked here instead, so the fix bought the agent nothing.
+  #
+  # Narrow, not a heredoc special case: the invariant is that the verb and the
+  # path must belong to the SAME command. `cat src/a.py` keeps its argument and
+  # still blocks; `cat < src/x.py` is untouched because a bare `<` is never cut
+  # (QA round 1, F-01); `echo "$(cat apps/x.ts)"` has no cut at all and blocks.
+  BNAV_SCAN=$(printf '%s ' "$BNAV_HEAD" \
+    | sed -E 's/\|[[:space:]]*(grep|rg|find|cat|head|tail|wc)[[:space:]]/| _sink_ /g' \
+    | sed -E 's/(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)[[:space:]]*$/\1_dangling_ /')
   if echo "$BNAV_SCAN" | grep -qE '(^|[[:space:]|;&(])(grep|rg|find|cat|head|tail|wc)([[:space:]]|$)' && echo "$BNAV_HEAD" | grep -qE '(src/|app/|apps/|lib/|pkg/|internal/|hooks/|agents/|scripts/)'; then
 
     # CMM availability check for Bash block (fail-open if CMM not configured)
@@ -170,11 +245,19 @@ if [ "$TOOL_NAME" = "Bash" ]; then
       # "..." placeholder convert 13-25%, and gates naming no alternative ~0%,
       # sending 90-95% of blocks straight back to Read/Bash.
       _TERM=$(_extract_term "$BASH_CMD")
+      # The bypass is deliberately NOT the closing line. Observed 2026-09-04: a
+      # session read "Add # cmm-exempt to bypass" as the recommended next action,
+      # appended it to its next four commands -- including a source-code grep
+      # this gate exists to redirect -- and made no further CMM calls all
+      # session. The escape hatch must stay discoverable (removing it risks
+      # wedging a session), but it is for NON-CODE targets, and saying so is
+      # what stops it becoming the default.
       cat >&2 <<EOF
 BLOCKED: Use CMM tools instead of Bash navigation for code search.
 $(_cmm_recovery_lines "$_TERM")$(_perl_note "$BASH_CMD")
-Add # cmm-exempt to the command to bypass this gate.
 See skill \`cmm-rules\` for the full protocol.
+(If this target is NOT source code -- generated output, a build artifact, a
+data file -- add '# cmm-exempt' to the command. Do not use it to grep source.)
 EOF
       bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-nav" 2>/dev/null || true
       exit 2

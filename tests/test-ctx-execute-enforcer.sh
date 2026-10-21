@@ -56,6 +56,21 @@ cp "$SRC_HOOK" "$FAKE_PROJ/hooks/project/ctx-execute-enforcer.sh"
 cp "$SCRIPT_DIR/../hooks/lib/"*.sh "$FAKE_PROJ/hooks/lib/" 2>/dev/null || true
 HOOK="$FAKE_PROJ/hooks/project/ctx-execute-enforcer.sh"
 
+# Parse the hook before asserting anything about its behaviour. A bash syntax
+# error exits 2 -- which is this hook's BLOCK code -- so a malformed hook keeps
+# every "expect exit 2" assertion green and only breaks the exemptions after the
+# bad line. Observed 2026-09-04: an unescaped `>` in a case pattern (it is a
+# metacharacter there) took out 18 exemptions while the suite still reported 97
+# passes. Fail loudly and first instead.
+if bash -n "$HOOK" 2>/dev/null; then
+    echo "PASS: hook parses (bash -n)"
+    PASS=$((PASS+1))
+else
+    echo "FAIL: hook has a SYNTAX ERROR — every exit-2 assertion below is meaningless"
+    bash -n "$HOOK" 2>&1 | sed 's/^/    /'
+    FAIL=$((FAIL+1))
+fi
+
 # Resolve the hash the same way the hook will, from inside the fake repo.
 FAKE_ROOT_CANON="$(cd "$FAKE_PROJ" && git rev-parse --show-toplevel 2>/dev/null || echo "$FAKE_PROJ")"
 if command -v md5 >/dev/null 2>&1; then
@@ -269,8 +284,225 @@ _assert_exit "node command blocked" 2 \
 _assert_exit "python3 command blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"python3 script.py"}}'
 
-_assert_exit "sed command blocked" 2 \
+# NOTE: `sed -i` moved from blocked to EXEMPT. An in-place edit writes to a file
+# and prints nothing, so there is no output to sandbox — it is the same category
+# as the mv/cp exemptions, and it matches upstream context-mode's own rule for
+# curl/wget ("allow silent file-output downloads, block stdout floods", #166).
+# The pair below is the point: the `-i` is what makes it silent, and one flag
+# apart the verdict must invert.
+_assert_exit "sed -i (in-place, silent) exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"sed -i s/foo/bar/ file.txt"}}'
+
+_assert_exit "sed WITHOUT -i (floods stdout) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"sed s/foo/bar/ big.c"}}'
+
+# --- In-place editors exempt (expect exit 0) ---
+echo ""
+echo "--- In-place editors exempt (expect exit 0) ---"
+
+_assert_exit "sed -i '' (BSD/macOS form) exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"sed -i '\'''\'' s/a/b/ f.ts"}}'
+
+_assert_exit "sed -i 'back' (BSD named suffix) exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"sed -i '\''back'\'' s/a/b/ f.ts"}}'
+
+_assert_exit "sed -i.bak (GNU suffix form) exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"sed -i.bak s/a/b/ f.ts"}}'
+
+_assert_exit "perl -0pi -e exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -0pi -e s/a/b/ f.pl"}}'
+
+_assert_exit "perl -pe WITHOUT -i (prints) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -pe s/a/b/ big.c"}}'
+
+# QA round 1 F1: the `i` must be the -i switch, not any `i` in the command.
+_assert_exit "perl -pi -e exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -pi -e s/a/b/ f.pl"}}'
+
+_assert_exit "perl -i.bak -pe exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -i.bak -pe s/a/b/ f.pl"}}'
+
+_assert_exit "ruby -pi -e exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"ruby -pi -e gsub(/a/,\"b\") f.rb"}}'
+
+_assert_exit "perl -e 'print while <>' (i in script) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -e '\''print while <>'\'' big.c"}}'
+
+_assert_exit "perl -Mstrict -e (i in module) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -Mstrict -e '\''print 1'\''"}}'
+
+_assert_exit "perl -ne 'print if /x/' file still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -ne '\''print if /use strict/'\'' lib/Foo.pm"}}'
+
+_assert_exit "ruby -ne (i in script) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"ruby -ne '\''print if $_ =~ /x/'\'' f.rb"}}'
+
+# QA round 1 F3: a bracket expression in a VAR= value made the peel loop forever.
+_assert_exit "VAR=[ab]; git status peels (no hang)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"X=[ab]; git status"}}'
+
+_assert_exit "awk -i inplace exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"awk -i inplace {print} f.txt"}}'
+
+# --- run_in_background exempt (expect exit 0) ---
+# Output goes to a background task, never into the conversation, so sandboxing
+# buys nothing. No hook in this stack read this field before 2026-09-04.
+echo ""
+echo "--- run_in_background exempt (expect exit 0) ---"
+
+_assert_exit "run_in_background=true exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"npx ng serve --port 4200","run_in_background":true}}'
+
+_assert_exit "run_in_background=false still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"npx ng serve --port 4200","run_in_background":false}}'
+
+_assert_exit "run_in_background absent still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"npx ng serve --port 4200"}}'
+
+# --- Quoted here-doc bodies are blanked before the compound scan ---
+# `git commit -F - <<'EOF' … EOF` is a git-write (already exempt) that prints two
+# lines, but the heredoc's newlines tripped the compound check, so committing
+# with a message body was blocked outright. Only QUOTED heredocs are blanked:
+# an unquoted <<W expands parameters and command substitutions, so its body is
+# live code and must stay visible to the scan. That split is the whole point.
+echo ""
+echo "--- Quoted here-doc exemption (expect exit 0) ---"
+
+_assert_exit "git commit -F - with quoted heredoc allowed" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<'"'"'EOF'"'"'\nfix: a subject\n\nbody with ; and && and | inside\nEOF"}}'
+
+_assert_exit "git -C <dir> commit with quoted heredoc allowed" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git -C apps/mobile commit -F - <<'"'"'EOF'"'"'\nfix: subject\nEOF"}}'
+
+_assert_exit "double-quoted heredoc terminator allowed" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<\"EOF\"\nfix: subject\nEOF"}}'
+
+_assert_exit "<<- dash form allowed" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<-'"'"'EOF'"'"'\nfix: subject\nEOF"}}'
+
+echo ""
+echo "--- Here-doc exemption must NOT widen (expect exit 2) ---"
+
+# Unquoted heredoc: body expands, $(...) is live code.
+_assert_exit "UNQUOTED heredoc still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<EOF\nsubject\nEOF"}}'
+
+# Anything after the terminator survives the blanking.
+_assert_exit "operator after heredoc terminator still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<'"'"'EOF'"'"'\nsubject\nEOF\n; rm -rf /tmp/x"}}'
+
+_assert_exit "&& after heredoc terminator still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"git commit -F - <<'"'"'EOF'"'"'\nsubject\nEOF\n&& npm test"}}'
+
+# The heredoc does not make a non-exempt command exempt.
+_assert_exit "non-exempt command with heredoc still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat <<'"'"'EOF'"'"'\nlots of output\nEOF"}}'
+
+# --- Leading variable assignment peels like a leading `cd` (expect exit 0) ---
+# Observed live 2026-09-04, immediately after cwd-guard.sh blocked the `cd` form
+# and told the agent to use `git -C`:
+#   M=/Users/…/apps/mobile; git -C $M merge origin/ic3_13_patches
+# `git merge` is exempt and the `-C` normalization exists to make `git -C <path>
+# merge` work, but the `;` after the assignment tripped the operator scan, which
+# runs first — so that fix was never reached. The two gates were pushing the
+# agent into each other.
+echo ""
+echo "--- Leading VAR= assignment peels (expect exit 0) ---"
+
+_assert_exit "VAR= then git -C merge exempt (the observed case)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"M=/Users/ahby/Sources/lc/apps/mobile; git -C $M merge origin/ic3_13_patches"}}'
+
+_assert_exit "VAR= with && separator exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"D=$HOME/src && git status"}}'
+
+_assert_exit "VAR= composes with a leading cd" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"cd /tmp && M=y; git commit -m wip"}}'
+
+echo ""
+echo "--- VAR= peel must NOT widen (expect exit 2) ---"
+
+# A command substitution in the VALUE is live code and must never peel.
+_assert_exit "VAR=\$(...) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"M=$(cat secrets.txt); git -C $M merge x"}}'
+
+# Peeling removes ONLY the assignment; a second separator still shows.
+_assert_exit "VAR= with two more commands still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"M=x; npm test; echo done"}}'
+
+# The peel is not an exemption: what is left must still earn its own pass.
+_assert_exit "VAR= then a non-exempt command still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"M=x; npm test"}}'
+
+# A pipe in the value would smuggle a second command past the scan.
+_assert_exit "VAR= with a pipe in the value still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"M=a|tee /tmp/x; git status"}}'
+
+# --- File authoring exempt (expect exit 0) ---
+# A literal-emitting command redirected to a file writes bytes to the file, not
+# to stdout, so there is nothing to sandbox. The block was not merely friction:
+# it routed the command to ctx_execute, whose subprocess filesystem is discarded,
+# so the suggested replacement did not write the file at all.
+echo ""
+echo "--- File authoring exempt (expect exit 0) ---"
+
+_assert_exit "cat > file with quoted heredoc exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat > notes.md <<'"'"'EOF'"'"'\nsome literal text\nEOF"}}'
+
+_assert_exit "echo > file exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo hello > f.txt"}}'
+
+_assert_exit "printf >> file exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"printf %s x >> f.txt"}}'
+
+_assert_exit "cat file > file (silent copy) exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat a.txt > b.txt"}}'
+
+echo ""
+echo "--- Authoring exemption must NOT widen (expect exit 2) ---"
+
+# The `>` must be REAL. Quoted spans are scrubbed from _OPCHECK, so a redirect
+# inside a string does not buy the exemption and bare echo stays blocked (47-02).
+_assert_exit "echo with a quoted > still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo \"a > b\""}}'
+
+_assert_exit "bare echo still blocked (47-02)" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo hello"}}'
+
+# A redirect does not make an arbitrary command silent.
+_assert_exit "curl > file still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"curl https://example.com > page.html"}}'
+
+# cat WITHOUT a redirect floods stdout — the case this hook exists for.
+_assert_exit "cat without a redirect still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c"}}'
+
+# A STDERR redirect is not authoring: stdout still floods. A case glob cannot see
+# the fd digit, so `cat big.c 2>/dev/null` matched as "cat " + "big.c 2" + ">" +
+# "/dev/null" and was exempted — the exact hole this hook exists to close, on one
+# of the most common idioms an agent writes.
+_assert_exit "cat with 2>/dev/null still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat big.c 2>/dev/null"}}'
+
+_assert_exit "cat with 2>err.log still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat src/huge.py 2>err.log"}}'
+
+_assert_exit "cat with 2>>err.log (stderr append) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat src/huge.py 2>>err.log"}}'
+
+_assert_exit "cat >> file (stdout append) still exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat notes.txt >> all.txt"}}'
+
+_assert_exit "echo with only a stderr redirect still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo hello 2>/dev/null"}}'
+
+# ...but a real stdout redirect alongside a stderr one is still authoring.
+_assert_exit "echo > file with 2>/dev/null still exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"echo hello > f.txt 2>/dev/null"}}'
+
+# An UNQUOTED heredoc keeps its body and newlines visible to the compound scan,
+# so it is blocked before it can reach the authoring case. Fail-closed.
+_assert_exit "cat > file with UNQUOTED heredoc still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat > f.sh <<EOF\n$(rm -rf /tmp/x)\nEOF"}}'
 
 # --- VBW/planning exempt tests (expect exit 0) ---
 echo ""
