@@ -423,8 +423,9 @@ fi
 # was exempted -- opening the exact hole this hook exists to close, on one of the
 # most common idioms an agent writes. Guard on a `>` not preceded by a digit
 # first. `&>` never reaches here (the `&` trips the compound scan above), and a
-# literal `1> f` does not exempt: fail-closed, and rare.
-if [[ "$_OPCHECK" =~ (^|[^0-9])\> ]]; then
+# literal `1> f` does not exempt: fail-closed, and rare. `>` is excluded from the
+# preceding character too, or the second `>` of `2>>log` would qualify.
+if [[ "$_OPCHECK" =~ (^|[^0-9>])\> ]]; then
   case "$_OPCHECK" in
     cat\ *\>*|echo\ *\>*|printf\ *\>*)           _track_exempt authoring; exit 0 ;;
   esac

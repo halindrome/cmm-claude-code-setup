@@ -486,6 +486,12 @@ _assert_exit "cat with 2>/dev/null still blocked" 2 \
 _assert_exit "cat with 2>err.log still blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"cat src/huge.py 2>err.log"}}'
 
+_assert_exit "cat with 2>>err.log (stderr append) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat src/huge.py 2>>err.log"}}'
+
+_assert_exit "cat >> file (stdout append) still exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"cat notes.txt >> all.txt"}}'
+
 _assert_exit "echo with only a stderr redirect still blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"echo hello 2>/dev/null"}}'
 
