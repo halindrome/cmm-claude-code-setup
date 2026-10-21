@@ -359,6 +359,18 @@ _assert_exit "run_in_background=false still blocked" 2 \
 _assert_exit "run_in_background absent still blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"npx ng serve --port 4200"}}'
 
+# Compound background commands: the exemption used to sit after the compound
+# check and never reached them -- 502 of 1,254 background calls in 45 days of
+# transcripts were blocked as compound. Shapes taken from those blocks.
+_assert_exit "run_in_background: cd && make test | tee exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test 2>&1 | tee run.log","run_in_background":true}}'
+_assert_exit "run_in_background: redirect to log exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"make -C apps/rest-api run-in-container > ws.log 2>&1","run_in_background":true}}'
+_assert_exit "run_in_background: until/sleep wait loop exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"until [ -s out.txt ]; do sleep 15; done; echo DONE","run_in_background":true}}'
+_assert_exit "same compound command in foreground still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test 2>&1 | tee run.log"}}'
+
 # --- Quoted here-doc bodies are blanked before the compound scan ---
 # `git commit -F - <<'EOF' … EOF` is a git-write (already exempt) that prints two
 # lines, but the heredoc's newlines tripped the compound check, so committing

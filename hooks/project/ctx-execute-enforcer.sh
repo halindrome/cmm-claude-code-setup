@@ -133,6 +133,29 @@ if echo "$COMMAND" | grep -q "ctx-exempt"; then
     exit 0
 fi
 
+# --- run_in_background (before the compound check) ---
+# Claude Code streams a background command's output to a task file, so it never
+# enters the conversation. Sandboxing it buys nothing, and redirecting a
+# long-running process (a dev server, a test suite) into ctx_execute fights the
+# user's intent -- observed 2026-09-04: `ng serve` took five blocked calls to
+# start, and the FIRST attempt already carried run_in_background=true.
+#
+# This must run BEFORE the compound check, not among the exemptions below it.
+# Background commands are exactly the ones that are compound -- `cd app && make
+# test`, `make … 2>&1 | tee run.log`, `until …; do sleep 15; done` -- and the
+# compound check's whole concern (output hiding behind an exempt prefix) cannot
+# arise when no output reaches the conversation. Placed after it, the exemption
+# was unreachable for them: replaying 45 days of transcripts, 502 of 1,254
+# background calls were blocked as compound. A blocked full test suite was then
+# re-run through ctx_execute with timeout=600000 and died at the 10-minute cap.
+if [ "$(printf '%s' "$INPUT" | python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: print("false"); raise SystemExit
+print("true" if d.get("tool_input",{}).get("run_in_background") is True else "false")' 2>/dev/null)" = "true" ]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-exempt" "background" 2>/dev/null || true
+    exit 0
+fi
+
 # --- Compound-shell normalization (Phase 61 follow-up) ---
 # Agents frequently bypass exemptions by prefixing with `cd <dir> && <command>`
 # because `cd ` matches the navigation exemption. Peel off any leading
@@ -429,20 +452,6 @@ if [[ "$_OPCHECK" =~ (^|[^0-9>])\> ]]; then
   case "$_OPCHECK" in
     cat\ *\>*|echo\ *\>*|printf\ *\>*)           _track_exempt authoring; exit 0 ;;
   esac
-fi
-
-# run_in_background: Claude Code streams the output to a background task, so it
-# never enters the conversation. Sandboxing it buys nothing, and redirecting a
-# long-running process (a dev server) into ctx_execute fights the user's intent
-# -- observed 2026-09-04: `ng serve` took five blocked calls to start, and the
-# FIRST attempt already carried run_in_background=true. No hook in this stack
-# read that field before now.
-if [ "$(printf '%s' "$INPUT" | python3 -c 'import sys,json
-try: d=json.load(sys.stdin)
-except Exception: print("false"); raise SystemExit
-print("true" if d.get("tool_input",{}).get("run_in_background") is True else "false")' 2>/dev/null)" = "true" ]; then
-    _track_exempt background
-    exit 0
 fi
 
 # Navigation and short queries (output is bounded)
