@@ -370,6 +370,12 @@ _assert_exit "run_in_background: until/sleep wait loop exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"until [ -s out.txt ]; do sleep 15; done; echo DONE","run_in_background":true}}'
 _assert_exit "same compound command in foreground still blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test 2>&1 | tee run.log"}}'
+# Only a JSON boolean true exempts. This check now runs ahead of the compound
+# scan, so loosening it to truthiness would exempt every compound command.
+_assert_exit "run_in_background=\"true\" (string) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test 2>&1 | tee run.log","run_in_background":"true"}}'
+_assert_exit "run_in_background=1 (number) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test 2>&1 | tee run.log","run_in_background":1}}'
 
 # --- Quoted here-doc bodies are blanked before the compound scan ---
 # `git commit -F - <<'EOF' … EOF` is a git-write (already exempt) that prints two
