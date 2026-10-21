@@ -120,12 +120,27 @@ _CMM_PROJECT_NAME="${_CMM_PROJECT_NAME//\//-}"
 
 # Capture output silently; touch_project is fire-and-forget.
 # Use the CLI interface (not MCP tool name) since this runs in a shell hook, not Claude's agent runtime.
-_CMM_TOUCH_JSON=$(python3 -c "import json; print(json.dumps({'project': '$_CMM_PROJECT_NAME'.replace(chr(39), '')}))" 2>/dev/null || echo '{"project":"'"$_CMM_PROJECT_NAME"'"}')
+# Pass the name through the ENVIRONMENT, never interpolated into program text:
+# a project path containing a quote would otherwise close the string literal and
+# the rest of the path would be evaluated as Python. (The old inline
+# .replace(chr(39),'') ran only AFTER interpolation, so it stripped nothing.)
+_CMM_TOUCH_JSON=$(P="$_CMM_PROJECT_NAME" python3 -c \
+  'import json, os; print(json.dumps({"project": os.environ["P"]}))' 2>/dev/null)
+[ -n "$_CMM_TOUCH_JSON" ] || \
+  _CMM_TOUCH_JSON=$(printf '{"project":"%s"}' "${_CMM_PROJECT_NAME//\"/}")
 _CMM_TOUCH_OUTPUT=$(codebase-memory-mcp cli touch_project "$_CMM_TOUCH_JSON" 2>/dev/null) && _CMM_TOUCH_OK=1 || _CMM_TOUCH_OK=0
 
-# Debug logging (only when debug_logging=true in config)
-_CMM_CONFIG="$PROJECT_ROOT/.vbw-planning/config.json"
-if [ -f "$_CMM_CONFIG" ] && python3 -c "import sys,json; d=json.load(open('$_CMM_CONFIG')); sys.exit(0 if d.get('debug_logging') else 1)" 2>/dev/null; then
+# Debug logging (only when debug_logging=true in config).
+# Prefer the neutral CMM state dir; fall back to legacy VBW planning config for
+# back-compat. VBW is optional — neither file is required for the hook to work.
+_CMM_CONFIG="$PROJECT_ROOT/.claude/.cmm-setup/config.json"
+[ -f "$_CMM_CONFIG" ] || _CMM_CONFIG="$PROJECT_ROOT/.vbw-planning/config.json"
+# Path passed via the environment, not interpolated into program text — same
+# reason as the touch_project JSON above: PROJECT_ROOT is user-controlled and a
+# quote in it would close the literal and execute the remainder as Python.
+if [ -f "$_CMM_CONFIG" ] && C="$_CMM_CONFIG" python3 -c \
+     'import sys, json, os; d = json.load(open(os.environ["C"])); sys.exit(0 if d.get("debug_logging") else 1)' \
+     2>/dev/null; then
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] touch_project project=$_CMM_PROJECT_NAME output=$_CMM_TOUCH_OUTPUT cwd=$(pwd)" >> /tmp/cmm-touch-project.log 2>/dev/null || true
 fi
 

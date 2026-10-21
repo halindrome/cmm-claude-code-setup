@@ -189,6 +189,226 @@ echo "--- Test c13: real 'wc' verb against src/ still -> exit 2 (BLOCKED) ---"
 _assert_exit "c13: real wc verb still blocked" 2 \
     "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"wc -l src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
 
+# --- A verb in PIPE-SINK position is not navigation ---
+# Measured 2026-09-03: `git log --oneline | cat` and `git diff --stat | cat` were
+# blocked as "code search". CMM has no replacement for them, and a block with no
+# usable alternative sends 90-95% of attempts straight back to raw tools.
+echo "--- Test c14: 'git log --oneline | cat' under a source path -> exit 0 (ALLOW) ---"
+_assert_exit "c14: git log piped to cat not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $PROJ_REAL/src && git log --oneline | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c15: 'git diff --stat | cat' -> exit 0 (ALLOW) ---"
+_assert_exit "c15: git diff piped to cat not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $PROJ_REAL/src && git diff --stat | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c16: pipeline HEAD naming a source path still -> exit 2 (BLOCKED) ---"
+# The fix must not disarm the gate: `cat` here reads a file, it is not a sink.
+_assert_exit "c16: cat of src/ piped onward still blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat src/main.py | wc -l\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c17: quoted pipe in a grep pattern still -> exit 2 (BLOCKED) ---"
+_assert_exit "c17: quoted alternation does not disarm the gate" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -n 'foo|cat' src/main.py\"},\"cwd\":\"$PROJ_REAL\"}"
+
+# --- Block messages must name a concrete call, not a placeholder ---
+# Measured: gates naming a specific replacement convert 36-50% of blocks; a "..."
+# template converts 13-25%; naming no alternative at all converts ~0%.
+_msg_of() { echo "$1" | bash "$HOOK" 2>&1 >/dev/null || true; }
+
+echo "--- Test c18: Grep block echoes the real search term ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"handleRequest\",\"glob\":\"*.ts\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -qF 'search_graph(name_pattern="handleRequest", project="'; then
+    echo "PASS: c18: block names the concrete search_graph call"; PASS=$((PASS+1))
+else
+    echo "FAIL: c18: block still prints a placeholder"; FAIL=$((FAIL+1))
+fi
+
+echo "--- Test c14b/c15b: pipe-sink payloads that actually REACH the sink logic ---"
+# c14/c15 send 'cd $PROJ_REAL/src && git log --oneline | cat'. The gate first
+# requires a path fragment matching (src/|app/|lib/|hooks/|…); '…/src && git'
+# contains 'src ' not 'src/', so those payloads never reach the pipe-sink code at
+# all — both assertions passed against a hook with the fix fully removed. These
+# forms carry a real 'src/' and so discriminate: fixed => exit 0, unfixed => 2.
+_assert_exit "c14b: 'git log --oneline src/ | cat' not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git log --oneline src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+_assert_exit "c15b: 'git diff --stat src/ | cat' not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git diff --stat src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+_assert_exit "c15c: 'ls src/ | cat' not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+# …and the sink fix must not disarm a REAL navigation command that happens to
+# end in a sink. This is the pair that keeps the fix honest in both directions.
+_assert_exit "c15d: 'grep -rn foo src/ | cat' still blocked" 2 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -rn foo src/ | cat\"},\"cwd\":\"$PROJ_REAL\"}"
+
+echo "--- Test c18b: an --include glob never becomes the search term (QA r1 F-03) ---"
+# `.*` in the extractor was greedy, so it bound the LAST quoted string: a trailing
+# --include='*.pl' produced search_graph(name_pattern="*.pl"), a call that returns
+# nothing. Worse than the old "..." placeholder because it looks correct -- and it
+# misfires hardest on the Perl case WS2 exists to fix.
+for _CMD in "grep -rn 'reqStatus' src/ --include='*.pl'" \
+            "grep -rn --include='*.pm' 'reqStatus' src/" \
+            "grep -rn 'reqStatus' -t perl src/" ; do
+  _M=$(_msg_of "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$_CMD\"},\"cwd\":\"$PROJ_REAL\"}")
+  if printf '%s' "$_M" | grep -qF 'reqStatus'; then
+    echo "PASS: c18b: term recovered from: $_CMD"; PASS=$((PASS+1))
+  else
+    echo "FAIL: c18b: wrong term from: $_CMD"; FAIL=$((FAIL+1))
+  fi
+  if printf '%s' "$_M" | grep -qE '(name_pattern|query)="\*\.(pl|pm)"'; then
+    echo "FAIL: c18b: glob leaked in as the search term: $_CMD"; FAIL=$((FAIL+1))
+  else
+    echo "PASS: c18b: no glob in the suggested call: $_CMD"; PASS=$((PASS+1))
+  fi
+done
+
+echo "--- Test c20: extension-cache mtime probe tries GNU stat first (QA r1 F-04) ---"
+# On GNU coreutils `stat -f` is --file-system and EXITS 0 for any existing file,
+# so `stat -f %m || stat -c %Y` never reaches the fallback and the cache key is a
+# per-platform constant -- restoring the "first read is permanent" bug on all of
+# Linux. This hook installs to ~/.claude and runs for every repo, so order matters.
+_STATLINE=$(grep -n '_CFG_MTIME=' "$HOOK" | head -1)
+if printf '%s' "$_STATLINE" | grep -qE 'stat -c %Y.*stat -f %m'; then
+    echo "PASS: c20: GNU stat -c is attempted before BSD stat -f"; PASS=$((PASS+1))
+else
+    echo "FAIL: c20: BSD stat -f runs first; on GNU it succeeds and pins the key"; FAIL=$((FAIL+1))
+fi
+
+echo "--- Test c19: regex-shaped term leads with search_code ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"foo.*bar\",\"glob\":\"*.py\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -m1 -q 'search_code'; then
+    echo "PASS: c19: regex term leads with search_code"; PASS=$((PASS+1))
+else
+    echo "FAIL: c19: regex term did not lead with search_code"; FAIL=$((FAIL+1))
+fi
+
+# --- Perl reassurance at the moment of blocking ---
+# Observed failure: an agent blocked on a *.pm grep concludes CMM cannot search
+# Perl and falls back to Read. Perl IS a Hybrid LSP language here.
+echo "--- Test c20: Perl target gets the 'fully indexed' line ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"ApTest::SQLiteFile\",\"glob\":\"*.pm\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -qF 'Perl is fully indexed'; then
+    echo "PASS: c20: Perl block states Perl is indexed"; PASS=$((PASS+1))
+else
+    echo "FAIL: c20: Perl block omits the Perl reassurance"; FAIL=$((FAIL+1))
+fi
+
+echo "--- Test c21: non-Perl target does NOT get the Perl line ---"
+_M=$(_msg_of "{\"tool_input\":{\"pattern\":\"handleRequest\",\"glob\":\"*.ts\",\"path\":\"$PROJ\"}}")
+if printf '%s' "$_M" | grep -qF 'Perl is fully indexed'; then
+    echo "FAIL: c21: Perl line leaked onto a TypeScript block"; FAIL=$((FAIL+1))
+else
+    echo "PASS: c21: Perl line correctly absent"; PASS=$((PASS+1))
+fi
+
+# --- extra_extensions cache must follow the config, not outlive it ---
+# .cgi is known to neither the built-in list nor CMM; both learn it only from
+# extra_extensions in .codebase-memory.json. Keying the cache on REPO_ROOT alone
+# made the first read permanent, so adding an extension had no effect until the
+# /tmp file was deleted by hand.
+echo "--- Test c22: .cgi not blocked before it is declared ---"
+_assert_exit "c22: undeclared .cgi allowed" 0 \
+    "{\"tool_input\":{\"pattern\":\"handler\",\"glob\":\"*.cgi\",\"path\":\"$PROJ\"}}"
+
+echo "--- Test c23: .cgi blocked once declared in extra_extensions ---"
+echo '{"extra_extensions":{".cgi":"perl"}}' > "$PROJ/.codebase-memory.json"
+# No cache clearing here on purpose: if the key ignored the config mtime, the
+# stale entry from c22 would still be in effect and this assertion would fail.
+_assert_exit "c23: declared .cgi blocked without clearing the cache" 2 \
+    "{\"tool_input\":{\"pattern\":\"handler\",\"glob\":\"*.cgi\",\"path\":\"$PROJ\"}}"
+rm -f "$PROJ/.codebase-memory.json"
+
+# --- c24: the search term comes from the SEGMENT that owns the search verb ---
+# Compound commands are routinely narrated with echo labels. _extract_term took
+# the FIRST quoted string in the whole command, so an echo label ahead of the
+# grep supplied the term: the block fired correctly and then suggested
+#   search_code(pattern="=== spec: changeTarget/_fetch coverage ===")
+# which runs and returns nothing. Same class as the --include='*.pl' fix (c18b):
+# a plausible-but-wrong term converts worse than a bare "..." placeholder.
+# Observed live 2026-09-04 in liverpool-cleanup.
+echo ""
+echo "--- Test c24: echo labels must not hijack the extracted term ---"
+
+_c24_term_is() {
+    local label="$1" cmd="$2" want="$3"
+    local msg
+    msg=$(_msg_of "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"cwd\":\"$PROJ_REAL\"}")
+    if printf '%s' "$msg" | grep -qF "\"$want\""; then
+        echo "PASS: c24: $label"; PASS=$((PASS+1))
+    else
+        echo "FAIL: c24: $label (term not '$want')"
+        echo "    msg: $msg"
+        FAIL=$((FAIL+1))
+    fi
+}
+
+_c24_term_is "bare grep keeps its own term" \
+    "grep -n 'changeTarget' src/main.py" "changeTarget"
+_c24_term_is "echo label BEFORE the grep does not win" \
+    "echo '=== coverage ==='; grep -n 'changeTarget' src/main.py" "changeTarget"
+_c24_term_is "echo labels on both sides" \
+    "echo '=== a ==='; grep -n 'changeTarget' src/main.py; echo '=== b ==='" "changeTarget"
+_c24_term_is "grep keeps its pipe sink in the same segment" \
+    "grep -n 'changeTarget' src/main.py | head -40" "changeTarget"
+# A leading `git -C <dir> <non-grep>` owns no search term; selecting it would
+# yield the placeholder and lose the real term further along.
+_c24_term_is "leading git -C branch does not claim the segment" \
+    "git -C src branch --show-current && echo '=== hdr ==='; grep -n 'changeTarget' src/main.py" "changeTarget"
+# Uses `git grep … src/` rather than `git -C src grep … .`: the outer gate
+# requires a source-path fragment to classify the command as navigation at all,
+# and `.` is not one. That predates this fix and is a separate behaviour.
+_c24_term_is "git grep IS a search verb" \
+    "echo '=== hdr ==='; git grep -n 'changeTarget' src/" "changeTarget"
+
+# And a compound with no code search at all must still pass through untouched.
+_assert_exit "c24: git branch + status compound not blocked" 0 \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git -C src branch --show-current && git -C src status --porcelain\"},\"cwd\":\"$PROJ_REAL\"}"
+
+# --- c25: a nav verb left DANGLING by the `<<` cut owns no path ---
+# BNAV_HEAD is cut at the first `<<`, so
+#   git -C /repo/apps/mobile commit --no-edit -m "$(cat <<'EOF' … EOF)"
+# became `… -m "$(cat `. The bare `cat` (preceded by `(`, in the separator class)
+# satisfied the VERB test while `apps/` from the `git -C` PATH satisfied the path
+# test -- the two taken from different commands. Observed live 2026-09-04 in
+# liverpool-cleanup, blocking a commit whose message body came from a here-doc:
+# exactly the shape ctx-execute-enforcer.sh was fixed for in 4d26952, blocked
+# here instead, so that fix bought the agent nothing.
+echo ""
+echo "--- Test c25: dangling nav verb after the here-doc cut ---"
+
+# Built via a quoted here-doc, then JSON-encoded in python: the payload contains
+# both `"` and `$(`, and hand-escaping those through a bash double-quoted string
+# into JSON is how the earlier fixtures in this file grew unreadable.
+_c25_json() {
+    _C25_CMD="$1" _C25_CWD="$PROJ_REAL" python3 -c 'import json, os
+print(json.dumps({"tool_name": "Bash",
+                  "tool_input": {"command": os.environ["_C25_CMD"]},
+                  "cwd": os.environ["_C25_CWD"]}))'
+}
+
+read -r -d '' _C25_COMMIT <<'C25EOF' || true
+git -C __PROJ__/apps/mobile commit --no-edit -m "$(cat <<'EOF'
+fix(comms): correct _fetch change target
+
+Body line that mentions src/main.py on purpose.
+EOF
+)"
+C25EOF
+_C25_COMMIT="${_C25_COMMIT//__PROJ__/$PROJ_REAL}"
+
+_assert_exit "c25: here-doc commit message not blocked as navigation" 0 \
+    "$(_c25_json "$_C25_COMMIT")"
+
+# The fix must not disarm the gate. Each of these keeps its argument, so the verb
+# and the path belong to the SAME command and the block must stand.
+_assert_exit "c25: cat inside \$() WITH a path still blocked" 2 \
+    "$(_c25_json 'echo "$(cat apps/mobile/src/foo.ts)"')"
+_assert_exit "c25: bare input redirect still blocked (F-01)" 2 \
+    "$(_c25_json 'cat < src/main.py')"
+_assert_exit "c25: plain cat of a source path still blocked" 2 \
+    "$(_c25_json 'cat src/main.py')"
+_assert_exit "c25: grep with its own term still blocked" 2 \
+    "$(_c25_json 'grep -n changeTarget apps/mobile/src/comms.service.spec.ts')"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

@@ -87,16 +87,19 @@ if [ -n "$PATH_FIELD" ] && [ -f "$PATH_FIELD" ]; then
 fi
 
 # --- CMM availability check (.mcp.json cascade, parity with cmm-nudge.sh / cmm-grep-nudge.sh) ---
+# Shared registration probe. Resolve "<dir>/lib" (installed layout) then
+# "<dir>/../lib" (repo layout), per hooks/lib/context-mode-detect.sh's note.
+_CMMREG_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/cmm-registered.sh" ] && { _CMMREG_LIB="$_d/cmm-registered.sh"; break; }
+done
+# Cannot determine availability -> fail open. Never block on our own absence.
+[ -n "$_CMMREG_LIB" ] || exit 0
+# shellcheck disable=SC1090
+source "$_CMMREG_LIB"
+
 CMM_FOUND=false
-if [ -f "$REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$REPO_ROOT/.mcp.json" 2>/dev/null; then
-    CMM_FOUND=true
-fi
-if [ "$CMM_FOUND" = false ]; then
-    CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-    if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-        CMM_FOUND=true
-    fi
-fi
+cmm_is_registered "$REPO_ROOT" && CMM_FOUND=true
 # If CMM not registered anywhere, fail open
 [ "$CMM_FOUND" = false ] && exit 0
 
@@ -166,20 +169,29 @@ if [[ "$PATTERN_FIELD" =~ ^[A-Za-z_][A-Za-z0-9_]{2,63}$ ]]; then
     esac
 fi
 
+# project= is REQUIRED on both tools, and search_code takes `pattern`, not
+# `query` -- see cmm_project_name() in hooks/lib/cmm-registered.sh. Omit the
+# argument when the root is unknown rather than emitting project="".
+_PROJ="$(cmm_project_name 2>/dev/null)"
+_P=""
+[ -n "$_PROJ" ] && _P=", project=\"${_PROJ}\""
+
 if [ "$IS_IDENTIFIER" = true ]; then
-    FIRST_LINE="REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern=\"${PATTERN_FIELD}\")"
-    SECOND_LINE="OR:           mcp__codebase-memory-mcp__search_code(query=\"${PATTERN_FIELD}\")"
+    FIRST_LINE="REPLACE WITH: mcp__codebase-memory-mcp__search_graph(name_pattern=\"${PATTERN_FIELD}\"${_P})"
+    SECOND_LINE="OR:           mcp__codebase-memory-mcp__search_code(pattern=\"${PATTERN_FIELD}\"${_P})"
 else
-    FIRST_LINE="REPLACE WITH: mcp__codebase-memory-mcp__search_code(query=\"${PATTERN_FIELD}\")"
-    SECOND_LINE="OR:           mcp__codebase-memory-mcp__search_graph(name_pattern=\"${PATTERN_FIELD}\")"
+    FIRST_LINE="REPLACE WITH: mcp__codebase-memory-mcp__search_code(pattern=\"${PATTERN_FIELD}\"${_P})"
+    SECOND_LINE="OR:           mcp__codebase-memory-mcp__search_graph(name_pattern=\"${PATTERN_FIELD}\"${_P})"
 fi
 
 # --- Block message (stderr, exit 2) ---
+# Bypass last and scoped to non-code: see the note in cmm-grep-nudge.sh.
 cat >&2 <<EOF
 [grep-cmm-gate] BLOCKED -- source-code search in indexed repo.
 ${FIRST_LINE}
 ${SECOND_LINE}
-Bypass: add '# cmm-exempt' to your pattern, or use an explicit non-code type/glob.
+(Non-code target? Use an explicit non-code type/glob, or add '# cmm-exempt' to
+your pattern. Not for searching source.)
 EOF
 
 # --- Block counter (best-effort, parity with cmm-grep-nudge.sh) ---

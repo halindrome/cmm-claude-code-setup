@@ -48,10 +48,49 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 - [x] Phase 54: Map VBW v1.36.2 Per-Project Agent Installation Updates
 - [x] Phase 55: Sync VBW v1.37.0 Agent and Orchestration Changes
 - [x] Phase 56: Sync to CMM Upstream main (v0.6.1+101)
-- [ ] Phase 57: Sync context-mode integration to upstream v1.0.122
-- [ ] Phase 58: Prohibit head/tail truncation inside ctx_execute sandbox
-- [ ] Phase 61: Convert CMM/ctx rules to Claude Code Skills
-- [ ] Phase 62: Restore MCP Tool Grants to Override Agents and Setup Allowlist
+- [x] Phase 57: Sync context-mode integration to upstream v1.0.122
+- [x] Phase 58: Prohibit head/tail truncation inside ctx_execute sandbox
+- [x] Phase 59: Respect Global CMM on Per-Project Install
+- [x] Phase 60: Harden Subagent Hook Envelopes
+- [x] Phase 61: Convert CMM/ctx rules to Claude Code Skills
+- [x] Phase 62: Restore MCP Tool Grants to Override Agents and Setup Allowlist
+- [x] Phase 63: Refresh ctx/cmm Rule Files for Upstream Tool Versions
+- [ ] Phase 64: Gate-Frustration Advisory
+- [ ] Phase 65: Monorepo CMM Index Discipline
+- [ ] Phase 66: Runtime VBW Agent Override Generation
+
+### Phase 66: Runtime VBW Agent Override Generation
+**Goal:** Stop shipping forked copies of VBW agent bodies and generate the `.claude/agents/vbw-*.md` overrides at runtime by merging this stack's small augmentation delta onto the VBW base body the user actually has — keyed by content SHA so it self-heals when either VBW or our delta changes. Today `setup.sh --project` copies `agents/vbw-*.md` verbatim (`setup.sh:1702-1708`); those files are full forks snapshotted at authoring time and drift silently from (a) the VBW each user runs and (b) upstream as it evolves. Drift is already live (2026-06-18): every override body diverges 13–48 lines from both the loaded VBW and the dev checkout, and `vbw-architect`'s Skill Activation section ships a stale pre-rewrite version. The augmentation we actually need is small (frontmatter `hooks:`/`skills:` + a few instruction sections); the copied base is pure liability with no drift signal beyond a hand-written `MAINTENANCE:` comment that has already rotted. Frontmatter also diverges in both directions (architect override uses `disallowedTools` while base uses `tools`; debugger is the reverse — the same allowlist/denylist surface Phase 62 touched), so a naive regenerate could break subagent MCP access — the merge is a real design decision, not a copy. Full evidence, the loaded-VBW resolution facts (`enabledPlugins` vbw=false yet active via `--plugin-dir`; `vbw/local` cache symlink → `…/worktrees/integrated`; marketplace-tracked 1.37.1 — three different trees), and file-level targets in `66-RESEARCH.md`.
+**Gating validation (do FIRST — may prune later tasks):** (V1) Does current Claude Code apply global `settings.json` PreToolUse/PostToolUse hooks to tool calls made *inside* subagents? If yes, the per-agent body fork may be unnecessary — register hooks globally and generate at most a tiny frontmatter stub. (V2) Does Claude Code hot-reload `.claude/agents/*.md` mid-session or only at session start? Determines whether (re)generation applies this session or next, and what the advisory tells the user.
+**Deps:** Phase 62 (Restore MCP Tool Grants — owns the tools/disallowedTools surface the merge must preserve), Phase 23 (Enforce CMM Hooks Inside Subagents — the frontmatter-hook contract that is the whole reason for the override; V1 re-validates its premise), Phase 60 (Harden Subagent Hook Envelopes), Phase 29 (Setup Drift Detection — precedent), Phase 51 (Promote Context-Mode Hooks to First-Class — plugin-form vs MCP-server naming the resolver/install must handle).
+**Reqs:** none (DX / correctness — agent-override drift elimination)
+**Success:**
+- V1 and V2 are answered empirically against the local VBW tree before any build; the design branch (full body merge vs frontmatter-only stub) is chosen from V1's result and recorded.
+- A shared VBW-source resolver honors `CLAUDE_CONFIG_DIR`, reads `enabledPlugins`/marketplace, selects the active version under `…/plugins/cache/<mkt>/vbw/<version>/agents/`, follows a `local` symlink for `--plugin-dir` users, reports which tree it resolved, and no-ops cleanly when VBW is absent/disabled.
+- `agents/vbw-*.md` are refactored to delta-only artifacts (frontmatter patch + append-at-end augmentation sections; append over mid-body injection for resilience). 100% of the injected delta is fenced/identifiable.
+- A SessionStart generate-or-refresh hook (fail-open, idempotent, per-project) stamps `x-cmm-base-sha` + `x-cmm-delta-sha` into each generated override and (re)generates only when either SHA mismatches or the stamp is missing; silent no-op when both match; first-run is the missing-stamp branch. The advisory names the resolved VBW version and (per V2) whether a restart is needed.
+- Generated files are stamped "generated — do not edit"; regeneration keys off base/delta SHAs (not file bytes); a detected manual edit warns rather than clobbers.
+- `setup.sh` stops copying forked bodies: it installs the delta files, the resolver, and the hook, registers the SessionStart hook, and optionally does a best-effort synchronous generation pass when a VBW is resolvable at setup time (covers the first session).
+- All new behavior fails open when VBW or CMM is absent (`.mcp.json` / plugin probe), consistent with existing hook conventions (`#!/bin/bash`, purpose comment, install/register notes; exit 2 = block, exit 0 = allow).
+- Tests (bats, in `testing/`) cover the resolver (marketplace / local-symlink / absent / `CLAUDE_CONFIG_DIR`), SHA-stamp compare + regen trigger, merge correctness (delta survives, stale base sections refresh), and fail-open paths. `CHECKSUMS.sha256` regenerated; `setup.sh --project --force` re-installs cleanly.
+
+**Research pre-loaded:** `66-RESEARCH.md` — in-session diagnosis: verbatim-copy root cause at `setup.sh:1702-1708`; live drift table (13–48 lines/agent); both-direction frontmatter divergence tied to Phase 62; intentional-delta inventory; loaded-VBW resolution facts; V1/V2 gating questions; file-level targets.
+
+### Phase 65: Monorepo CMM Index Discipline
+**Goal:** Stop the stack from creating standalone CMM indices for monorepo sub-trees, and stop it from falsely concluding a project "isn't indexed" because it looked up a sub-project name instead of the monorepo root. Confirmed live (2026-06-18): `list_projects` shows both `Users-ahby-Sources-cvx_6004` (root, 48,698 nodes) and a stray `Users-ahby-Sources-cvx_6004-apps-rest-api` (subtree, 16,548 nodes). Root cause is a rules/hooks design gap, **not** version drift: (1) `index_repository(repo_path=…)` is model-chosen and `cmm-session-start.sh`'s injected instruction names no repo_path and no monorepo root, so the model fills it from cwd/task focus and indexes the subtree; (2) `hooks/lib/project-root.sh` already resolves the correct outermost root (git-superproject walk) and `cwd-guard.sh` guards drift, but that `PROJECT_ROOT` is used only for sentinel/gating — never surfaced to the model as guidance; (3) `rules/cmm-rules.md` has no monorepo rule ("index/query the repo root, never a subtree; check ancestors before indexing"); (4) `cmm-sentinel-writer.sh` writes the sentinel keyed to the monorepo `PROJECT_HASH` regardless of which path was indexed, so indexing the wrong subtree still clears the gate and the mistake is invisible; (5) path-derived project names mean an `index_status` lookup on the subtree name misses the monorepo index that already covers those files. Current hooks would still allow the duplicate, so the rules/instruction fix is the real bug — version upgrade alone does not close it. Full evidence and file-level targets in `65-RESEARCH.md`.
+**Deps:** Phase 15 (Single Gate + Monorepo Path Fix — established the superproject-walk PROJECT_ROOT), Phase 22 (Context Mode monorepo root fix), Phase 50 (project-root worktree robustness)
+**Reqs:** none (correctness / DX — monorepo index integrity)
+**Success:**
+- `cmm-session-start.sh` surfaces the resolved monorepo `PROJECT_ROOT` in the injected `index_repository` instruction (reusing the `PROJECT_ROOT` already exported by `hooks/lib/project-root.sh`), so the model is told which path to index rather than inferring it from cwd
+- `rules/cmm-rules.md` gains an explicit monorepo rule: always index/query the repository root, never a subtree; before indexing, check whether an ancestor path (or an existing `list_projects` entry) already covers the files
+- `cmm-sentinel-writer.sh` (and/or `session-gate.sh`) emits a visible advisory when the indexed `repo_path` differs from the resolved `PROJECT_ROOT`, so a wrong-scope index is no longer silent
+- A monorepo session no longer produces a sub-tree index; `list_projects` stays clean (root only)
+- All new/changed hook behavior fails open when CMM is absent (`.mcp.json` probe), consistent with existing hook conventions
+- `CHECKSUMS.sha256` regenerated and `setup.sh --project --force` re-installs the updated hooks/rules cleanly
+- Tests cover: indexed-path ≠ PROJECT_ROOT advisory fires; advisory absent when paths match; monorepo rule keywords present in `rules/cmm-rules.md`; session-start instruction contains the resolved root
+- Remediation (operational): delete the stray `Users-ahby-Sources-cvx_6004-apps-rest-api` index; re-run `setup.sh --project` in `cvx_6004` and `cvx-4894` (the latter has no `.claude/hooks/` at all); confirm both stamp a current version
+
+**Research pre-loaded:** `65-RESEARCH.md` — live `list_projects` evidence; root cause traced to model-chosen repo_path + unsurfaced PROJECT_ROOT + missing monorepo rule + scope-blind sentinel writer; affected projects unstamped (cvx-4894 never `--project` installed); file-level implementation targets identified.
 
 ### Phase 49: Align with VBW Agent Updates (v1.35.0)
 > **Superseded by Phase 52** (2026-05-04): Phase 52 absorbs the v1.35.0 alignment scope into a broader audit covering all VBW changes through v1.36.1+ on `origin/main`. Phase 49's specific gaps (vbw-qa write-verification gate, vbw-dev pre_existing_issues rule, `<skill_no_activation>` handling, agent frontmatter `tools:` allowlists) remain in scope and will be addressed inside Phase 52's planning.
@@ -327,7 +366,15 @@ Hook-based enforcement layer for codebase-memory-mcp + Claude Code, adapted from
 | 53 - Review Context-Mode Updates for Tool Guidance | 1/1 | complete | 2026-05-04 |
 | 55 - Sync VBW v1.37.0 Agent and Orchestration Changes | 1/1 | complete | 2026-05-11 |
 | 56 - Sync to CMM Upstream main (v0.6.1+101) | 4/4 | complete | 2026-05-11 |
-| 62 - Restore MCP Tool Grants to Override Agents and Setup Allowlist | 0/? | pending | — |
+| 57 - Sync context-mode integration to upstream v1.0.122 | 2/2 | complete | 2026-05-17 |
+| 58 - Prohibit head/tail truncation inside ctx_execute sandbox | 1/1 | complete | 2026-05-17 |
+| 59 - Respect Global CMM on Per-Project Install | 1/1 | complete | 2026-05-18 |
+| 60 - Harden Subagent Hook Envelopes | 1/1 | complete | 2026-05-21 |
+| 61 - Convert CMM/ctx rules to Claude Code Skills | 2/2 | complete | 2026-05-28 |
+| 62 - Restore MCP Tool Grants to Override Agents and Setup Allowlist | 1/1 | complete | 2026-05-29 |
+| 63 - Refresh ctx/cmm Rule Files for Upstream Tool Versions | 1/1 | complete | 2026-06-17 |
+| 64 - Gate-Frustration Advisory | 0/? | pending | — |
+| 65 - Monorepo CMM Index Discipline | 0/? | pending | — |
 
 ### Phase 23: Enforce CMM Hooks Inside Subagents
 **Goal:** Hooks registered in `settings.json` (session gate, stale advisory, CMM call tracker) do not fire inside VBW subagents (Dev, Scout, Lead, QA). These agents make CMM queries and file edits without the enforcement layer active — they can query a stale index silently, bypass the session gate, and skip call tracking. This is a correctness gap: the tooling is designed to guarantee all CMM usage is accurate and tracked, but that guarantee breaks down exactly when subagents are doing the most work. Fix this by using the mechanisms from Claude Code's subagent hooks API: inject the session gate check via `SubagentStart` context injection, and add the stale advisory and CMM call tracking hooks to VBW agent frontmatter files so they fire inside each agent's execution context.
@@ -743,3 +790,18 @@ Concretely:
 - Test coverage asserts each of the four agents grants the CMM `get_architecture` + `search_graph` tool names in frontmatter, and that the setup.sh allowlist writer emits the plugin-form context-mode prefix.
 
 **Research pre-loaded:** `62-RESEARCH.md` — investigation in the originating session verified the exact frontmatter of all seven override agents (4 allowlist / 3 denylist), the setup.sh allowlist-writer line range and its legacy-only context-mode names, the live MCP server/plugin naming (CMM = global server `codebase-memory-mcp`; context-mode = global plugin `mcp__plugin_context-mode_context-mode__*`, with legacy MCP-server form still default-registered by setup.sh), the stale `trace_call_path` name in settings.json, and byte-identical provenance of the downstream `liverpool_patches` install. Plan mode may proceed without re-spawning broad Scout research; a focused verification of current frontmatter and the exact setup.sh line numbers before editing is sufficient.
+
+### Phase 64: Gate-Frustration Advisory
+**Goal:** A user frustrated that Claude isn't honoring the CMM/ctx nudges often won't remember they're even running this enforcement stack — or that they can report it. When the gates block heavily in a session, surface a **once-per-session** reminder pointing to two remedies: (1) ask Claude directly why it isn't following its rules, and (2) capture a shareable gate-cost report to file. The advisory has an **active surface** — a Stop hook that prints a short, self-identifying note naming both remedies plus the exact `scripts/analyze-gate-blocks.py --all --share` command — and a **passive surface** — the existing CMM statusline (`statusline-cmm.sh`) showing a marker when the per-project block count is high. The feature reuses the existing per-project block counter (`hooks/project/track-hook-blocks.sh`) with **no new tracking** added. Trigger is bounded: fire only after the per-project block count first crosses a threshold (~15–20), guarded by a `/tmp/cmm-advised-<project-root-hash>` sentinel so it shows at most once per session, never in non-interactive/CI contexts, and silenced entirely by `CMM_NO_ADVISORY=1`.
+**Deps:** **PR #78** (`feat(metrics): shareable gate-cost report + opt-in setup.sh install`, branch `feature/metrics-share-and-install`) — provides the `analyze-gate-blocks.py --all --share` report command the advisory points at; PR #78 must merge to `develop` before this phase's active-surface message is accurate. Phase 36 (Hook Block Counter and Statusline Integration — established the block counter + statusline plumbing this advisory reads), Phase 30 (Per-Project CMM Call Count Cache — the per-project counting/hash convention reused here).
+**Reqs:** none (enforcement transparency / UX)
+**Success:**
+- The advisory fires **once per session**, only after the per-project block count first crosses the configured threshold (~15–20), guarded by a `/tmp/cmm-advised-<hash>` sentinel; it never fires in non-interactive/CI sessions.
+- **Active surface:** a Stop hook prints a short, self-identifying note that names both remedies (ask Claude why it isn't following its rules; capture a `--share` report) and includes the literal `scripts/analyze-gate-blocks.py --all --share` command.
+- **Passive surface:** the CMM statusline shows a marker when the block count is high.
+- **Escape hatch:** setting `CMM_NO_ADVISORY=1` silences the advisory entirely (both surfaces).
+- Reuses the existing `track-hook-blocks.sh` counter — no new tracking mechanism is introduced.
+- Test coverage for: threshold trigger, once-per-session (sentinel) behavior, CI/non-interactive skip, and the `CMM_NO_ADVISORY=1` escape hatch.
+- **Scope/QA:** touches `hooks/` + `setup.sh` (Stop-hook registration) + `tests/` → does **not** qualify for the CONTRIBUTING.md docs-only skip; the standard 2–4 QA rounds apply (use the global `/pr-qa`).
+
+**Research deferred to Plan mode.** The originating session verified the referenced artifacts exist on `develop`: the source counter `hooks/project/track-hook-blocks.sh`, the report script `scripts/analyze-gate-blocks.py`, and the statusline `statusline-cmm.sh`. Open implementation questions for Plan mode: the exact threshold value and whether it should be configurable; the precise Stop-hook event wiring and `setup.sh` registration block; the statusline marker format; and confirming the final `--all --share` flag surface once PR #78 lands. A focused Scout pass on the Stop-hook registration path in `setup.sh` and the current statusline rendering is sufficient — no broad research needed.

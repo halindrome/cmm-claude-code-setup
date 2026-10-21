@@ -78,31 +78,22 @@ touch "/tmp/cmm-indexing-${PROJECT_HASH}"
 # delete-then-recreate pattern (lines 55-56 delete, lines 87-89 recreate)
 # is safe because no PreToolUse hook can interleave between them.
 CONTEXT_MODE_INSTALLED=0
-if python3 -c "
-import json, os, sys
-# 1. Project .mcp.json
-try:
-    with open('${PROJECT_ROOT}/.mcp.json') as f:
-        if 'context-mode' in json.load(f).get('mcpServers', {}):
-            sys.exit(0)
-except Exception: pass
-# 2. Global Claude Code settings
-for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
-    if not d: continue
-    try:
-        with open(os.path.join(d, 'settings.json')) as f:
-            if 'context-mode' in json.load(f).get('mcpServers', {}):
-                sys.exit(0)
-    except Exception: pass
-sys.exit(1)
-" 2>/dev/null; then
-  CONTEXT_MODE_INSTALLED=1
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+  [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+  source "$_CM_LIB"
+  detect_context_mode "$PROJECT_ROOT"
 fi
-# Also activate if a session DB already exists (context-mode was used here before)
-[ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
 
+# Only pre-arm the sentinel when context-mode is genuinely loadable. Writing it
+# for an unloadable plugin is what let the blocking hooks enforce ctx_* tools
+# that were never registered — see hooks/lib/context-mode-detect.sh.
 if [ "$CONTEXT_MODE_INSTALLED" -eq 1 ]; then
   echo "ready" > "/tmp/context-mode-ready-${PROJECT_HASH}"
+else
+  rm -f "/tmp/context-mode-ready-${PROJECT_HASH}" 2>/dev/null || true
 fi
 
 # --- Session Type Detection ---
@@ -145,11 +136,24 @@ You do NOT need to call `ctx_stats` manually — the gate is already open.
 
 **If the Context Mode MCP server is unavailable** (sentinel missing despite auto-init):
   touch "/tmp/context-mode-ready-${PROJECT_HASH}"
+PROMPT
+
+  # --- Optional VBW task-location guidance ---
+  # VBW is an optional add-on. Only surface planning-file guidance when a VBW
+  # planning directory actually exists in this project; a CMM-only or
+  # CMM+context-mode project has no .vbw-planning/ and should not be told to
+  # read files that do not exist.
+  if [ -n "$PROJECT_ROOT" ] && [ -d "$PROJECT_ROOT/.vbw-planning" ]; then
+    cat <<'PROMPT'
 
 ## Finding Your Task
 
 Check `.vbw-planning/STATE.md` to find the active phase and current plan, then read the
 corresponding `.vbw-planning/phases/<phase>/<plan>.md` file for your task list.
+PROMPT
+  fi
+
+  cat <<'PROMPT'
 
 ## CMM Tool Decision Table
 
@@ -166,18 +170,24 @@ Orient first: `get_architecture` -> `search_graph` -> `get_code_snippet`.
 PROMPT
 else
   # --- Minimal prompt for human sessions ---
-  cat <<'PROMPT'
+  # Build the index_repository instruction: include the resolved PROJECT_ROOT path when available,
+  # fall back to the path-agnostic form so no regression occurs when PROJECT_ROOT is empty.
+  if [ -n "$PROJECT_ROOT" ]; then
+    _INDEX_INSTRUCTION="1. Say one short line AND call \`index_repository(repo_path=\"${PROJECT_ROOT}\")\` in the same turn — the index is incremental and fast when already indexed. Always pass repo_path=\"${PROJECT_ROOT}\" (the resolved monorepo root); never a subdirectory."
+  else
+    _INDEX_INSTRUCTION="1. Say one short line AND call \`index_repository\` in the same turn — the index is incremental and fast when already indexed."
+  fi
+  cat <<PROMPT
 **MANDATORY FIRST ACTION — Do this alongside your first reply:**
 
 In your very first assistant turn, output exactly one short acknowledgment line
-(e.g. "Refreshing CMM index…") **in the same turn** as the `index_repository` tool call.
+(e.g. "Refreshing CMM index…") **in the same turn** as the \`index_repository\` tool call.
 NEVER emit an empty text block before the tool call — the Anthropic API rejects turns
 whose text content is empty, and that 400 error poisons the rest of the session.
 
-1. Say one short line AND call `index_repository` in the same turn — the index is incremental
-   and fast when already indexed.
+${_INDEX_INSTRUCTION}
 2. Only after the index is confirmed current, proceed with the user's request.
-3. Invoke `Skill('cmm-rules')` and `Skill('ctx-rules')` via the Skill tool so their protocols
+3. Invoke \`Skill('cmm-rules')\` and \`Skill('ctx-rules')\` via the Skill tool so their protocols
    load into context: CMM orient-first navigation (get_architecture → search_graph → get_code_snippet)
    for source code; ctx_stats / ctx_search before re-running commands.
 

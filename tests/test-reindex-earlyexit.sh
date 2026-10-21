@@ -125,6 +125,27 @@ else
     _fail "Test 9: nothing-to-commit should not mark stale (got: '$(cat "$SENTINEL" 2>/dev/null)')"
 fi
 
+# --- Test 10: project name reaches python3 via the environment, not program text ---
+# The name is derived from an absolute path the user controls. Interpolating it
+# into `python3 -c "...'$NAME'..."` lets a quote in the path close the literal
+# and run the remainder as Python; the old inline .replace(chr(39),'') could not
+# help, because it ran only AFTER interpolation.
+echo "--- Test 10: touch_project JSON is built without interpolation ---"
+if grep -q "os.environ\[" "$HOOK" && \
+   ! grep -qE "python3 -c \"[^\"]*\\\$_CMM_PROJECT_NAME" "$HOOK"; then
+    _pass "Test 10: project name passed via environment"
+else
+    _fail "Test 10: project name still interpolated into python program text"
+fi
+
+# The debug-config probe reads a path built from PROJECT_ROOT and must not
+# interpolate it either — it was missed when the touch_project call was fixed.
+if grep -qE "python3 -c \"[^\"]*\\\$_CMM_CONFIG" "$HOOK"; then
+    _fail "Test 10c: config path still interpolated into python program text"
+else
+    _pass "Test 10c: config path passed via environment"
+fi
+
 # Cleanup
 rm -rf "$FAKE_ROOT" "$FAKE_CONFIG"
 rm -f "$SENTINEL"

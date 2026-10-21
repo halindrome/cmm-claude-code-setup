@@ -57,6 +57,27 @@ _assert_stderr_grep() {
     fi
 }
 
+# _assert_stderr_not_grep LABEL JSON REGEX [ENV_PREFIX]
+# Passes when stderr does NOT match REGEX (via grep -E). Inverse of the above;
+# used for regression guards on call signatures we must never emit again.
+_assert_stderr_not_grep() {
+    local label="$1" json="$2" regex="$3" env_prefix="${4:-}"
+    local err
+    if [ -n "$env_prefix" ]; then
+        err=$(echo "$json" | env $env_prefix bash "$HOOK" 2>&1 >/dev/null || true)
+    else
+        err=$(echo "$json" | bash "$HOOK" 2>&1 >/dev/null || true)
+    fi
+    if echo "$err" | grep -Eq "$regex"; then
+        echo "FAIL: $label (stderr unexpectedly matched: $regex)"
+        echo "    stderr: $err"
+        FAIL=$((FAIL+1))
+    else
+        echo "PASS: $label"
+        PASS=$((PASS+1))
+    fi
+}
+
 # _assert_stderr_order LABEL JSON FIRST_REGEX SECOND_REGEX
 # Passes when FIRST_REGEX line appears before SECOND_REGEX in stderr.
 _assert_stderr_order() {
@@ -208,9 +229,29 @@ _assert_stderr_order "identifier MyClassName order" \
     'OR:.*mcp__codebase-memory-mcp__search_code'
 
 echo "--- 15: identifier pattern MyFunc — pattern appears verbatim in first line ---"
+# project= is REQUIRED on search_graph, so the emitted call carries it. Asserting
+# the old `name_pattern="MyFunc")` closing paren pinned a call that FAILS with
+# "project is required" -- the defect this suite should be catching, not locking in.
 _assert_stderr_grep "MyFunc name_pattern verbatim" \
     "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"MyFunc\",\"type\":\"go\"},\"cwd\":\"$PROJ\"}" \
-    'search_graph\(name_pattern="MyFunc"\)' \
+    'search_graph\(name_pattern="MyFunc"' \
+    "$ENV_NO_GLOBAL"
+
+echo "--- 15b: emitted calls are RUNNABLE (project= present, search_code uses pattern=) ---"
+_assert_stderr_grep "search_graph carries project=" \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"MyFunc\",\"type\":\"go\"},\"cwd\":\"$PROJ\"}" \
+    'search_graph\(name_pattern="MyFunc", project="[^"]+"\)' \
+    "$ENV_NO_GLOBAL"
+_assert_stderr_grep "search_code uses pattern= not query=" \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"MyFunc\",\"type\":\"go\"},\"cwd\":\"$PROJ\"}" \
+    'search_code\(pattern="MyFunc", project="[^"]+"\)' \
+    "$ENV_NO_GLOBAL"
+# Regression guard: `query=` is not a parameter on search_code at all. A gate that
+# emits it hands back a call failing with "pattern is required", then a second
+# time with "project is required" -- two failures is where agents abandon CMM.
+_assert_stderr_not_grep "never emits search_code(query=" \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"MyFunc\",\"type\":\"go\"},\"cwd\":\"$PROJ\"}" \
+    'search_code\(query=' \
     "$ENV_NO_GLOBAL"
 
 echo "--- 16: regex pattern with alternation → search_code first, search_graph second ---"
@@ -288,6 +329,54 @@ _assert_exit "Grep path=README.MD allowed (uppercase)" 0 \
 _assert_exit "Grep path=Config.YAML allowed (mixed case)" 0 \
     "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"name\",\"path\":\"$PROJ/Config.YAML\"},\"cwd\":\"$PROJ\"}" \
     "$ENV_NO_GLOBAL"
+
+# --- Registration is an mcpServers KEY, never a substring ---
+# A permissions allowlist ("mcp__codebase-memory-mcp__search_graph") contains
+# the string 'codebase-memory-mcp', and so does a rule DENYING those tools.
+# Treating either as registration turns a fail-open bug into a fail-CLOSED one:
+# the user is hard-blocked for merely mentioning CMM, and the remedy is a tool
+# call the block itself forbids.
+PROJ_MENTION="$TMPDIR_ROOT/proj-mention-only"
+mkdir -p "$PROJ_MENTION/src"
+git -C "$PROJ_MENTION" init -q 2>/dev/null
+{ for i in $(seq 1 80); do echo "def handler_$i(): pass"; done; } > "$PROJ_MENTION/src/app.py"
+# The deny rule must live in a location the probe actually READS, or the
+# assertion cannot fail and proves nothing. The global config settings.json is
+# probed; a project .claude/settings.json is not.
+PM_CONFIG="$TMPDIR_ROOT/pm-config"
+mkdir -p "$PM_CONFIG" "$TMPDIR_ROOT/nohome"
+cat > "$PM_CONFIG/settings.json" <<'JSON'
+{"permissions":{"deny":["mcp__codebase-memory-mcp__search_graph"],
+                "allow":["mcp__codebase-memory-mcp__search_code"]}}
+JSON
+PM_CANON=$(cd "$PROJ_MENTION" && pwd -P)
+PM_SENTINEL="/tmp/cmm-session-ready-$(_md5 "$PM_CANON")"
+touch "$PM_SENTINEL"
+_assert_exit "Grep ALLOWED when config only mentions/denies cmm (no registration)" 0 \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"handler\",\"path\":\"$PROJ_MENTION/src\"},\"cwd\":\"$PROJ_MENTION\"}" \
+    "CLAUDE_CONFIG_DIR=$PM_CONFIG HOME=$TMPDIR_ROOT/nohome"
+rm -f "$PM_SENTINEL"
+
+# --- Registration via a global .claude.json (user-scope `claude mcp add`) ---
+# setup.sh probes THREE global locations; the hooks probed one. A normal
+# install that registers CMM in .claude.json was invisible to every gate, so
+# enforcement was silently absent with no error.
+PROJ_GLOBALREG="$TMPDIR_ROOT/proj-globalreg"
+mkdir -p "$PROJ_GLOBALREG/src"
+git -C "$PROJ_GLOBALREG" init -q 2>/dev/null
+{ for i in $(seq 1 80); do echo "def handler_$i(): pass"; done; } > "$PROJ_GLOBALREG/src/app.py"
+GR_CONFIG="$TMPDIR_ROOT/gr-config"
+mkdir -p "$GR_CONFIG"
+# settings.json deliberately has NO registration; .claude.json carries it.
+echo '{}' > "$GR_CONFIG/settings.json"
+echo '{"mcpServers":{"codebase-memory-mcp":{"command":"npx"}}}' > "$GR_CONFIG/.claude.json"
+GR_CANON=$(cd "$PROJ_GLOBALREG" && pwd -P)
+GR_SENTINEL="/tmp/cmm-session-ready-$(_md5 "$GR_CANON")"
+touch "$GR_SENTINEL"
+_assert_exit "Grep blocked when CMM registered in config .claude.json" 2 \
+    "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"handler\",\"path\":\"$PROJ_GLOBALREG/src\"},\"cwd\":\"$PROJ_GLOBALREG\"}" \
+    "CLAUDE_CONFIG_DIR=$GR_CONFIG HOME=$TMPDIR_ROOT/nohome"
+rm -f "$GR_SENTINEL"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

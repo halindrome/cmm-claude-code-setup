@@ -38,3 +38,7 @@ benchmarks/results/REPORT-*.md
 
 # Node.js v8 compile cache
 node-compile-cache/
+
+# Python bytecode (scripts/*.py are run directly, never packaged)
+__pycache__/
+*.pyc

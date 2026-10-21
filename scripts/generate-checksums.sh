@@ -2,7 +2,7 @@
 # generate-checksums.sh — Regenerates CHECKSUMS.sha256 for release verification
 # Run from repo root before tagging a release: bash scripts/generate-checksums.sh
 #
-# Covers: hooks/, rules/, agents/, setup.sh (all files distributed to users)
+# Covers: hooks/, rules/, agents/, setup.sh, tests/ (all files distributed to users)
 # Output: CHECKSUMS.sha256 at repo root (commit this file with the release)
 
 set -euo pipefail
@@ -23,5 +23,5 @@ else
 fi
 
 echo "Generating CHECKSUMS.sha256..."
-find hooks/ rules/ agents/ setup.sh -type f | LC_ALL=C sort | xargs $SHASUM_CMD > CHECKSUMS.sha256
+find hooks/ rules/ agents/ setup.sh tests/ -type f | LC_ALL=C sort | xargs $SHASUM_CMD > CHECKSUMS.sha256
 echo "✓ Written to CHECKSUMS.sha256 ($(wc -l < CHECKSUMS.sha256 | tr -d ' ') files)"

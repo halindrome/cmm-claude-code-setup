@@ -12,14 +12,42 @@ INPUT=$(cat)
 SUBAGENT_TYPE=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('subagent_type',''))" 2>/dev/null || echo "")
 PROMPT=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('prompt',''))" 2>/dev/null || echo "")
 
-# --- Subagent Type Exemption ---
-# Built-in Claude Code skills and non-coding agents are exempt from the keyword gate.
+# --- Subagent Type Exemption (built-in) ---
+# Claude Code's own utility agents never need the CMM keyword gate.
 case "$SUBAGENT_TYPE" in
-  claude-code-guide|statusline-setup|vbw:*)
+  claude-code-guide|statusline-setup)
     echo "CMM note: agent type '$SUBAGENT_TYPE' exempted from keyword gate."
     exit 0
     ;;
 esac
+
+# --- Per-project pass-through allow-list ---
+# A project may exempt purpose-built agent types (e.g. a review panel's reviewer
+# or manager) from the keyword gate WITHOUT forcing CMM/ctx keywords into their
+# prompts, by listing them in .claude/cmm-agent-passthrough.txt (sibling of the
+# installed hooks dir). This drops ONLY the prompt-nag: the inside-child PreToolUse
+# hooks still redirect an exempted agent's Read/Grep/Bash toward CMM/ctx where CMM
+# is installed, so behavioural enforcement is preserved. Format: one agent-type
+# per line; '#' comments and blank lines ignored; shell glob patterns allowed
+# (e.g. 'mr-qa-*', or 'vbw:*' for a project that still uses VBW agents).
+if [ -n "$SUBAGENT_TYPE" ]; then
+  _GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+  _PASSTHROUGH="$_GATE_DIR/../cmm-agent-passthrough.txt"
+  if [ -f "$_PASSTHROUGH" ]; then
+    while IFS= read -r _line || [ -n "$_line" ]; do
+      _pat="${_line%%#*}"                                   # strip trailing comment
+      _pat="$(printf '%s' "$_pat" | tr -d '[:space:]')"     # drop surrounding whitespace
+      [ -z "$_pat" ] && continue
+      # shellcheck disable=SC2254 — glob match against the pattern is intentional
+      case "$SUBAGENT_TYPE" in
+        $_pat)
+          echo "CMM note: agent type '$SUBAGENT_TYPE' exempted via .claude/cmm-agent-passthrough.txt."
+          exit 0
+          ;;
+      esac
+    done < "$_PASSTHROUGH"
+  fi
+fi
 
 # --- Explicit bypass marker ---
 # Add "# cmm-exempt" anywhere in the prompt to skip the gate for non-code tasks.
@@ -43,36 +71,73 @@ if echo "$PROMPT" | grep -qiE "$KEYWORDS"; then
 fi
 
 # --- Keywords missing: block and provide full instructions ---
+# Prefer the canonical, installed preamble asset (rules/cmm-agent-preamble.md ->
+# .claude/rules/cmm-agent-preamble.md) as the single source of truth. Fall back
+# to the inline block for pre-asset installs. Emit everything to stderr, exit 2.
+_HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)"
+_PREAMBLE="$_HOOK_DIR/../rules/cmm-agent-preamble.md"
+if [ -f "$_PREAMBLE" ]; then
+  {
+    echo "BLOCKED: Agent prompt does not reference codebase-memory-mcp tools."
+    echo
+    echo "Agents MUST use the codebase-memory-mcp (CMM) graph tools for code exploration"
+    echo "instead of reading files directly. Paste the block below into your agent prompt."
+    echo "NOTE: Workflow agent() prompts bypass this gate — paste it into every agent()"
+    echo "call and every .claude/agents/*.md agentType definition, since hooks do not"
+    echo "reach inside a running subagent."
+    echo
+    echo "--- Copy-paste the following into your agent prompt ---"
+    # Extract only the region between the asset's copy markers (DRY).
+    awk '/^--- copy from here ---$/{f=1;next} /^--- copy to here ---$/{f=0} f' "$_PREAMBLE"
+    echo "--- End of copy-paste instructions ---"
+  } >&2
+  exit 2
+fi
+
 cat >&2 <<'BLOCKED'
 BLOCKED: Agent prompt does not reference codebase-memory-mcp tools.
 
 Agents MUST use the codebase-memory-mcp (CMM) graph tools for code exploration
-instead of reading files directly. Add these instructions to your agent prompt:
+instead of reading files directly. Add these instructions to your agent prompt.
+NOTE: Workflow agent() prompts bypass THIS gate (a Workflow spawn is a Workflow
+call, not an Agent call). Other PreToolUse gates still fire on the worker's own
+tool calls — but nothing checks a Workflow prompt for you, and gates change which
+tool is used, not which strategy. Paste the block into every agent() call and
+.claude/agents/*.md definition.
 
 --- Copy-paste the following into your agent prompt ---
 
-Use codebase-memory-mcp (CMM) tools for code exploration. Available tools:
+Use codebase-memory-mcp (CMM) tools for code exploration. EVERY tool below
+except index_repository takes a REQUIRED project= argument; a call without it
+fails with "project is required". search_code takes `pattern`, NOT `query` —
+there is no `query` parameter. Replace <PROJECT> below with the project name:
+it is the repo's absolute path with the leading "/" removed and every "/"
+replaced by "-" (/Users/me/src/app -> Users-me-src-app), and it is returned as
+the "project" field by index_repository and listed by list_projects.
 
 1. search_graph — Find functions/classes by name pattern, filter by degree
-   Example: search_graph(name_pattern=".*Handler.*", label="Function")
+   Example: search_graph(name_pattern=".*Handler.*", label="Function", project="<PROJECT>")
 
 2. get_code_snippet — Retrieve source code for a function/class by name
-   Example: get_code_snippet(qualified_name="main.HandleRequest")
+   Example: get_code_snippet(qualified_name="main.HandleRequest", project="<PROJECT>")
 
 3. trace_path — Trace who calls a function and what it calls
-   Example: trace_path(function_name="ProcessOrder", direction="both")
+   Example: trace_path(function_name="ProcessOrder", direction="both", project="<PROJECT>")
 
 4. get_architecture — Get codebase architecture overview
-   Example: get_architecture(aspects=["packages", "hotspots"])
+   Example: get_architecture(aspects=["packages", "hotspots"], project="<PROJECT>")
 
 5. query_graph — Execute Cypher-like graph queries
-   Example: query_graph(query="MATCH (f:Function)-[:CALLS]->(g:Function) WHERE f.name = 'main' RETURN g.name LIMIT 20")
+   Example: query_graph(query="MATCH (f:Function)-[:CALLS]->(g:Function) WHERE f.name = 'main' RETURN g.name LIMIT 20", project="<PROJECT>")
 
-6. detect_changes — Map uncommitted changes to affected graph symbols
-   Example: detect_changes(scope="all")
+6. search_code — Graph-augmented text search (string literals, error messages)
+   Example: search_code(pattern="connection refused", project="<PROJECT>")
 
-7. index_repository — Index or refresh the code graph
-   Example: index_repository()
+7. detect_changes — Map uncommitted changes to affected graph symbols
+   Example: detect_changes(scope="all", project="<PROJECT>")
+
+8. index_repository — Index or refresh the code graph (takes repo_path, not project)
+   Example: index_repository(repo_path="<monorepo root>")
 
 Workflow: search_graph → trace_path → get_code_snippet
 Prefer these over Read/Grep for understanding code structure and relationships.

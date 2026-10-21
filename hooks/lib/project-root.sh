@@ -10,7 +10,8 @@
 # Hooks source via: source "${BASH_SOURCE[0]%/*}/lib/project-root.sh"
 
 # --- Idempotent guard ---
-[ -n "$_PROJECT_ROOT_LOADED" ] && return 0
+# Use ${var:-} to tolerate callers that set -u before sourcing this lib.
+[ -n "${_PROJECT_ROOT_LOADED:-}" ] && return 0
 
 # --- Cache key: md5 of $(pwd) ---
 _PR_CWD="$(pwd)"

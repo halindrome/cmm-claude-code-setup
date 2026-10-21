@@ -68,8 +68,10 @@ echo "--- Test 11: Plan with CMM keywords -> allowed (exit 0) ---"
 _assert_exit "Test 11: Plan with trace_path allowed" 0 \
     '{"tool_name":"Agent","tool_input":{"subagent_type":"Plan","prompt":"Use trace_path and get_architecture to analyze dependencies before planning the refactor"}}'
 
-echo "--- Test 12: VBW agent type still exempt (exit 0) ---"
-_assert_exit "Test 12: vbw:vbw-dev exempt" 0 \
+echo "--- Test 12: VBW agent type NO LONGER built-in exempt -> blocked (exit 2) ---"
+# vbw:* was removed from the built-in exemption list; a project that still uses VBW
+# must opt it back in via .claude/cmm-agent-passthrough.txt (see test-cmm-agent-passthrough.sh).
+_assert_exit "Test 12: vbw:vbw-dev no longer exempt (blocked)" 2 \
     '{"tool_name":"Agent","tool_input":{"subagent_type":"vbw:vbw-dev","prompt":"Look at the function in this file and refactor the class method"}}'
 
 echo "--- Test 13: claude-code-guide still exempt (exit 0) ---"

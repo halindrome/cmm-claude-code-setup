@@ -1,12 +1,25 @@
 #!/bin/bash
 # track-hook-blocks.sh — Inline call from blocking hooks to increment block counts
-# Usage: bash .claude/hooks/track-hook-blocks.sh "read"|"bash"
+# Usage: bash .claude/hooks/track-hook-blocks.sh <type> [reason]
+#   types: read | bash | ctx_payload | ctx_payload_exempt | bash_exempt | bash_unarmed
 # Silent, never blocks, always exits 0.
 #
 # Install: cp hooks/project/track-hook-blocks.sh .claude/hooks/ && chmod +x .claude/hooks/track-hook-blocks.sh
-# Called by: cmm-nudge.sh (read blocks), ctx-execute-enforcer.sh (bash blocks)
+# Called by: cmm-nudge.sh (read blocks), ctx-execute-enforcer.sh (bash blocks,
+#            exemptions, and unarmed passes)
+#
+# NOT-A-BLOCK TYPES
+# -----------------
+# `bash_exempt` and `bash_unarmed` record a command the enforcer ALLOWED. They
+# must not bump total_blocks -- an allow is not a block, and counting it as one
+# inflates the very number used to judge whether the gate is working. Every
+# unrecognised type used to land in exactly that hole: it fell through all the
+# branches below, incremented total_blocks, and recorded nothing in by_hook, so
+# the miscount was invisible. Unknown types are now explicitly not counted.
 
 HOOK_TYPE="${1:-unknown}"
+# Optional second argument: why. Only meaningful for the not-a-block types.
+HOOK_REASON="${2:-}"
 
 # --- Project Root Detection (same pattern as track-cmm-calls.sh) ---
 # Walk the git superproject chain to find the outermost project root.
@@ -60,10 +73,11 @@ COUNTER_FILE="${COUNTER_DIR}/_block-counts-${PROJECT_HASH}.json"
 mkdir -p "$COUNTER_DIR" 2>/dev/null
 
 TEMP=$(mktemp)
-HOOK_TYPE="$HOOK_TYPE" COUNTER_FILE="$COUNTER_FILE" TEMP="$TEMP" python3 -c "
-import json, os
+HOOK_TYPE="$HOOK_TYPE" HOOK_REASON="$HOOK_REASON" COUNTER_FILE="$COUNTER_FILE" TEMP="$TEMP" python3 -c "
+import json, os, re
 
 hook_type = os.environ['HOOK_TYPE']
+hook_reason = os.environ.get('HOOK_REASON', '')
 counter_file = os.environ['COUNTER_FILE']
 temp_path = os.environ['TEMP']
 
@@ -74,15 +88,64 @@ try:
 except (FileNotFoundError, json.JSONDecodeError):
     data = {'total_blocks': 0, 'read_blocks': 0, 'bash_blocks': 0, 'by_hook': {}}
 
+# Callers spell the type with either separator ('bash-compound', 'bash_unarmed').
+hook_type = hook_type.replace('-', '_')
+
+ALLOW_TYPES = ('bash_exempt', 'bash_unarmed')
+
+# Every type any hook in this stack passes, mapped to its by_hook key. Keep this
+# table in sync with the call sites -- grep hooks/ for track-hook-blocks.sh
+# invocations. NOTE: this whole program is passed to python3 -c inside a
+# DOUBLE-QUOTED shell string, so a literal double quote anywhere in it (even in
+# a comment) closes that string early and silently truncates the program: it
+# then writes nothing, exits 0, and the caller moves an empty temp file over the
+# counter. Use single quotes only, here and below.
+# It is a TABLE and not an if/elif chain because the chain was the bug: types
+# with no branch (bash_nav, grep, ctx_execute, webfetch) bumped total_blocks and
+# recorded nothing, so total_blocks and by_hook disagreed and the CMM gates --
+# the two whose conversion rate we actually care about -- were invisible.
+# 'grep' is sent by BOTH cmm-grep-nudge.sh and grep-cmm-gate.sh; they cannot be
+# told apart from the argument alone, so they share one key.
+BLOCK_KEYS = {
+    'read':          ('read_blocks',        'cmm-nudge'),
+    'bash':          ('bash_blocks',        'ctx-execute-enforcer'),
+    'bash_compound': ('bash_blocks',        'ctx-execute-enforcer'),
+    'bash_nav':      ('bash_blocks',        'cmm-grep-nudge'),
+    'grep':          ('grep_blocks',        'grep-cmm-gate'),
+    'ctx_execute':   ('ctx_execute_blocks', 'ctx-execute-cmm-nudge'),
+    'ctx_payload':   ('ctx_payload_blocks', 'ctx-payload-guard'),
+    'webfetch':      ('webfetch_blocks',    'webfetch-nudge'),
+}
+
+# Types that record an ALLOW, not a block. Handled before the total_blocks bump
+# so they can never inflate it. Genuinely unknown types land here too: recording
+# nothing is correct, silently counting them as a block is not.
+if (hook_type in ALLOW_TYPES
+        or (hook_type not in BLOCK_KEYS and hook_type != 'ctx_payload_exempt')):
+    if hook_type in ALLOW_TYPES:
+        # Reason is hook-supplied, but sanitise before it becomes a JSON key.
+        reason = re.sub(r'[^a-z0-9-]', '', (hook_reason or 'unspecified').lower())[:32] or 'unspecified'
+        key = 'ctx-execute-enforcer-%s-%s' % (hook_type.split('_')[1], reason)
+        data.setdefault('allows', {})[key] = data.get('allows', {}).get(key, 0) + 1
+    with open(temp_path, 'w') as f:
+        json.dump(data, f, indent=2)
+        f.write('\n')
+    raise SystemExit(0)
+
 # Increment counters
 data['total_blocks'] = data.get('total_blocks', 0) + 1
 
-if hook_type == 'read':
-    data['read_blocks'] = data.get('read_blocks', 0) + 1
-    data.setdefault('by_hook', {})['cmm-nudge'] = data.get('by_hook', {}).get('cmm-nudge', 0) + 1
-elif hook_type == 'bash':
-    data['bash_blocks'] = data.get('bash_blocks', 0) + 1
-    data.setdefault('by_hook', {})['ctx-execute-enforcer'] = data.get('by_hook', {}).get('ctx-execute-enforcer', 0) + 1
+if hook_type == 'ctx_payload_exempt':
+    # An exempt use is NOT a block -- undo the unconditional total bump above.
+    # The regression signal for ctx-payload-guard is the exempt:block ratio, not
+    # the block count: a high block count is the gate working as measured, but a
+    # rising exempt ratio means the agent keeps judging the gate wrong.
+    data['total_blocks'] = data.get('total_blocks', 1) - 1
+    data.setdefault('by_hook', {})['ctx-payload-guard-exempt'] = data.get('by_hook', {}).get('ctx-payload-guard-exempt', 0) + 1
+else:
+    bucket, hook_key = BLOCK_KEYS[hook_type]
+    data[bucket] = data.get(bucket, 0) + 1
+    data.setdefault('by_hook', {})[hook_key] = data.get('by_hook', {}).get(hook_key, 0) + 1
 
 # Write to temp file
 with open(temp_path, 'w') as f:

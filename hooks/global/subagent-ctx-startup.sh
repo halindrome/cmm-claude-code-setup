@@ -49,36 +49,16 @@ PROJECT_HASH=$(echo "$REPO_ROOT" | md5 -q 2>/dev/null || echo "$REPO_ROOT" | md5
 # --- Context Mode Availability Check (cached) ---
 # Cache result in /tmp/ctx-subagent-avail-<hash> to avoid repeated python3 JSON parsing.
 # Silently no-op when context-mode is not registered anywhere.
-CTX_CACHE="/tmp/ctx-subagent-avail-${PROJECT_HASH}"
-if [ -f "$CTX_CACHE" ]; then
-    CONTEXT_MODE_INSTALLED=$(cat "$CTX_CACHE" 2>/dev/null)
-    CONTEXT_MODE_INSTALLED="${CONTEXT_MODE_INSTALLED:-0}"
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+    source "$_CM_LIB"
+    detect_context_mode "$REPO_ROOT" "/tmp/ctx-subagent-avail-${PROJECT_HASH}"
 else
-    CONTEXT_MODE_INSTALLED=0
-    if python3 -c "
-import json, os, sys
-# 1. Project .mcp.json
-try:
-    with open('${REPO_ROOT}/.mcp.json') as f:
-        if 'context-mode' in json.load(f).get('mcpServers', {}):
-            sys.exit(0)
-except Exception: pass
-# 2. Global Claude Code settings (CLAUDE_CONFIG_DIR, ~/.config/claude-code, ~/.claude)
-for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
-    if not d: continue
-    try:
-        with open(os.path.join(d, 'settings.json')) as f:
-            if 'context-mode' in json.load(f).get('mcpServers', {}):
-                sys.exit(0)
-    except Exception: pass
-sys.exit(1)
-" 2>/dev/null; then
-        CONTEXT_MODE_INSTALLED=1
-    fi
-    # Also activate if a session DB already exists (context-mode was used here before)
-    [ -f "${REPO_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
-    # Write cache (best-effort)
-    echo "$CONTEXT_MODE_INSTALLED" > "$CTX_CACHE" 2>/dev/null || true
+    # Partial install (lib missing) — no advisory rather than a misleading one.
+    exit 0
 fi
 
 # Fail-silent: context-mode not installed -> exit 0 without advisory

@@ -64,73 +64,22 @@ COMMAND=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin
 # If parsing failed or command is empty, do not block — fail open to avoid spurious hook errors
 [ -z "$COMMAND" ] && exit 0
 
-# --- Context Mode Detection (cached, dual-form per Phase 57 G3) ---
-# Cache result in /tmp/ctx-enforcer-<hash> to avoid repeated python3 JSON parsing on every Bash call.
-# Probe order: plugin-form fast-path (CLAUDE_PLUGIN_ROOT env / ~/.claude/plugins/cache scan)
-# FIRST per G3 ordering; legacy MCP-server-form probe second.
-CTX_CACHE="/tmp/ctx-enforcer-${PROJECT_HASH}"
-if [ -f "$CTX_CACHE" ]; then
-    CONTEXT_MODE_INSTALLED=$(cat "$CTX_CACHE" 2>/dev/null)
-    CONTEXT_MODE_INSTALLED="${CONTEXT_MODE_INSTALLED:-0}"
+# --- Context Mode Detection (shared library) ---
+# The probe verifies context-mode is LOADABLE, not merely present on disk:
+# a plugin whose registered installPath does not resolve here (the devcontainer
+# bind-mount case) registers no ctx_* tools, and this hook must not mandate a
+# tool that does not exist. See hooks/lib/context-mode-detect.sh.
+_CM_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/context-mode-detect.sh" ] && { _CM_LIB="$_d/context-mode-detect.sh"; break; }
+done
+if [ -n "$_CM_LIB" ]; then
+    source "$_CM_LIB"
+    detect_context_mode "$PROJECT_ROOT" "/tmp/ctx-enforcer-${PROJECT_HASH}"
 else
-    CONTEXT_MODE_INSTALLED=0
-
-    # 1. Plugin-form fast-path (canonical, listed first per G3).
-    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && \
-       [ -f "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" ] && \
-       grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' \
-         "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" 2>/dev/null; then
-        CONTEXT_MODE_INSTALLED=1
-    else
-        # Scan ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/cache/ for an installed context-mode plugin.
-        # The real layout is <cache>/<marketplace>/<plugin>/[<version>/]/.claude-plugin/plugin.json,
-        # so a fixed-depth glob misses versioned installs. Use find to discover any nesting.
-        if [ -d "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" ]; then
-            while IFS= read -r _ctx_pl; do
-                [ -z "$_ctx_pl" ] && continue
-                if grep -q '"name"[[:space:]]*:[[:space:]]*"context-mode"' "$_ctx_pl" 2>/dev/null; then
-                    CONTEXT_MODE_INSTALLED=1
-                    break
-                fi
-            done < <(find "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/plugins/cache" \
-                -maxdepth 7 -name 'plugin.json' -path '*/.claude-plugin/*' 2>/dev/null)
-        fi
-    fi
-
-    # 2. MCP-server-form probe (legacy, listed second per G3) — plus enabledPlugins fallback.
-    # context-mode can be installed as a Claude Code plugin without registering an mcpServers entry;
-    # enabledPlugins entries take the form "<plugin>@<marketplace>: true".
-    if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
-        if python3 -c "
-import json, os, sys
-# 1. Project .mcp.json
-try:
-    with open('${PROJECT_ROOT}/.mcp.json') as f:
-        if 'context-mode' in json.load(f).get('mcpServers', {}):
-            sys.exit(0)
-except Exception: pass
-# 2. Global Claude Code settings — mcpServers OR enabledPlugins
-for d in [os.environ.get('CLAUDE_CONFIG_DIR',''), os.path.expanduser('~/.config/claude-code'), os.path.expanduser('~/.claude')]:
-    if not d: continue
-    try:
-        with open(os.path.join(d, 'settings.json')) as f:
-            cfg = json.load(f)
-            if 'context-mode' in cfg.get('mcpServers', {}):
-                sys.exit(0)
-            for key, enabled in cfg.get('enabledPlugins', {}).items():
-                if enabled and key.split('@', 1)[0] == 'context-mode':
-                    sys.exit(0)
-    except Exception: pass
-sys.exit(1)
-" 2>/dev/null; then
-            CONTEXT_MODE_INSTALLED=1
-        fi
-    fi
-
-    # Also activate if a session DB already exists (context-mode was used here before)
-    [ -f "${PROJECT_ROOT}/.claude/context-mode.db" ] && CONTEXT_MODE_INSTALLED=1
-    # Write cache
-    echo "$CONTEXT_MODE_INSTALLED" > "$CTX_CACHE" 2>/dev/null || true
+    # Partial install (lib missing) — fail open rather than enforce blindly.
+    # Re-run: bash setup.sh --project --force
+    exit 0
 fi
 
 # No-op if Context Mode is not installed
@@ -138,17 +87,72 @@ if [ "$CONTEXT_MODE_INSTALLED" -eq 0 ]; then
     exit 0
 fi
 
-# --- Context Mode Sentinel Check (deadlock prevention) ---
-# If ctx_execute is not ready yet, allowing Bash through avoids a catch-22 where
-# Claude cannot call ctx_execute to initialize Context Mode.
-CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
-if [ ! -f "$CONTEXT_MODE_SENTINEL" ]; then
+# --- Context Mode Liveness Check (deadlock prevention + dead-server fail-open) ---
+# The sentinel carries a VERDICT, not merely existence. Two writers, two meanings:
+#
+#   "ready" — cmm-session-start.sh, from detect_context_mode's on-disk check.
+#             OPTIMISTIC. Presence on disk is NOT proof the MCP registered: while
+#             Claude Code re-extracts the plugin cache, installPath exists but the
+#             server never starts. Enforcing on "ready" is what wedged a session
+#             for 24 minutes — every Bash call blocked, redirected to ctx_* tools
+#             that were never registered, with no escape hatch.
+#
+#   "live"  — context-mode-sentinel-writer.sh, PostToolUse on a real ctx_* call.
+#             The server answered, so the tools provably exist.
+#
+# Enforce only on "live", and only while it is fresh. Every ctx_* call rewrites
+# the file, so a server that dies mid-session goes stale and enforcement lifts
+# within the TTL instead of wedging the session until restart.
+#
+# Trade-off, stated plainly: enforcement does not arm until the first successful
+# ctx_* call of a session. That is the point — a hook must not mandate a tool it
+# has never seen work. Same rule as hooks/lib/context-mode-detect.sh.
+#
+# MEASUREMENT NOTE (2026-09-04): an unarmed exit 0 is indistinguishable in the
+# transcript from an armed hook that chose to allow the command. Both leave no
+# trace, so scripts/analyze-enforcement.py scores an unarmed window as "the hook
+# did not fire" and its COVERAGE number silently mixes the two. Observed in a
+# real session: 13 of 20 post-install Bash calls ran while unarmed, reported as
+# 16.7% coverage. That is the exact failure analyze-antipatterns.py's own
+# docstring warns about — a check that never ran, reporting clean. Record the
+# reason so the two are separable after the fact. Counter only: emitting to
+# stderr here would inject noise into every allowed Bash call.
+_unarmed() {
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash_unarmed" "$1" 2>/dev/null || true
     exit 0
-fi
+}
+CONTEXT_MODE_SENTINEL="/tmp/context-mode-ready-${PROJECT_HASH}"
+CONTEXT_MODE_TTL_MIN="${CTX_ENFORCER_TTL_MIN:-30}"
+[ -f "$CONTEXT_MODE_SENTINEL" ] || _unarmed absent
+grep -q '^live$' "$CONTEXT_MODE_SENTINEL" 2>/dev/null || _unarmed notlive
+[ -n "$(find "$CONTEXT_MODE_SENTINEL" -mmin "-${CONTEXT_MODE_TTL_MIN}" 2>/dev/null)" ] || _unarmed stale
 
 # --- Bypass Marker ---
 # Internal bypass marker — undocumented, for operator use only.
 if echo "$COMMAND" | grep -q "ctx-exempt"; then
+    exit 0
+fi
+
+# --- run_in_background (before the compound check) ---
+# Claude Code streams a background command's output to a task file, so it never
+# enters the conversation. Sandboxing it buys nothing, and redirecting a
+# long-running process (a dev server, a test suite) into ctx_execute fights the
+# user's intent -- observed 2026-09-04: `ng serve` took five blocked calls to
+# start, and the FIRST attempt already carried run_in_background=true.
+#
+# This must run BEFORE the compound check, not among the exemptions below it.
+# Background commands are exactly the ones that are compound -- `cd app && make
+# test`, `make … 2>&1 | tee run.log`, `until …; do sleep 15; done` -- and the
+# compound check's whole concern (output hiding behind an exempt prefix) cannot
+# arise when no output reaches the conversation. Placed after it, the exemption
+# was unreachable for them: replaying 45 days of transcripts, 502 of 1,254
+# background calls were blocked as compound. A blocked full test suite was then
+# re-run through ctx_execute with timeout=600000 and died at the 10-minute cap.
+if [ "$(printf '%s' "$INPUT" | python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: print("false"); raise SystemExit
+print("true" if d.get("tool_input",{}).get("run_in_background") is True else "false")' 2>/dev/null)" = "true" ]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-exempt" "background" 2>/dev/null || true
     exit 0
 fi
 
@@ -159,11 +163,35 @@ fi
 # matched against exemption patterns below. Anything still compound after
 # peeling falls through to the default block — exemption patterns assume a
 # single bounded command.
+#
+# A leading VARIABLE ASSIGNMENT peels for the same reason (2026-09-04). Observed
+# live, immediately after cwd-guard.sh blocked the `cd` form and told the agent
+# to use `git -C`:
+#
+#   M=/Users/…/apps/mobile; git -C $M merge origin/ic3_13_patches
+#
+# `git merge` is exempt below, and the `-C` normalization at the git block exists
+# precisely to make `git -C <path> merge` work — but the `;` after the assignment
+# trips the operator scan below, which runs FIRST, so that fix was never reached.
+# The two gates were pushing the agent into each other: cwd-guard rejects the
+# `cd` form, this hook rejects the variable form of the alternative it named.
+#
+# The value must be a SINGLE token free of ( ) ` | & ; < > — so a substitution
+# (`M=$(cat f); …`) never peels and still blocks. Peeling only removes the
+# assignment; everything after it is scanned exactly as before, so `M=x; a; b`
+# still shows a bare `;`. Parameter expansions (`D=$HOME/src`) are allowed: they
+# print nothing and cannot introduce a command.
+#
+# Shares the loop with the `cd` peel so the two compose in any order.
 _ORIG_COMMAND="$COMMAND"
+_VARPEEL='^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]()`|&;<>]*[[:space:]]*(;|&&|'$'\n'')[[:space:]]*'
 while [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\"[^\"]*\"[[:space:]]*\&\&[[:space:]]* ]] || \
       [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\'[^\']*\'[[:space:]]*\&\&[[:space:]]* ]] || \
-      [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]]; do
-    COMMAND="${COMMAND#${BASH_REMATCH[0]}}"
+      [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]] || \
+      [[ "$COMMAND" =~ $_VARPEEL ]]; do
+    # Quoted: unquoted, the match is a glob, and a value like `[ab]` does not
+    # match its own text -- nothing strips and the loop never ends.
+    COMMAND="${COMMAND#"${BASH_REMATCH[0]}"}"
 done
 # If the stripped command still has compound shell operators, do NOT exempt —
 # fall straight through to the default block path. Detected operators:
@@ -178,11 +206,50 @@ done
 # not false-positive blocked. Quoted spans may cross newlines (e.g. a multi-line
 # `git commit -m "..."`), so the scrub is whole-string, not line-based: a
 # line-based sed leaves the embedded newline in place and false-positives the
-# newline check above. No attempt to handle escape sequences or here-docs.
+# newline check above. No attempt to handle escape sequences.
+#
+# QUOTED here-doc bodies are blanked (2026-09-04). `git commit -F - <<'EOF' …
+# EOF` is a git-write, already exempt, producing two lines of output — but the
+# heredoc's newlines tripped the compound check, so committing with a message
+# body was blocked outright. Same shape as the sed -i case: an exempt operation
+# defeated by its syntax rather than its effect.
+#
+# ONLY quoted heredocs (<<'W', <<"W", <<-'W') are blanked, and the distinction is
+# load-bearing: an UNQUOTED <<W expands parameters and command substitutions, so
+# `$(rm -rf …)` inside its body is live code and must stay visible to the operator
+# scan below. Quoted bodies are literal text and cannot execute anything.
+#
+# Runs BEFORE the quote scrub, because that scrub would otherwise eat the quotes
+# in <<'EOF' and hide the heredoc from this pass — the same ordering trap
+# ctx-payload-guard.sh documents.
+#
+# Only the heredoc BODY and its operator token are removed. Anything after the
+# terminator survives, so `git commit -F - <<'EOF' … EOF; rm -rf /` still shows
+# a bare `;` to the scan and is still blocked.
 # Falls back to the raw command (safe — may over-block) if python3 is absent.
 _OPCHECK=$(COMMAND="$COMMAND" python3 <<'PY' 2>/dev/null
 import os, re, sys
 c = os.environ.get("COMMAND", "")
+
+def strip_quoted_heredocs(text):
+    lines = text.split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        m = re.search(r"""<<-?\s*(['"])(\w+)\1""", lines[i])
+        if not m:
+            out.append(lines[i]); i += 1; continue
+        term = m.group(2)
+        # Keep the line minus the heredoc operator; drop the body.
+        out.append(lines[i][:m.start()] + lines[i][m.end():])
+        i += 1
+        # A terminator must be alone on its line; anything else continues the body.
+        while i < len(lines) and lines[i].strip() != term:
+            i += 1
+        if i < len(lines):
+            i += 1          # consume the terminator itself
+    return "\n".join(out)
+
+c = strip_quoted_heredocs(c)
 c = re.sub(r"'[^']*'", "", c, flags=re.S)
 c = re.sub(r'"[^"]*"', "", c, flags=re.S)
 sys.stdout.write(c)
@@ -193,6 +260,37 @@ if [[ "$_OPCHECK" == *"&&"* ]] || [[ "$_OPCHECK" == *"||"* ]] || \
    [[ "$_OPCHECK" == *'$('* ]]  || [[ "$_OPCHECK" == *'`'* ]]  || \
    [[ "$_OPCHECK" == *"&"* ]]   || [[ "$_OPCHECK" == *$'\n'* ]]; then
     bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-compound" 2>/dev/null || true
+    # A bare code="..." placeholder is where the laundering happens: the agent
+    # refills it with the original command, truncating pipe and all. Measured
+    # 2026-09-03: of 1,501 blocked Bash calls that escalated into a ctx_* call,
+    # 252 carried the identical `| head -N` into the sandbox, where nothing
+    # inspected it. When the command carries a truncation, name the stripped
+    # replacement concretely instead of leaving a blank to fill in.
+    # Truncating pipes only. Stripping stdout redirects here was tried in
+    # b9cc572 (QA round 1 F-02, to stop this hook suggesting a payload that
+    # ctx-payload-guard then blocks) and reverted in round 2: deciding whether a
+    # redirect is objectionable requires the guard's AUTHORING and
+    # read-back-later exemptions, and without them the strip silently deleted
+    # legitimate file writes -- `jq ... > f.json && cat f.json` was suggested
+    # with the write removed, so the paired read gets a stale or absent file.
+    # Reproducing the guard's exemptions here would put two copies of that logic
+    # in lockstep, which is the divergence hazard this repo already documents.
+    #
+    # So the double-block stands, deliberately: a redirect command is blocked
+    # here, the agent moves it into ctx_execute unchanged, and the guard's own
+    # message then names the `2>&1 | tee` fix. Two round-trips, converging --
+    # a bounded cost, unlike a corrupted suggestion the agent is told to paste.
+    _SUGGEST=$(printf '%s' "$_ORIG_COMMAND" | sed -E 's/[[:space:]]*\|[[:space:]]*(head|tail)[^|;&]*//g')
+    if [ "$_SUGGEST" != "$_ORIG_COMMAND" ]; then
+        _OPT2="       mcp__plugin_context-mode_context-mode__ctx_execute(language=\"shell\", code=\"$_SUGGEST\", intent=\"<what you are looking for>\")
+     The truncating pipe is dropped on purpose: ctx_execute indexes the FULL
+     output and returns only the sections matching intent=, so capping it first
+     discards data for no context saving. Re-adding it will be blocked by
+     ctx-payload-guard. If the command also sends stdout to a file, replace that
+     with '2>&1 | tee <file>' so the output is captured as well as saved."
+    else
+        _OPT2="       mcp__plugin_context-mode_context-mode__ctx_execute(language=\"shell\", code=\"$_ORIG_COMMAND\", intent=\"<what you are looking for>\")"
+    fi
     cat >&2 <<COMPOUND
 BLOCKED: Compound shell command cannot be exempted.
 
@@ -206,7 +304,7 @@ arbitrary output behind an exempt prefix.
 Fix options:
   1. Use absolute paths and drop the \`cd\` prefix.
   2. Route the real command through ctx_execute for output sandboxing:
-       mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="...")
+$_OPT2
   3. Run the two halves as separate Bash calls if both are independently exempt.
 COMPOUND
     exit 2
@@ -219,8 +317,46 @@ _track_exempt() {
   bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-exempt" "$1" 2>/dev/null || true
 }
 
+# --- Git global-flag normalization ---
+# The git exemptions below anchor on `git ` followed immediately by the
+# subcommand, so any global flag in between defeats every one of them. That
+# silently contradicts cwd-guard.sh, which tells the agent to prefer
+# `git -C apps/rest-api status` over `cd apps/rest-api && git status` — and in
+# a submodule/monorepo checkout it left NO unblocked path to commit, since the
+# `cd … &&` alternative is rejected by the compound check above.
+#
+# Peel leading repo-selection flags into _EXEMPT_CMD so the exemption patterns
+# match on the effective subcommand. Only _EXEMPT_CMD is normalized; $COMMAND
+# stays intact for the block messages below.
+#
+# Deliberately narrow: only flags that select WHICH repo/config git acts on.
+# Anything else (notably `-c alias.x=!cmd`) is left in place, so it fails to
+# match any exemption and falls through to the default block.
+#
+# Known limitation: word-splitting is quote-blind, so `-C "my dir"` peels only
+# the first token and the leftover fails to match — blocked, not wrongly
+# exempted. Fail-closed is the correct direction here.
+_EXEMPT_CMD="$COMMAND"
+if [[ "$_EXEMPT_CMD" =~ ^[[:space:]]*git([[:space:]]|$) ]]; then
+  read -ra _GTOK <<< "$_EXEMPT_CMD"
+  _gi=1
+  while [ "$_gi" -lt "${#_GTOK[@]}" ]; do
+    case "${_GTOK[$_gi]}" in
+      # flag + separate value → skip two tokens
+      -C|--git-dir|--work-tree|--namespace)          _gi=$((_gi + 2)) ;;
+      # self-contained flag → skip one token
+      --git-dir=*|--work-tree=*|--namespace=*)       _gi=$((_gi + 1)) ;;
+      --no-pager|--no-replace-objects|--bare)        _gi=$((_gi + 1)) ;;
+      *) break ;;
+    esac
+  done
+  if [ "$_gi" -gt 1 ] && [ "$_gi" -lt "${#_GTOK[@]}" ]; then
+    _EXEMPT_CMD="git ${_GTOK[*]:$_gi}"
+  fi
+fi
+
 # Git write operations (state-changing, bounded output, required for workflow)
-case "$COMMAND" in
+case "$_EXEMPT_CMD" in
   git\ commit*|git\ add*|git\ push*|git\ pull*|git\ fetch*)  _track_exempt git-write; exit 0 ;;
   git\ checkout*|git\ switch*|git\ branch*|git\ tag*)         _track_exempt git-write; exit 0 ;;
   git\ rebase*|git\ merge*|git\ cherry-pick*|git\ reset*)     _track_exempt git-write; exit 0 ;;
@@ -229,7 +365,7 @@ case "$COMMAND" in
 esac
 
 # Git bounded read operations (output is short and predictable)
-case "$COMMAND" in
+case "$_EXEMPT_CMD" in
   git\ status|git\ status\ *)                                                _track_exempt git-bounded-read; exit 0 ;;
   git\ diff\ --stat*|git\ log\ --oneline\ -*)                                _track_exempt git-bounded-read; exit 0 ;;
   git\ log\ --name-only*|git\ log\ --stat*|git\ show\ --name-only*)          _track_exempt git-bounded-read; exit 0 ;;
@@ -241,6 +377,82 @@ case "$COMMAND" in
   mkdir\ *|rmdir\ *|rm\ *|mv\ *|cp\ *|ln\ *|chmod\ *|chown\ *)  _track_exempt filesystem; exit 0 ;;
   touch\ *|install\ -m*|mktemp*)                                 _track_exempt filesystem; exit 0 ;;
 esac
+
+# In-place editors: mutate a file, print NOTHING. Same category as mv/cp above.
+#
+# This follows upstream context-mode's own rule for curl/wget
+# (hooks/core/routing.mjs, issue #166): "allow silent file-output downloads,
+# block stdout floods". An in-place edit is the canonical silent-file-output
+# case, so blocking it for "output sandboxing" was incoherent -- there is no
+# output to sandbox. Upstream does not hard-block Bash at all; it nudges once
+# per session via guidanceOnce().
+#
+# The `-i` is load-bearing and matched EXPLICITLY, never a bare `sed`/`perl`:
+# `sed 's/a/b/' big.c` prints the whole file to stdout, which is precisely what
+# this hook exists to stop. One flag apart, opposite verdicts.
+#
+# BSD vs GNU differ and both forms are accepted here:
+#   GNU: sed -i 's/a/b/' f        sed -i.bak 's/a/b/' f
+#   BSD: sed -i '' 's/a/b/' f     (the '' IS the backup suffix on macOS)
+#
+# NOTE this exemption is about CONTEXT only. It does not endorse blind regex
+# edits on source: `perl -0pi -e 's{X}{Y}'` exits 0 whether it matched zero
+# times or forty, so Edit (which requires the exact bytes and fails loudly on a
+# miss) remains the better tool for a source edit. That is a correctness
+# argument, and it belongs in a correctness gate -- not smuggled into this one.
+#
+# perl/ruby: `-i` must be a real switch -- a leading option token made only of
+# no-argument switch letters (-i, -pi, -0pi, -0777pi, -i.bak). A glob like
+# `perl -*i*e *` also matched the `i` in `-Mstrict` or `print`, so
+# `perl -ne 'print …' big.c` was exempted and flooded stdout.
+_INPLACE_RE='^(perl|ruby)([[:space:]]+-[^[:space:]]+)*[[:space:]]+-[0-9alnpsw]*i[^[:space:]]*[[:space:]]'
+case "$COMMAND" in
+  sed\ -i\ *|sed\ -i.*|gsed\ -i\ *|gsed\ -i.*)   _track_exempt inplace-edit; exit 0 ;;
+  awk\ -i\ inplace\ *)                           _track_exempt inplace-edit; exit 0 ;;
+esac
+if [[ "$COMMAND" =~ $_INPLACE_RE ]]; then
+  _track_exempt inplace-edit; exit 0
+fi
+
+# File AUTHORING: a literal-emitting command redirected to a file. Same category
+# as the in-place editors above -- the bytes go to the file, not to stdout, so
+# there is no output to sandbox.
+#
+# This was not merely friction: the block message routes the command to
+# ctx_execute, and ctx_execute runs in a subprocess whose filesystem is
+# DISCARDED (see rules/ctx-rules.md and the file_writing_policy the harness
+# injects). So the suggested replacement did not write the file at all. A gate
+# whose recovery path silently drops the operation is worse than one with no
+# recovery path, because the agent believes it succeeded.
+#
+# Matched against $_OPCHECK, not $COMMAND, and that is load-bearing: _OPCHECK has
+# quoted spans removed, so `echo "a > b"` scrubs to `echo ` with no `>` and does
+# NOT match -- bare `echo` stays blocked, as 47-02 deliberately made it. Quoted
+# here-doc bodies are blanked there too, so `cat > f <<'EOF' … EOF` arrives as
+# `cat > f `. An UNQUOTED here-doc keeps its body visible and its newlines, so it
+# trips the compound scan above and never reaches here: fail-closed, deliberately.
+#
+# Only cat/echo/printf. A redirect does not make an arbitrary command silent --
+# `curl url > f` still downloads and still blocks.
+#
+# The `\>` escapes are REQUIRED, not stylistic: `>` is a metacharacter inside a
+# case pattern, so the unescaped form is a bash SYNTAX ERROR. That failure is
+# invisible in the obvious way to test for it -- a syntax error exits 2, which is
+# this hook's block code, so the whole suite's "expect exit 2" assertions still
+# passed and only the exemptions AFTER this line broke. A check that never ran,
+# reporting clean; the exact shape rules/ctx-rules.md warns about.
+# The `>` must be a STDOUT redirect. A case glob cannot see the fd digit, so
+# `cat big.c 2>/dev/null` matched as "cat " + "big.c 2" + ">" + "/dev/null" and
+# was exempted -- opening the exact hole this hook exists to close, on one of the
+# most common idioms an agent writes. Guard on a `>` not preceded by a digit
+# first. `&>` never reaches here (the `&` trips the compound scan above), and a
+# literal `1> f` does not exempt: fail-closed, and rare. `>` is excluded from the
+# preceding character too, or the second `>` of `2>>log` would qualify.
+if [[ "$_OPCHECK" =~ (^|[^0-9>])\> ]]; then
+  case "$_OPCHECK" in
+    cat\ *\>*|echo\ *\>*|printf\ *\>*)           _track_exempt authoring; exit 0 ;;
+  esac
+fi
 
 # Navigation and short queries (output is bounded)
 case "$COMMAND" in
@@ -272,9 +484,29 @@ case "$COMMAND" in
   bash\ */.vbw-planning/*|bash\ */tmp/.vbw-plugin-root-link-*)                _track_exempt vbw-planning; exit 0 ;;
 esac
 
-# Package version queries (bounded output)
+# Package/tool version queries (bounded output) — narrowly scoped.
+# The long form --version is unambiguous, so exempt it anywhere it appears.
 case "$COMMAND" in
-  *--version|*\ -v|*\ -V)   _track_exempt version; exit 0 ;;
+  *--version)   _track_exempt version; exit 0 ;;
+esac
+# The short forms -v / -V are OVERLOADED with "verbose": a blanket `* -v` match
+# wrongly exempts verbose test runs (e.g. `pytest -v`, `pytest tests/ -v`) and
+# leaks the full log to context as plain Bash. Exempt only a BARE version query —
+# exactly two tokens `<tool> -v|-V` — and never when the tool is a known
+# test/build/lint runner (whose -v means verbose). A real version check carries
+# no other arguments; a test run does.
+case "$COMMAND" in
+  *\ -v|*\ -V)
+    read -ra _VTOK <<< "$COMMAND"
+    if [ "${#_VTOK[@]}" -eq 2 ]; then
+      case "${_VTOK[0]}" in
+        pytest|py.test|prove|jest|mocha|vitest|jasmine|ava|tap|phpunit|pest|rspec|minitest|tox|nose2|nosetests|behave|cucumber|bats|go|cargo|make|gmake|npm|npx|yarn|pnpm|gradle|gradlew|mvn|ctest|rake|playwright|cypress|dotnet|ninja)
+          : ;;  # verbose flag on a runner — fall through to the default block
+        *)
+          _track_exempt version; exit 0 ;;
+      esac
+    fi
+    ;;
 esac
 
 # --- Default: block everything not explicitly exempt ---
@@ -282,15 +514,19 @@ esac
 # Everything else must go through ctx_execute for output sandboxing.
 bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash" 2>/dev/null || true
 
+# NOTE: no truncation-stripping here. An unquoted `| head` always trips the
+# compound-command check above and is handled there, where the strip is tested.
+# The only way to reach this branch with `| head` in the text is inside quotes
+# (`echo "x | head"`), where stripping would mangle a correct command.
 cat >&2 <<BLOCKED
 BLOCKED: Route this command through ctx_execute for output sandboxing.
 
 Replace:
   Bash("$COMMAND")
 With (plugin form):
-  mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="$COMMAND")
+  mcp__plugin_context-mode_context-mode__ctx_execute(language="shell", code="$COMMAND", intent="<what you are looking for>")
 Or (MCP-server form, legacy):
-  mcp__context-mode__ctx_execute(language="shell", code="$COMMAND")
+  mcp__context-mode__ctx_execute(language="shell", code="$COMMAND", intent="<what you are looking for>")
 
 Context Mode captures only the relevant output portion, preventing context bloat.
 If this is a source-code search, prefer search_code / search_graph (CMM) over ctx_execute.

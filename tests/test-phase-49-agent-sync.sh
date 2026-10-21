@@ -1,14 +1,15 @@
 #!/bin/bash
 # test-phase-49-agent-sync.sh — Regression coverage for phase-49 agent sync to VBW v1.35.0
 #
-# Asserts that agents/vbw-*.md files carry both the VBW-v1.35.0 sync markers
-# (write-verification.sh, plan_ref/plans_verified, Debug Session QA Mode,
-# Pre-Existing Failure Handling, Tool blocks, ac_results, pre_existing_issues,
-# skill_no_activation) AND preserve the CMM-only extensions (hooks: frontmatter,
-# MAINTENANCE override comments, Context Mode Web Fetch block, CMM EXTENSION
-# note for Task(vbw-debugger) self-spawn). Also verifies that the CMM-added
-# tools: allowlist on vbw-qa was reverted and that CHECKSUMS.sha256 still
-# verifies against the six agent files.
+# Phase 66 architectural update: agents/vbw-*.md are now DELTA-ONLY source files
+# (frontmatter patch + cmm-delta fenced sections). VBW body content (skill_no_activation,
+# plan_ref, plans_verified, Debug Session QA Mode, Pre-Existing Failure Handling,
+# ac_results, pre_existing_issues) now lives in the upstream VBW base and is NOT
+# present in these source files. Assertions updated accordingly:
+#   - VBW body content: asserted ABSENT from delta sources (correct by design)
+#   - CMM extensions (hooks:, MAINTENANCE, Tool blocks, Context Mode Web Fetch,
+#     CMM EXTENSION): still asserted PRESENT (these are in our cmm-delta sections)
+#   - CHECKSUMS.sha256: covers all 7 delta source files
 #
 # Usage: bash tests/test-phase-49-agent-sync.sh
 # Exit: 0 = all pass, 1 = any failure
@@ -43,46 +44,63 @@ _assert_not_grep() {
 }
 
 AGENTS=(vbw-dev vbw-scout vbw-lead vbw-qa vbw-debugger vbw-docs)
+# Phase 66 added vbw-architect; include in SHA coverage check
+ALL_AGENTS=(vbw-architect vbw-dev vbw-scout vbw-lead vbw-qa vbw-debugger vbw-docs)
 
-# 1. <skill_no_activation> across all 6 agents
+# --------------------------------------------------------------------------
+# 1. VBW body content is ABSENT from delta source files (Phase 66 arch)
+# These items were phase-49 additions to the VBW base body. Under delta-only
+# architecture the source agents/vbw-*.md files contain ONLY frontmatter +
+# cmm-delta fenced sections — no verbatim VBW body text.
+# --------------------------------------------------------------------------
 for a in "${AGENTS[@]}"; do
-    _assert_grep "skill_no_activation in $a.md" "skill_no_activation" "agents/${a}.md"
+    _assert_not_grep "skill_no_activation absent from delta source $a.md (now in VBW base)" \
+        "skill_no_activation" "agents/${a}.md"
 done
 
-# 2. write-verification.sh in vbw-qa
-_assert_grep "write-verification.sh in vbw-qa.md" "write-verification.sh" "agents/vbw-qa.md"
+# VBW-body keywords absent from delta sources (lives in VBW base, not our delta)
+_assert_not_grep "plan_ref absent from vbw-qa.md delta source (VBW base)" \
+    "plan_ref" "agents/vbw-qa.md"
+_assert_not_grep "plans_verified absent from vbw-qa.md delta source (VBW base)" \
+    "plans_verified" "agents/vbw-qa.md"
+_assert_not_grep "Debug Session QA Mode absent from vbw-qa.md delta source (VBW base)" \
+    "Debug Session QA Mode" "agents/vbw-qa.md"
+_assert_not_grep "Pre-Existing Failure Handling absent from vbw-qa.md delta source (VBW base)" \
+    "Pre-Existing Failure Handling" "agents/vbw-qa.md"
+_assert_not_grep "ac_results absent from vbw-dev.md delta source (VBW base)" \
+    "ac_results" "agents/vbw-dev.md"
+_assert_not_grep "pre_existing_issues absent from vbw-dev.md delta source (VBW base)" \
+    "pre_existing_issues" "agents/vbw-dev.md"
 
-# 3. plan_ref + plans_verified in vbw-qa
-_assert_grep "plan_ref in vbw-qa.md" "plan_ref" "agents/vbw-qa.md"
-_assert_grep "plans_verified in vbw-qa.md" "plans_verified" "agents/vbw-qa.md"
+# write-verification.sh: appears in vbw-qa description frontmatter field (not body)
+# This is a frontmatter field that IS part of our delta — assert it's still there
+_assert_grep "write-verification.sh in vbw-qa.md description field" \
+    "write-verification.sh" "agents/vbw-qa.md"
 
-# 4. Debug Session QA Mode section in vbw-qa
-_assert_grep "Debug Session QA Mode in vbw-qa.md" "Debug Session QA Mode" "agents/vbw-qa.md"
+# --------------------------------------------------------------------------
+# 2-3. CMM-extension delta content PRESENT in source files
+# These live in our cmm-delta fenced sections and must survive all syncs.
+# --------------------------------------------------------------------------
 
-# 5. Pre-Existing Failure Handling section in vbw-qa
-_assert_grep "Pre-Existing Failure Handling in vbw-qa.md" "Pre-Existing Failure Handling" "agents/vbw-qa.md"
-
-# 6. ## Tool blocks section in vbw-dev (CMM extension preserved)
+# Tool blocks section in vbw-dev (CMM delta section)
 _assert_grep "Tool blocks heading in vbw-dev.md" "^## Tool blocks" "agents/vbw-dev.md"
 
-# 7. ac_results + pre_existing_issues in vbw-dev
-_assert_grep "ac_results in vbw-dev.md" "ac_results" "agents/vbw-dev.md"
-_assert_grep "pre_existing_issues in vbw-dev.md" "pre_existing_issues" "agents/vbw-dev.md"
-
-# 8. Context Mode Web Fetch block preserved in vbw-dev (CMM extension)
+# Context Mode Web Fetch block in vbw-dev (CMM delta section)
 _assert_grep "Context Mode Web Fetch in vbw-dev.md" "Context Mode Web Fetch" "agents/vbw-dev.md"
 
-# 9. CMM EXTENSION note in vbw-debugger MAINTENANCE comment
+# CMM EXTENSION note in vbw-debugger MAINTENANCE comment (CMM delta section)
 _assert_grep "CMM EXTENSION in vbw-debugger.md" "CMM EXTENSION" "agents/vbw-debugger.md"
 
-# 10. hooks: frontmatter block AND MAINTENANCE override comment in each of the 6 agents
+# hooks: frontmatter AND MAINTENANCE override comment in each of the 6 agents
 for a in "${AGENTS[@]}"; do
     _assert_grep "hooks: frontmatter in $a.md" "^hooks:" "agents/${a}.md"
     _assert_grep "MAINTENANCE override comment in $a.md" "MAINTENANCE" "agents/${a}.md"
 done
 
-# 11. vbw-qa.md frontmatter has NO tools: line (allowlist reverted)
-# Only check the frontmatter region (first 20 lines) since "tools:" may appear in body prose.
+# --------------------------------------------------------------------------
+# 4. vbw-qa.md frontmatter has NO tools: allowlist (disallowedTools used instead)
+# Only check the frontmatter region (first 20 lines).
+# --------------------------------------------------------------------------
 qa_frontmatter_tools=$(head -20 agents/vbw-qa.md | grep -c '^tools:' || true)
 if [ "$qa_frontmatter_tools" = "0" ]; then
     _pass "vbw-qa.md frontmatter has no tools: allowlist"
@@ -90,22 +108,21 @@ else
     _fail "vbw-qa.md frontmatter unexpectedly has tools: line"
 fi
 
-# 12. CHECKSUMS.sha256 verifies (covers all 6 agent files)
+# --------------------------------------------------------------------------
+# 5. CHECKSUMS.sha256 verifies all 7 agent delta source files
+# (Phase 66 added vbw-architect; threshold updated to >= 7)
+# --------------------------------------------------------------------------
 if shasum -a 256 -c CHECKSUMS.sha256 >/dev/null 2>&1; then
     _pass "shasum -a 256 -c CHECKSUMS.sha256 exits 0"
 else
     _fail "CHECKSUMS.sha256 verification failed"
 fi
 
-# Also confirm all phase-49-sync agents/vbw-*.md entries are present and OK.
-# Use >= 6 (not equality) so additional tracked agents outside the phase 49
-# VBW v1.35.0 sync scope (e.g. vbw-architect, added in phase 37) do not
-# break this assertion once CHECKSUMS.sha256 rightly tracks them too.
 agent_ok_count=$(shasum -a 256 -c CHECKSUMS.sha256 2>&1 | grep -cE 'agents/vbw-.*:.*OK')
-if [ "$agent_ok_count" -ge 6 ]; then
-    _pass "At least 6 agents/vbw-*.md entries verify OK in CHECKSUMS.sha256 (got $agent_ok_count)"
+if [ "$agent_ok_count" -ge 7 ]; then
+    _pass "At least 7 agents/vbw-*.md entries verify OK in CHECKSUMS.sha256 (got $agent_ok_count)"
 else
-    _fail "Expected at least 6 agent entries OK, got $agent_ok_count"
+    _fail "Expected at least 7 agent entries OK, got $agent_ok_count"
 fi
 
 echo ""

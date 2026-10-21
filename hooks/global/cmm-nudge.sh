@@ -67,18 +67,17 @@ if [ -z "$REPO_ROOT" ]; then
   REPO_ROOT="${CWD:-.}"
 fi
 
+_CMMREG_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+  [ -f "$_d/cmm-registered.sh" ] && { _CMMREG_LIB="$_d/cmm-registered.sh"; break; }
+done
+# Cannot determine availability -> stay silent. Never nudge on our own absence.
+[ -n "$_CMMREG_LIB" ] || exit 0
+# shellcheck disable=SC1090
+source "$_CMMREG_LIB"
+
 CMM_FOUND=false
-# Check project .mcp.json
-if [ -f "$REPO_ROOT/.mcp.json" ] && grep -q 'codebase-memory-mcp' "$REPO_ROOT/.mcp.json" 2>/dev/null; then
-  CMM_FOUND=true
-fi
-# Check global settings.json as fallback
-if [ "$CMM_FOUND" = false ]; then
-  CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
-  if [ -f "$CLAUDE_SETTINGS" ] && grep -q 'codebase-memory-mcp' "$CLAUDE_SETTINGS" 2>/dev/null; then
-    CMM_FOUND=true
-  fi
-fi
+cmm_is_registered "$REPO_ROOT" && CMM_FOUND=true
 # If CMM not found anywhere, stay silent (fail open)
 [ "$CMM_FOUND" = false ] && exit 0
 
