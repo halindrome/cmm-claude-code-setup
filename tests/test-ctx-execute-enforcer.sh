@@ -301,6 +301,9 @@ echo ""
 echo "--- In-place editors exempt (expect exit 0) ---"
 
 _assert_exit "sed -i '' (BSD/macOS form) exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"sed -i '\'''\'' s/a/b/ f.ts"}}'
+
+_assert_exit "sed -i 'back' (BSD named suffix) exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"sed -i '\''back'\'' s/a/b/ f.ts"}}'
 
 _assert_exit "sed -i.bak (GNU suffix form) exempt" 0 \
@@ -311,6 +314,32 @@ _assert_exit "perl -0pi -e exempt" 0 \
 
 _assert_exit "perl -pe WITHOUT -i (prints) still blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"perl -pe s/a/b/ big.c"}}'
+
+# QA round 1 F1: the `i` must be the -i switch, not any `i` in the command.
+_assert_exit "perl -pi -e exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -pi -e s/a/b/ f.pl"}}'
+
+_assert_exit "perl -i.bak -pe exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -i.bak -pe s/a/b/ f.pl"}}'
+
+_assert_exit "ruby -pi -e exempt" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"ruby -pi -e gsub(/a/,\"b\") f.rb"}}'
+
+_assert_exit "perl -e 'print while <>' (i in script) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -e '\''print while <>'\'' big.c"}}'
+
+_assert_exit "perl -Mstrict -e (i in module) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -Mstrict -e '\''print 1'\''"}}'
+
+_assert_exit "perl -ne 'print if /x/' file still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"perl -ne '\''print if /use strict/'\'' lib/Foo.pm"}}'
+
+_assert_exit "ruby -ne (i in script) still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"ruby -ne '\''print if $_ =~ /x/'\'' f.rb"}}'
+
+# QA round 1 F3: a bracket expression in a VAR= value made the peel loop forever.
+_assert_exit "VAR=[ab]; git status peels (no hang)" 0 \
+    '{"tool_name":"Bash","tool_input":{"command":"X=[ab]; git status"}}'
 
 _assert_exit "awk -i inplace exempt" 0 \
     '{"tool_name":"Bash","tool_input":{"command":"awk -i inplace {print} f.txt"}}'

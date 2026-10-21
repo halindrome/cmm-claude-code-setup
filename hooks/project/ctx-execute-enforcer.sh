@@ -166,7 +166,9 @@ while [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\"[^\"]*\"[[:space:]]*\&\&[[:s
       [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+\'[^\']*\'[[:space:]]*\&\&[[:space:]]* ]] || \
       [[ "$COMMAND" =~ ^[[:space:]]*cd[[:space:]]+[^[:space:]\&\|\;]+[[:space:]]*\&\&[[:space:]]* ]] || \
       [[ "$COMMAND" =~ $_VARPEEL ]]; do
-    COMMAND="${COMMAND#${BASH_REMATCH[0]}}"
+    # Quoted: unquoted, the match is a glob, and a value like `[ab]` does not
+    # match its own text -- nothing strips and the loop never ends.
+    COMMAND="${COMMAND#"${BASH_REMATCH[0]}"}"
 done
 # If the stripped command still has compound shell operators, do NOT exempt —
 # fall straight through to the default block path. Detected operators:
@@ -375,11 +377,19 @@ esac
 # times or forty, so Edit (which requires the exact bytes and fails loudly on a
 # miss) remains the better tool for a source edit. That is a correctness
 # argument, and it belongs in a correctness gate -- not smuggled into this one.
+#
+# perl/ruby: `-i` must be a real switch -- a leading option token made only of
+# no-argument switch letters (-i, -pi, -0pi, -0777pi, -i.bak). A glob like
+# `perl -*i*e *` also matched the `i` in `-Mstrict` or `print`, so
+# `perl -ne 'print …' big.c` was exempted and flooded stdout.
+_INPLACE_RE='^(perl|ruby)([[:space:]]+-[^[:space:]]+)*[[:space:]]+-[0-9alnpsw]*i[^[:space:]]*[[:space:]]'
 case "$COMMAND" in
   sed\ -i\ *|sed\ -i.*|gsed\ -i\ *|gsed\ -i.*)   _track_exempt inplace-edit; exit 0 ;;
-  perl\ -*i*e\ *|perl\ -*i*\ -e\ *)              _track_exempt inplace-edit; exit 0 ;;
-  ruby\ -*i*e\ *|awk\ -i\ inplace\ *)            _track_exempt inplace-edit; exit 0 ;;
+  awk\ -i\ inplace\ *)                           _track_exempt inplace-edit; exit 0 ;;
 esac
+if [[ "$COMMAND" =~ $_INPLACE_RE ]]; then
+  _track_exempt inplace-edit; exit 0
+fi
 
 # File AUTHORING: a literal-emitting command redirected to a file. Same category
 # as the in-place editors above -- the bytes go to the file, not to stdout, so
