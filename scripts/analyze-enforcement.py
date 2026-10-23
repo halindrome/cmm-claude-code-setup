@@ -44,7 +44,8 @@ STACK_FP = [
     ("webfetch-nudge",         "gate",   "BLOCKED: Use Context Mode instead of WebFetch"),
     ("ctx-payload-guard",      "gate",   "[ctx-payload-guard] BLOCKED"),
     ("ctx-shell-compat",       "nudge",  "[ctx-shell-compat] This payload runs under"),
-    ("subagent-cmm-startup",   "inject", "Prefer CMM graph tools"),
+    ("subagent-cmm-startup",   "inject", "Prefer CMM graph tools"),          # pre-guidance text
+    ("subagent-cmm-startup",   "inject", "use it for all code navigation"),  # guidance-only text
     ("subagent-ctx-startup",   "inject", "[ctx-startup] Context Mode is active"),
     ("skill-nudge",            "nudge",  "Invoke Skill('cmm-rules')"),
     ("cmm-read-nudge",         "nudge",  "is usually cheaper than re-reading the whole file"),

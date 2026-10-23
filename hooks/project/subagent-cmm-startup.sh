@@ -72,10 +72,20 @@ fi
 # reason — it invites the agent to route around CMM while it waits.
 #
 # project= is filled in because a subagent cannot derive it, and a failed first
-# CMM call is where agents abandon the graph. Derivation matches
-# reindex-after-commit.sh (strip leading /, every / -> -).
-_CMM_PROJECT="${PROJECT_ROOT#/}"
-_CMM_PROJECT="${_CMM_PROJECT//\//-}"
+# CMM call is where agents abandon the graph. cmm_project_name mirrors CMM's own
+# naming (hooks/lib/cmm-registered.sh); the inline fallback is pre-lib installs.
+_CMMREG_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/cmm-registered.sh" ] && { _CMMREG_LIB="$_d/cmm-registered.sh"; break; }
+done
+if [ -n "$_CMMREG_LIB" ]; then
+    # shellcheck disable=SC1090
+    source "$_CMMREG_LIB"
+    _CMM_PROJECT="$(cmm_project_name)"
+else
+    _CMM_PROJECT="${PROJECT_ROOT#/}"
+    _CMM_PROJECT="${_CMM_PROJECT//\//-}"
+fi
 ADVISORY="This repository is indexed in codebase-memory-mcp (CMM); use it for all code navigation.
 Pass project=\"${_CMM_PROJECT}\" on every CMM call below (required; it is not inferred).
 - Find a function/class/module by name: search_graph(project, name_pattern=\"...\")

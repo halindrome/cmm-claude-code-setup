@@ -109,10 +109,16 @@ sys.exit(1)
 # back a broken call teaches the agent that CMM does not work, and the observed
 # response is to stop using CMM rather than to fix the call.
 #
-# Derivation matches reindex-after-commit.sh (leading slash stripped, "/" -> "-")
-# which is the naming index_repository itself uses. Prints nothing when the root
-# cannot be determined; callers must omit the argument rather than emit an empty
-# one, since project="" fails the same way a missing project does.
+# Mirrors CMM's cbm_project_name_from_path (src/pipeline/fqn.c): canonical
+# (symlink-resolved) path; every byte outside [A-Za-z0-9._-] -> "-", except
+# non-ASCII bytes, which become two lowercase hex digits; runs of "-" and of "."
+# collapsed; leading "-"/"." and trailing "-" trimmed. A plain "/" -> "-" swap
+# names a project that does not exist for paths with spaces, "@", "+", etc.
+# Prints nothing when the root cannot be determined; callers must omit the
+# argument rather than emit an empty one, since project="" fails the same way a
+# missing project does.
+# ponytail: CMM's filename-length cap (fqn_bound_name_len) is not mirrored —
+# only matters for paths longer than a filesystem name component.
 cmm_project_name() {
     local root=""
     # Prefer a PROJECT_ROOT already resolved by hooks/lib/project-root.sh.
@@ -131,6 +137,23 @@ cmm_project_name() {
         fi
     fi
     [ -n "$root" ] || return 0
-    root="${root#/}"
-    printf '%s' "${root//\//-}"
+    root="$(cd "$root" 2>/dev/null && pwd -P || printf '%s' "$root")"
+    local name
+    if [[ "$root" =~ ^[A-Za-z0-9._/-]*$ ]]; then
+        name="${root//\//-}"
+        while [[ "$name" == *--* ]]; do name="${name//--/-}"; done
+        while [[ "$name" == *..* ]]; do name="${name//../.}"; done
+    else
+        # Bytes outside the safe set: per-byte hex mapping needs python3. Without
+        # it, fall back to the separator swap (correct for every safe path).
+        name="$(R="$root" python3 -c 'import os, re
+out = "".join(chr(b) if (chr(b).isascii() and (chr(b).isalnum() or chr(b) in "._-"))
+              else ("%02x" % b if b >= 0x80 else "-")
+              for b in os.environ["R"].encode())
+out = re.sub(r"-+", "-", re.sub(r"\.+", ".", out))
+print(out, end="")' 2>/dev/null)" || name="${root//\//-}"
+    fi
+    while [[ "$name" == -* || "$name" == .* ]]; do name="${name#?}"; done
+    while [[ "$name" == *- ]]; do name="${name%-}"; done
+    printf '%s' "${name:-root}"
 }
