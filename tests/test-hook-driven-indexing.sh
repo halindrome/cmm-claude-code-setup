@@ -97,7 +97,9 @@ T1=$(_now_ms)
 case "$_OUT" in *"MANDATORY FIRST ACTION"*|*"call \`index_repository("*)
   _fail "1i: prompt still asks the model to index while the hook is indexing" ;;
   *) _pass "1i: no model-side index step when the background refresh launched" ;; esac
-case "$_OUT" in *"Skill('cmm-rules')"*) _pass "1j: Skill nudge kept" ;; *) _fail "1j: Skill nudge missing" ;; esac
+for s in "Skill('cmm-rules')" "Skill('ctx-rules')"; do
+  case "$_OUT" in *"$s"*) _pass "1j: $s nudge kept" ;; *) _fail "1j: $s nudge missing" ;; esac
+done
 _wait_gone "$PIDFILE"
 
 # --- 2. A failed CLI run leaves the gate exactly as before ---
