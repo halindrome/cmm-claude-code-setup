@@ -71,8 +71,11 @@ touch "/tmp/cmm-indexing-${PROJECT_HASH}"
 # an incremental refresh of an up-to-date index takes seconds. On success it
 # writes the ready sentinel (same as cmm-sentinel-writer.sh), which opens
 # session-gate.sh; on failure (stale daemon holding the version lock, etc.) it
-# leaves everything as it was and the MANDATORY FIRST ACTION prompt below is the
-# fallback. The PID file lets agent-cmm-gate.sh hold Agent spawns until it ends.
+# leaves everything as it was: the indexing marker keeps session-gate.sh failing
+# open with an advisory that names index_repository. So when the refresh is
+# launched, the prompt below omits the model-side index_repository step (it was
+# a redundant call every session); MANDATORY FIRST ACTION remains for sessions
+# where no CLI is available. The PID file lets agent-cmm-gate.sh hold Agent spawns until it ends.
 # All three fds MUST be redirected: a background child holding the hook's
 # stdout/stderr makes Claude Code wait on, or refuse, the hook's output.
 # Main session only — parallel agent sessions must not each launch an indexer.
@@ -88,6 +91,7 @@ if [ -n "$_CMM_BIN" ] && [ -n "$PROJECT_ROOT" ] \
     rm -f "/tmp/cmm-indexer-$H.pid"
   ' </dev/null >/dev/null 2>&1 &
   echo $! > "/tmp/cmm-indexer-${PROJECT_HASH}.pid"
+  _BG_INDEX=1
 fi
 
 # --- Context Mode Bootstrap ---
@@ -192,6 +196,16 @@ Prefer CMM tools over Read/Grep for code navigation:
   Text search in code (string literals, error msgs, TODOs)  -> search_code
 
 Orient first: `get_architecture` -> `search_graph` -> `get_code_snippet`.
+PROMPT
+elif [ "${_BG_INDEX:-0}" -eq 1 ]; then
+  # --- Human session, index refreshing in the background: no index step ---
+  cat <<'PROMPT'
+The CMM index is being refreshed in the background by a session hook — do NOT call
+`index_repository` yourself. Invoke `Skill('cmm-rules')` and `Skill('ctx-rules')` via the
+Skill tool so their protocols load into context: CMM orient-first navigation
+(get_architecture → search_graph → get_code_snippet) for source code; ctx_stats /
+ctx_search before re-running commands.
+Always put a short text line in the same turn as a tool call — never an empty text block.
 PROMPT
 else
   # --- Minimal prompt for human sessions ---
