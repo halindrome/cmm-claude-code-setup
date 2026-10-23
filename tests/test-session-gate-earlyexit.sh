@@ -197,6 +197,20 @@ if [ "$EXIT_CODE" -eq 0 ]; then
 else
     _fail "Test 11b: Write should fail open (exit 0) with fresh indexing marker (got $EXIT_CODE)"
 fi
+
+# --- Test 11d/11e: the fail-open advisory depends on whether the background refresh is alive ---
+# Dead/absent indexer (refresh failed): the model was told not to index at startup,
+# so the advisory must now tell it to. Live indexer: "no action needed".
+INDEXER_PID="/tmp/cmm-indexer-${HASH}.pid"
+rm -f "$INDEXER_PID"
+MSG="$(echo '{"tool_name": "Write"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>&1 >/dev/null || true)"
+case "$MSG" in *index_repository*) _pass "Test 11d: no live indexer -> advisory names index_repository" ;;
+  *) _fail "Test 11d: no live indexer but advisory omits index_repository: $MSG" ;; esac
+sleep 5 & echo $! > "$INDEXER_PID"
+MSG="$(echo '{"tool_name": "Write"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>&1 >/dev/null || true)"
+kill "$(cat "$INDEXER_PID")" 2>/dev/null; rm -f "$INDEXER_PID"
+case "$MSG" in *"no action needed"*) _pass "Test 11e: live indexer -> 'no action needed'" ;;
+  *) _fail "Test 11e: live indexer but advisory is: $MSG" ;; esac
 rm -f "$INDEXING_MARKER"
 
 # --- Test 11c: Write WITHOUT sentinel, STALE indexing marker -> exit 2 (TTL safety valve) ---

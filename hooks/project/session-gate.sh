@@ -122,6 +122,17 @@ if [ ! -f "$CMM_SENTINEL" ]; then
   INDEXING_MARKER="/tmp/cmm-indexing-${PROJECT_HASH}"
   INDEXING_TTL_MIN=120
   if [ -f "$INDEXING_MARKER" ] && [ -n "$(find "$INDEXING_MARKER" -mmin "-${INDEXING_TTL_MIN}" 2>/dev/null)" ]; then
+    # Only "no action needed" while cmm-session-start.sh's background refresh is
+    # alive. If none is running (it failed, or no CLI was found), the model must
+    # refresh — the startup prompt told it not to when the refresh launched.
+    _IDX_PID="$(cat "/tmp/cmm-indexer-${PROJECT_HASH}.pid" 2>/dev/null)"
+    if [ -z "$_IDX_PID" ] || ! kill -0 "$_IDX_PID" 2>/dev/null; then
+      cat >&2 <<NOINDEXER
+CMM note: the index is not ready and no background refresh is running — proceeding without it.
+Call mcp__codebase-memory-mcp__index_repository${PROJECT_ROOT:+(repo_path="$PROJECT_ROOT")} now (incremental, fast when already indexed).
+NOINDEXER
+      exit 0
+    fi
     cat >&2 <<INDEXING
 CMM note: the index is still being built for this session — proceeding without it.
 Code-navigation tools may return partial or stale results until indexing finishes.
