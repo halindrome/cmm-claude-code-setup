@@ -1,6 +1,7 @@
 #!/bin/bash
 # ctx-execute-cmm-nudge.sh — PreToolUse hook: hard-block source-code search laundered through ctx_execute in indexed CMM repos (plugin-form and MCP-server-form coverage).
-# BLOCKING: exits 2 when tool_input.code is an unambiguous grep/rg/ack/ag/ugrep/find-name against an indexed project path; otherwise exits 0 (fail-open on any ambiguity).
+# BLOCKING: exits 2 when tool_input.code is an unambiguous grep/rg/ack/ag/ugrep/find-name against an indexed project path.
+# WARNING: a recursive search inside a compound or multi-line payload (cd X && grep -rn ...) exits 0 with an additionalContext advisory; anything else exits 0 silently.
 #
 # Install: cp hooks/project/ctx-execute-cmm-nudge.sh .claude/hooks/ && chmod +x .claude/hooks/ctx-execute-cmm-nudge.sh
 # Register in .claude/settings.json (Phase 57 G3 — plugin-form FIRST, MCP-server-form second):
@@ -25,7 +26,7 @@ INPUT=$(cat 2>/dev/null)
 #   4: target_path (extracted last positional arg, or empty)
 #   5: cwd
 PARSED=$(echo "$INPUT" | python3 -c "
-import sys, json, re, shlex
+import sys, json, re, shlex, os
 
 def emit(tool_name='', kind='other', pattern='', target='', cwd=''):
     print(tool_name)
@@ -158,47 +159,6 @@ def is_simple_single_statement(s):
         return False
     return True
 
-if not is_simple_single_statement(code):
-    emit(tool_name, 'other', '', '', cwd)
-    sys.exit(0)
-
-line = [l for l in code.strip().splitlines() if l.strip() and not l.strip().startswith('#')][0]
-
-# Tokenize respecting quotes
-try:
-    tokens = shlex.split(line, posix=True)
-except Exception:
-    emit(tool_name, 'other', '', '', cwd)
-    sys.exit(0)
-
-if not tokens:
-    emit(tool_name, 'other', '', '', cwd)
-    sys.exit(0)
-
-first = tokens[0]
-# Sub-command laundering: git <git-opts...> grep ... is still a grep invocation.
-# Skip leading git-level options (-c key=val, -C path, --git-dir=..., --work-tree=...,
-# --no-pager, -p/--paginate, --bare, --no-replace-objects, --exec-path[=...], --namespace[=...])
-# and unwrap to the subcommand. If the subcommand is grep, treat the remainder as a grep call.
-if first == 'git' and len(tokens) >= 2:
-    git_value_opts = {'-c','-C','--git-dir','--work-tree','--namespace','--exec-path','--super-prefix','--list-cmds','--attr-source'}
-    j = 1
-    while j < len(tokens):
-        t = tokens[j]
-        if not t.startswith('-'):
-            break
-        # attached-value form: --flag=value
-        if '=' in t:
-            j += 1
-            continue
-        if t in git_value_opts and j + 1 < len(tokens):
-            j += 2
-            continue
-        # bare boolean flag
-        j += 1
-    if j < len(tokens) and tokens[j] == 'grep':
-        tokens = tokens[j:]
-        first = tokens[0]
 GREP_FAMILY = {'grep','egrep','fgrep','rg','ripgrep','ack','ag','ugrep'}
 
 def extract_grep_family(toks, tool_first):
@@ -292,23 +252,135 @@ def extract_find_name(toks):
     # Not a code extension -> not a code-search
     return (None, '', '')
 
+# Compound payloads (cd X && grep -rn ..., multi-line scripts, a search buried in
+# a batch) are WARNED, not blocked: such scripts legitimately grep unindexed
+# files (binaries, extensionless Dockerfile-* variants, excluded dirs). A 30-day
+# transcript replay (2026-10-23) found the single-statement parser above saw
+# ~1.4% of source searches in indexed repos -- 33 of ~2,330; the rest were
+# cd-prefixed or multi-line. Only a RECURSIVE search at a command position
+# counts: a grep after a pipe is a filter, and a grep on one file is not a
+# codebase search.
+_RECURSIVE_BY_DEFAULT = {'rg', 'ripgrep', 'ag', 'ack', 'ugrep'}
+_OPS = set('();<>|&')
+_SEG_SKIP = {'do', 'then', 'else', '{', '!', 'time', 'command', 'exec'}
+
+def _segments(line):
+    # Yield (tokens, operator-before-them) for each simple command in a line.
+    lx = shlex.shlex(line, posix=True, punctuation_chars=True)
+    lx.whitespace_split = True
+    seg, prev = [], ''
+    for t in lx:
+        if t and all(ch in _OPS for ch in t):
+            if seg and seg[-1].isdigit() and ('>' in t or '<' in t):
+                seg.pop()   # the 2 of 2>/dev/null is not a positional
+            yield seg, prev
+            seg, prev = [], t
+        else:
+            seg.append(t)
+    yield seg, prev
+
+def _compound_search(cmds):
+    # Return (pattern, absolute target) for the first recursive search, else None.
+    for c in cmds:
+        if '# cmm-exempt' in c:
+            continue
+        cd = ''
+        for ln in c.replace('\\\\\n', ' ').splitlines():
+            try:
+                segs = list(_segments(ln))
+            except Exception:
+                continue
+            for seg, prev in segs:
+                if '|' in prev or '<' in prev or '>' in prev:
+                    continue
+                while seg and seg[0] in _SEG_SKIP:
+                    seg = seg[1:]
+                if not seg:
+                    continue
+                verb = seg[0].rsplit('/', 1)[-1]
+                if verb == 'cd' and len(seg) > 1:
+                    cd = os.path.join(cd, os.path.expanduser(seg[1]))
+                    continue
+                rec = verb in _RECURSIVE_BY_DEFAULT
+                if verb == 'git' and 'grep' in seg:
+                    seg = seg[seg.index('grep'):]
+                    verb, rec = 'grep', True
+                if verb in GREP_FAMILY:
+                    rec = rec or any(t == '--recursive' or (t.startswith('-') and not t.startswith('--') and ('r' in t or 'R' in t)) for t in seg[1:])
+                    if not rec:
+                        continue
+                    pat, tgt = extract_grep_family(seg, verb)
+                elif verb == 'find':
+                    kind, pat, tgt = extract_find_name(seg)
+                    if kind is None:
+                        continue
+                else:
+                    continue
+                if pat:
+                    return pat, os.path.normpath(os.path.join(cwd, cd, tgt or '.'))
+    return None
+
+def _other():
+    r = _compound_search(_cmds)
+    if r:
+        emit(tool_name, 'compound-search', r[0], r[1], cwd)
+    else:
+        emit(tool_name, 'other', '', '', cwd)
+    sys.exit(0)
+
+if not is_simple_single_statement(code):
+    _other()
+
+line = [l for l in code.strip().splitlines() if l.strip() and not l.strip().startswith('#')][0]
+
+# Tokenize respecting quotes
+try:
+    tokens = shlex.split(line, posix=True)
+except Exception:
+    _other()
+
+if not tokens:
+    _other()
+
+first = tokens[0]
+# Sub-command laundering: git <git-opts...> grep ... is still a grep invocation.
+# Skip leading git-level options (-c key=val, -C path, --git-dir=..., --work-tree=...,
+# --no-pager, -p/--paginate, --bare, --no-replace-objects, --exec-path[=...], --namespace[=...])
+# and unwrap to the subcommand. If the subcommand is grep, treat the remainder as a grep call.
+if first == 'git' and len(tokens) >= 2:
+    git_value_opts = {'-c','-C','--git-dir','--work-tree','--namespace','--exec-path','--super-prefix','--list-cmds','--attr-source'}
+    j = 1
+    while j < len(tokens):
+        t = tokens[j]
+        if not t.startswith('-'):
+            break
+        # attached-value form: --flag=value
+        if '=' in t:
+            j += 1
+            continue
+        if t in git_value_opts and j + 1 < len(tokens):
+            j += 2
+            continue
+        # bare boolean flag
+        j += 1
+    if j < len(tokens) and tokens[j] == 'grep':
+        tokens = tokens[j:]
+        first = tokens[0]
 if first in GREP_FAMILY:
     pattern, target = extract_grep_family(tokens, first)
     if not pattern:
-        emit(tool_name, 'other', '', '', cwd)
-        sys.exit(0)
+        _other()
     emit(tool_name, 'grep-family', pattern, target, cwd)
     sys.exit(0)
 
 if first == 'find':
     kind, pat, target = extract_find_name(tokens)
     if kind is None:
-        emit(tool_name, 'other', '', '', cwd)
-        sys.exit(0)
+        _other()
     emit(tool_name, kind, pat, target, cwd)
     sys.exit(0)
 
-emit(tool_name, 'other', '', '', cwd)
+_other()
 " 2>/dev/null)
 
 # Malformed JSON or parse failure → fail open
@@ -335,7 +407,7 @@ esac
 
 # Fail-open for anything other than a classified code-search kind
 case "$KIND" in
-    grep-family|find-name) ;;
+    grep-family|find-name|compound-search) ;;
     *) exit 0 ;;
 esac
 
@@ -456,6 +528,18 @@ if [ "$IS_IDENTIFIER" = true ]; then
 else
     FIRST_LINE="REPLACE WITH: mcp__codebase-memory-mcp__search_code(pattern=\"${PATTERN_FIELD}\"${_P})"
     SECOND_LINE="OR:           mcp__codebase-memory-mcp__search_graph(name_pattern=\"${PATTERN_FIELD}\"${_P})"
+fi
+
+# --- Compound payload: warn, do not block ---
+# Delivered as additionalContext JSON on stdout: on exit 0, stderr never reaches
+# the model, so a stderr warning would be a warning nobody reads.
+if [ "$KIND" = "compound-search" ]; then
+    _MSG="[ctx-execute-cmm-nudge] This payload searches source in a CMM-indexed repo. Allowed, but the graph is usually faster and exact:
+${FIRST_LINE}
+${SECOND_LINE}
+search_code covers every indexed text file (.md, .cgi and config included). grep remains right for files CMM does not index (binaries, extensionless Dockerfile-* variants, .txt, excluded dirs); use Glob to find files by name."
+    python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$_MSG" 2>/dev/null
+    exit 0
 fi
 
 # --- Block message (stderr, exit 2) ---
