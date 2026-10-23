@@ -106,6 +106,14 @@ if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PR
     exit 2
 fi
 
+# _advise <text>: deliver an advisory to the MODEL on an allowed call. PreToolUse
+# stderr on exit 0 is not shown to Claude; hookSpecificOutput.additionalContext
+# is. Emit at most once per invocation (stdout must be a single JSON object).
+_advise() {
+  python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$1" 2>/dev/null \
+    || printf '%s\n' "$1" >&2
+}
+
 # Check CMM sentinel
 if [ ! -f "$CMM_SENTINEL" ]; then
   # Fail-open-while-indexing (large-repo startup): cmm-session-start.sh writes
@@ -122,12 +130,19 @@ if [ ! -f "$CMM_SENTINEL" ]; then
   INDEXING_MARKER="/tmp/cmm-indexing-${PROJECT_HASH}"
   INDEXING_TTL_MIN=120
   if [ -f "$INDEXING_MARKER" ] && [ -n "$(find "$INDEXING_MARKER" -mmin "-${INDEXING_TTL_MIN}" 2>/dev/null)" ]; then
-    cat >&2 <<INDEXING
-CMM note: the index is still being built for this session — proceeding without it.
+    # Only "no action needed" while cmm-session-start.sh's background refresh is
+    # alive. If none is running (it failed, or no CLI was found), the model must
+    # refresh — the startup prompt told it not to when the refresh launched.
+    _IDX_PID="$(cat "/tmp/cmm-indexer-${PROJECT_HASH}.pid" 2>/dev/null)"
+    if [ -z "$_IDX_PID" ] || ! kill -0 "$_IDX_PID" 2>/dev/null; then
+      _advise "CMM note: the index is not ready and no background refresh is running — proceeding without it.
+Call mcp__codebase-memory-mcp__index_repository${PROJECT_ROOT:+(repo_path=\"$PROJECT_ROOT\")} now (incremental, fast when already indexed)."
+      exit 0
+    fi
+    _advise "CMM note: the index is still being built for this session — proceeding without it.
 Code-navigation tools may return partial or stale results until indexing finishes.
 Check progress with mcp__codebase-memory-mcp__index_status; the gate closes itself
-once the index is ready (no action needed).
-INDEXING
+once the index is ready (no action needed)."
     exit 0
   fi
   cat >&2 <<BLOCKED
@@ -150,10 +165,8 @@ fi
 # friction without improving correctness — index_status doesn't trigger a
 # reindex, only the watcher does.
 if grep -q '^stale$' "$CMM_SENTINEL"; then
-  cat >&2 <<WARN
-CMM note: index may lag recent commit. The server watcher will reindex automatically (5–60s).
-Call mcp__codebase-memory-mcp__index_repository now if you need graph data to be current immediately.
-WARN
+  _advise "CMM note: index may lag recent commit. The server watcher will reindex automatically (5–60s).
+Call mcp__codebase-memory-mcp__index_repository now if you need graph data to be current immediately."
 fi
 
 # --- Phase 3: Context Mode Gate (only if installed AND loadable) ---

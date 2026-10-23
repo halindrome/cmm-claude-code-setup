@@ -93,6 +93,13 @@ _OUT="$(cd "$FAKE_ROOT" && echo '{}' | env -u CLAUDE_AGENT_ID -u CLAUDE_PARENT_S
 T1=$(_now_ms)
 [ $((T1 - T0)) -lt 2500 ] && _pass "1g: hook output closed before the indexer finished ($((T1 - T0)) ms)" \
   || _fail "1g: capturing hook output waited $((T1 - T0)) ms — background job holds stdout/stderr"
+# Launched -> the model is not asked to index (a redundant call every session).
+case "$_OUT" in *"MANDATORY FIRST ACTION"*|*"call \`index_repository("*)
+  _fail "1i: prompt still asks the model to index while the hook is indexing" ;;
+  *) _pass "1i: no model-side index step when the background refresh launched" ;; esac
+for s in "Skill('cmm-rules')" "Skill('ctx-rules')"; do
+  case "$_OUT" in *"$s"*) _pass "1j: $s nudge kept" ;; *) _fail "1j: $s nudge missing" ;; esac
+done
 _wait_gone "$PIDFILE"
 
 # --- 2. A failed CLI run leaves the gate exactly as before ---
@@ -112,10 +119,12 @@ grep -qx ready "$SENTINEL" 2>/dev/null && [ -f "$FAKE_HOME/.local/bin/argv" ] \
   && _pass "2d: \$HOME/.local/bin fallback used when PATH has no binary" \
   || _fail "2d: fallback binary not used"
 rm -f "$SENTINEL" "$PIDFILE"
-run_start PATH="$BASE_PATH" HOME="$EMPTY_HOME"; RC=$?
+_OUT="$(cd "$FAKE_ROOT" && echo '{}' | env -u CLAUDE_AGENT_ID -u CLAUDE_PARENT_SESSION_ID PATH="$BASE_PATH" HOME="$EMPTY_HOME" bash "$HOOKS/cmm-session-start.sh" 2>&1)"; RC=$?
 [ "$RC" -eq 0 ] && [ ! -f "$PIDFILE" ] && [ ! -f "$SENTINEL" ] \
   && _pass "2e: no binary anywhere -> no launch, hook still exits 0" \
   || _fail "2e: no-binary case launched or failed (rc=$RC)"
+case "$_OUT" in *"MANDATORY FIRST ACTION"*) _pass "2f: no binary -> model is still told to index" ;;
+  *) _fail "2f: no binary and no index instruction" ;; esac
 
 # --- 3. Agent sessions never launch an indexer ---
 echo "--- 3: agent session does not launch ---"
