@@ -65,6 +65,31 @@ rm -f "/tmp/context-mode-ready-${PROJECT_HASH}"
 # orphaned marker.
 touch "/tmp/cmm-indexing-${PROJECT_HASH}"
 
+# --- Background index refresh ---
+# Refresh the index ourselves instead of asking the model to. The CMM CLI is a
+# one-shot command that serializes with the MCP server on per-project locks, and
+# an incremental refresh of an up-to-date index takes seconds. On success it
+# writes the ready sentinel (same as cmm-sentinel-writer.sh), which opens
+# session-gate.sh; on failure (stale daemon holding the version lock, etc.) it
+# leaves everything as it was and the MANDATORY FIRST ACTION prompt below is the
+# fallback. The PID file lets agent-cmm-gate.sh hold Agent spawns until it ends.
+# All three fds MUST be redirected: a background child holding the hook's
+# stdout/stderr makes Claude Code wait on, or refuse, the hook's output.
+# Main session only — parallel agent sessions must not each launch an indexer.
+_CMM_BIN="$(command -v codebase-memory-mcp 2>/dev/null)"
+[ -z "$_CMM_BIN" ] && [ -x "$HOME/.local/bin/codebase-memory-mcp" ] && _CMM_BIN="$HOME/.local/bin/codebase-memory-mcp"
+if [ -n "$_CMM_BIN" ] && [ -n "$PROJECT_ROOT" ] \
+   && [ -z "${CLAUDE_AGENT_ID:-}" ] && [ -z "${CLAUDE_PARENT_SESSION_ID:-}" ]; then
+  BIN="$_CMM_BIN" ROOT="$PROJECT_ROOT" H="$PROJECT_HASH" nohup bash -c '
+    if "$BIN" cli --quiet index_repository --repo-path "$ROOT" 2>/dev/null | grep -q "\"status\":\"indexed\""; then
+      echo "ready" > "/tmp/cmm-session-ready-$H"
+      rm -f "/tmp/cmm-indexing-$H"
+    fi
+    rm -f "/tmp/cmm-indexer-$H.pid"
+  ' </dev/null >/dev/null 2>&1 &
+  echo $! > "/tmp/cmm-indexer-${PROJECT_HASH}.pid"
+fi
+
 # --- Context Mode Bootstrap ---
 # If Context Mode is installed, write its sentinel at session start.
 # This eliminates the manual ctx_stats call that was previously required.

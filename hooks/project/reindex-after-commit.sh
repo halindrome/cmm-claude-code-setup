@@ -113,10 +113,22 @@ echo "stale" > "$CMM_SENTINEL"
 # --- Nudge CMM Watcher via touch_project ---
 # Resolve the project name from the superproject root path.
 # PROJECT_ROOT is already resolved to the outermost superproject root by the sentinel logic above.
-# CMM derives project names from the full absolute path: strip leading /, replace / with -.
-# e.g. /Users/ahby/Sources/my-project -> Users-ahby-Sources-my-project
-_CMM_PROJECT_NAME="${PROJECT_ROOT#/}"
-_CMM_PROJECT_NAME="${_CMM_PROJECT_NAME//\//-}"
+# CMM derives project names from the full absolute path, e.g.
+# /Users/ahby/Sources/my-project -> Users-ahby-Sources-my-project; cmm_project_name
+# (hooks/lib/cmm-registered.sh) mirrors its character mapping. The inline
+# separator swap is the fallback for pre-lib installs.
+_CMMREG_LIB=""
+for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+    [ -f "$_d/cmm-registered.sh" ] && { _CMMREG_LIB="$_d/cmm-registered.sh"; break; }
+done
+if [ -n "$_CMMREG_LIB" ]; then
+    # shellcheck disable=SC1090
+    source "$_CMMREG_LIB"
+    _CMM_PROJECT_NAME="$(cmm_project_name)"
+else
+    _CMM_PROJECT_NAME="${PROJECT_ROOT#/}"
+    _CMM_PROJECT_NAME="${_CMM_PROJECT_NAME//\//-}"
+fi
 
 # Capture output silently; touch_project is fire-and-forget.
 # Use the CLI interface (not MCP tool name) since this runs in a shell hook, not Claude's agent runtime.
