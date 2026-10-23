@@ -102,8 +102,8 @@ if [ -f "$_PREAMBLE" ]; then
     echo "Agents MUST use the codebase-memory-mcp (CMM) graph tools for code exploration"
     echo "instead of reading files directly. Paste the block below into your agent prompt."
     echo "NOTE: Workflow agent() prompts bypass this gate — paste it into every agent()"
-    echo "call and every .claude/agents/*.md agentType definition, since hooks do not"
-    echo "reach inside a running subagent."
+    echo "call and every .claude/agents/*.md agentType definition. Hooks still gate a"
+    echo "subagent's tool calls, but only the prompt sets its strategy."
     echo
     echo "--- Copy-paste the following into your agent prompt ---"
     # Extract only the region between the asset's copy markers (DRY).
