@@ -33,6 +33,7 @@ case "$TOOL" in
   Agent)        exit 0 ;;  # subagents run in their own session with their own gate
   ToolSearch)   exit 0 ;;  # schema fetch needed to escape the catch-22
   SendMessage)  exit 0 ;;  # inter-agent coordination; must never be gated
+  Skill)        exit 0 ;;  # loads instructions only (our hooks nudge Skill('cmm-rules') pre-index); tools it then calls are still gated
 esac
 
 # --- Phase 2: CMM/CTX/Read-only Bypass (before any git traversal) ---
@@ -112,7 +113,7 @@ if [ ! -f "$CMM_SENTINEL" ]; then
   # (and writes the ready sentinel) once index_repository/index_status completes.
   # While that marker is present AND fresh, the index is still being built for
   # this session — fail OPEN with an advisory instead of hard-blocking, so a slow
-  # first index of a large codebase does not freeze the session (Skill, Edit,
+  # first index of a large codebase does not freeze the session (Edit, Write,
   # WebFetch, etc. stay usable while a background index proceeds).
   #
   # Safety valve: a marker older than the TTL (e.g. a crashed prior session that
@@ -136,7 +137,7 @@ Run this to open the gate:
   mcp__codebase-memory-mcp__index_repository   (incremental — fast when already indexed)
 
 You can still use these tools without opening the gate:
-  mcp__codebase-memory-mcp__*  Bash, Read, Grep, Glob, ToolSearch, Agent, SendMessage
+  mcp__codebase-memory-mcp__*  Bash, Read, Grep, Glob, ToolSearch, Agent, SendMessage, Skill
 
 If the CMM server is unavailable, create the bypass sentinel in your terminal:
   touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
