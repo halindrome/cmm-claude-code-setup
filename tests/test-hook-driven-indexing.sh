@@ -40,6 +40,8 @@ _make_stub() {
   cat > "$1/codebase-memory-mcp" <<'STUB'
 #!/bin/bash
 printf '%s\n' "$@" > "$(dirname "$0")/argv"
+python3 -c 'import os,sys; sys.exit(not os.path.samestat(os.fstat(0), os.stat("/dev/null")))' \
+  && echo devnull > "$(dirname "$0")/stdin" || echo other > "$(dirname "$0")/stdin"
 sleep "${STUB_SLEEP:-1}"
 [ "${STUB_FAIL:-0}" = "1" ] && { echo '{"error":"version conflict"}'; exit 1; }
 echo '{"project":"x","status":"indexed"}'
@@ -76,6 +78,10 @@ case "$ARGV" in
   *"index_repository --repo-path $ROOT "*) _pass "1f: CLI called as index_repository --repo-path <root>" ;;
   *) _fail "1f: unexpected CLI argv: $ARGV" ;;
 esac
+# Outcome check only: a non-interactive bash already gives `cmd &` stdin from
+# /dev/null (POSIX async lists), so dropping the hook's `</dev/null` stays green.
+grep -qx devnull "$STUB_DIR/stdin" 2>/dev/null && _pass "1h: indexer stdin is /dev/null (not the hook's stdin)" \
+  || _fail "1h: indexer inherited a non-/dev/null stdin"
 
 # --- 1g. Detached: the background job must not hold the hook's stdout/stderr ---
 # Capturing the hook's output waits for EVERY writer of the pipe to exit. If the
@@ -162,6 +168,9 @@ for bad in grep '⚠' stale building; do
   printf '%s' "$CTX" | grep -qiF "$bad" && _fail "5c: injection contains '$bad'" || _pass "5c: injection free of '$bad'"
 done
 printf '%s' "$CTX" | grep -qF "ctx_execute" && _pass "5d: ctx line present when context-mode is installed" || _fail "5d: ctx line missing"
+for s in "Invoke Skill('cmm-rules')" "Invoke Skill('ctx-rules')"; do
+  printf '%s' "$CTX" | grep -qF "$s" && _pass "5f: emitted output has $s" || _fail "5f: emitted output lacks $s"
+done
 rm -f "$CTX_SENTINEL"
 CTX="$(cd "$FAKE_ROOT" && echo '{}' | bash "$HOOKS/subagent-cmm-startup.sh" | python3 -c 'import sys,json; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])')"
 printf '%s' "$CTX" | grep -qF "ctx_execute" && _fail "5e: ctx line present without context-mode" || _pass "5e: ctx line omitted without context-mode"
