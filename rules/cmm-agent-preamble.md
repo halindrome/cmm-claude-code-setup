@@ -42,7 +42,10 @@ The prompt is where strategy is set. Bake this in.
   (callees) or `"both"`. NOT `"callers"`/`"callees"` — those fail with `invalid direction`.
 - `get_architecture` — orient in an unfamiliar area (packages, hotspots, routes)
 - `query_graph` — Cypher graph queries (complexity metrics, cross-cutting patterns)
-- `search_code` — graph-augmented text search for string literals, error messages, TODOs
+- `search_code` — graph-augmented text search for string literals, error messages, TODOs, in any
+  indexed file (`.md`, `.cgi` and config included)
+- File by name → `Glob` (CMM sees indexed files only). Text in files CMM does not index
+  (binaries, extensionless `Dockerfile-*` variants, `.txt`, excluded dirs) → grep is fine.
 
 **Every one of those takes a REQUIRED `project=` argument.** Omit it and the call fails with
 `project is required` — it is not inferred from your working directory. The value is the repo's

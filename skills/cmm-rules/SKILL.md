@@ -16,7 +16,9 @@ Use codebase-memory-mcp tools as the primary method for code exploration.
 | Source of a specific symbol | `get_code_snippet` |
 | Who calls X / what does X call | `trace_path` |
 | Cross-service or graph-wide queries (Cypher) | `query_graph` |
-| Text search in code (string literals, error msgs, TODOs) | `search_code` |
+| Text search in code (string literals, error msgs, TODOs) — any indexed file, `.md`, `.cgi` and config included | `search_code` |
+| Find a file by name or path glob | `Glob` — complete; CMM's `File` nodes cover indexed files only |
+| Text in files CMM does not index (binaries, extensionless `Dockerfile-*` variants, `.txt`, excluded dirs) | `grep` / `ctx_execute` is fine |
 
 Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do not jump straight to reading files.
 
