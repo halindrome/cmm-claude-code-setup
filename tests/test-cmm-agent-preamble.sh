@@ -60,6 +60,12 @@ if printf '%s' "$OUT" | grep -qiF "bypass this gate" || printf '%s' "$OUT" | gre
 else
   fail "gate missing Workflow-bypass warning"
 fi
+# Measured 2026-09-03: hooks DO fire inside subagents; the message must not say otherwise.
+if printf '%s' "$OUT" | grep -qiF "reach inside"; then
+  fail "gate repeats disproven 'hooks do not reach inside a subagent' claim"
+else
+  pass "gate does not claim hooks miss subagents"
+fi
 
 echo "--- Gate inline fallback fires when the asset is absent ---"
 mkdir -p "$TMP/hooks-nofallback"
