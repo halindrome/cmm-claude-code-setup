@@ -89,6 +89,17 @@ else
     _fail "Test 5: SendMessage should exit 0 (got $EXIT_CODE)"
 fi
 
+# --- Test 5b: Skill -> exit 0 (Phase 1 bypass; hooks nudge Skill('cmm-rules') before indexing) ---
+echo "--- Test 5b: Skill -> exit 0 (Phase 1 bypass) ---"
+rm -f "$SENTINEL"
+EXIT_CODE=0
+echo '{"tool_name": "Skill"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
+if [ "$EXIT_CODE" -eq 0 ]; then
+    _pass "Test 5b: Skill exits 0 without sentinel"
+else
+    _fail "Test 5b: Skill should exit 0 (got $EXIT_CODE)"
+fi
+
 # --- Test 6: Context Mode tool (MCP-server form) -> exit 0 (Phase 2 bypass) ---
 echo "--- Test 6: Context Mode tool (MCP-server form) -> exit 0 (Phase 2 bypass) ---"
 rm -f "$SENTINEL"
