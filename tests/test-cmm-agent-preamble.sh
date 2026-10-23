@@ -80,7 +80,7 @@ echo '{"tool_name":"Agent","tool_input":{"subagent_type":"dev","prompt":"Use sea
 if [ "$rc" -eq 0 ]; then pass "CMM-referencing prompt allowed (exit 0)"; else fail "expected exit 0, got $rc"; fi
 
 echo "--- SubagentStart injection strengthened but preserves Skill activations ---"
-_has "startup: adds concrete CMM tool mandate"   "$STARTUP" "Prefer CMM graph tools"
+_has "startup: adds concrete CMM tool mandate"   "$STARTUP" "use it for all code navigation"
 _has "startup: adds ctx routing mandate"         "$STARTUP" "ctx_batch_execute"
 _has "startup: preserves cmm-rules Skill call"   "$STARTUP" "Invoke Skill('cmm-rules')"
 _has "startup: preserves ctx-rules Skill call"   "$STARTUP" "Invoke Skill('ctx-rules')"

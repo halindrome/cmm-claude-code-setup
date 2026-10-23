@@ -1,6 +1,7 @@
 #!/bin/bash
 # agent-cmm-gate.sh — PreToolUse:Agent hook (ensures agents use CMM tools)
 # BLOCKING: exits 2 if agent prompt lacks CMM keywords, 0 if present or exempt.
+# Also holds the spawn (up to 45 s) while the session-start background index runs.
 #
 # Install: cp hooks/project/agent-cmm-gate.sh .claude/hooks/ && chmod +x .claude/hooks/agent-cmm-gate.sh
 # Register in .claude/settings.json:
@@ -20,6 +21,24 @@ case "$SUBAGENT_TYPE" in
     exit 0
     ;;
 esac
+
+# --- Hold the spawn until the session-start index refresh finishes ---
+# cmm-session-start.sh refreshes the index in the background and records the
+# indexer's PID. While that process is alive, wait for it (silently — a wait the
+# model never sees teaches it nothing) so the subagent starts against a current
+# graph. Waits only on a live indexer: no PID file, or a dead PID, falls straight
+# through. The bound is a safety valve kept under the old 60 s hook default;
+# CMM_AGENT_GATE_WAIT_SECS overrides it (tests set 0).
+_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
+[ -f "$_LIB_DIR/project-root.sh" ] && source "$_LIB_DIR/project-root.sh"
+_PIDFILE="/tmp/cmm-indexer-${PROJECT_HASH}.pid"
+if [ -n "${PROJECT_HASH:-}" ] && [ -f "$_PIDFILE" ]; then
+  _PID="$(cat "$_PIDFILE" 2>/dev/null)"
+  _DEADLINE=$(( $(date +%s) + ${CMM_AGENT_GATE_WAIT_SECS:-45} ))
+  while [ -n "$_PID" ] && kill -0 "$_PID" 2>/dev/null && [ "$(date +%s)" -lt "$_DEADLINE" ]; do
+    sleep 0.5
+  done
+fi
 
 # --- Per-project pass-through allow-list ---
 # A project may exempt purpose-built agent types (e.g. a review panel's reviewer
