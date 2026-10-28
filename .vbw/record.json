@@ -1377,6 +1377,13 @@
       "sort": "next",
       "size": "medium",
       "status": "open"
+    },
+    {
+      "id": "T4",
+      "text": "Upstream VBW 2 proposal: make planning cheaper, esp. Lead test-writing (this milestone: ~45 min, 144 tool calls, 1 serial Opus Lead, 0 CMM). Ideas: parallel test-writer per phase, cheaper model for check files, smarter test rules (reuse existing patterns), CMM/context-mode once reachable. Pairs with T2/T3.",
+      "sort": "next",
+      "size": "medium",
+      "status": "open"
     }
   ],
   "decisions": [
