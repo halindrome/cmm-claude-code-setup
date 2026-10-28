@@ -331,7 +331,7 @@
       "id": "R4",
       "text": "No stack gate (session-gate, grep-cmm-gate, cmm-nudge, agent-cmm-gate) leaves a vbw:* agent without a permitted route",
       "proof": "auto",
-      "status": "failing",
+      "status": "proven",
       "milestone": "M1",
       "rules": [
         {
@@ -395,7 +395,7 @@
       "id": "R5",
       "text": "A VBW 2 agent can run CMM queries (search_graph, trace_path, get_code_snippet, search_code) within its tool allowlist and get results",
       "proof": "auto",
-      "status": "failing",
+      "status": "proven",
       "milestone": "M1",
       "rules": [
         {
@@ -464,7 +464,7 @@
       "id": "R6",
       "text": "All 7 VBW 2 agent types get CMM-first code-search guidance they can act on with their allowed tools",
       "proof": "auto",
-      "status": "failing",
+      "status": "proven",
       "milestone": "M1",
       "rules": [
         {
@@ -517,7 +517,7 @@
       "id": "R11",
       "text": "VBW 2 mapping scouts get codebase structure from CMM, and .vbw/map.md points later agents to the live CMM graph",
       "proof": "auto",
-      "status": "failing",
+      "status": "proven",
       "milestone": "M1",
       "rules": [
         {
@@ -1815,7 +1815,15 @@
       ]
     }
   ],
-  "fixes": [],
+  "fixes": [
+    {
+      "id": "F1",
+      "command": "test",
+      "attempts": 0,
+      "status": "open",
+      "note": "test fail"
+    }
+  ],
   "todos": [
     {
       "id": "T1",
@@ -1953,27 +1961,27 @@
     "autonomy_cap": 25
   },
   "evidence": {
-    "at": "2026-10-28T16:15:58Z",
-    "contract": "01e2ace6a7ea0790be82acb3902d8b574c85884d102e3ede42eac95536031a1b",
-    "tree": "da1c03136038be856d328d836e507d9965d79f2e",
-    "head": "da1c03136038be856d328d836e507d9965d79f2e",
+    "at": "2026-10-28T16:58:33Z",
+    "contract": "9515b163c3942e5e72e4c6eb851733173539d44b533be7d43f56586c00d64f38",
+    "tree": "dc63f28bb6a23a7a4f5a724a653df219967f7bf0",
+    "head": "dc63f28bb6a23a7a4f5a724a653df219967f7bf0",
     "checks": {
       "C1": {
         "status": "pass",
         "exit": 0,
-        "seconds": 12.1,
+        "seconds": 10.6,
         "tail": "PASS: 'vbw decide $(cat f)' -> block\nPASS: 'vbw decide `cat f`' -> block\nPASS: 'vbw show contract > f' -> block\nPASS: 'vbwx foo' (name-prefix lookalike) -> block\n--- missing, empty or malformed agent_type falls through to normal enforcement ---\nPASS: agent_type absent pytest -> block\nPASS: agent_type empty string pytest -> block\nPASS: agent_type null pytest -> block\nPASS: agent_type number pytest -> block\nPASS: agent_type object pytest -> block\nPASS: agent_type 'vbw' (no colon) pytest -> block\nPASS: agent_type 'vbwx:dev' pytest -> block\nPASS: agent_type null 'git status' -> normal exemption still applies\n--- each exemption is logged with its own reason ---\nPASS: vbw:* agent exemption logged as vbw-agent\nPASS: bare vbw CLI exemption logged as vbw-cli\n--- VBW 1 allowlist entries keep their behavior ---\nPASS: bash */.vbw-planning/* script -> allow\nPASS: /tmp/.vbw-plugin-root-link-* script -> allow\nResults: 31 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "1ee5e0277782b126621ad468438d33cf88125ceae12ec87a4acb3d5b9caf125c",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/project/ctx-execute-enforcer.sh changed"
       },
       "C2": {
         "status": "pass",
         "exit": 0,
-        "seconds": 8.3,
+        "seconds": 9.3,
         "tail": "PASS: no registry: highest by semver (2.1.18 > 2.1.9) via resolve_vbw_source\nPASS: no registry: highest by semver via resolve_vbw2\nPASS: registry active entry wins over a newer cache dir (resolve_vbw_source)\nPASS: registry active entry wins over a newer cache dir (resolve_vbw2)\n--- lib: VBW 1 unchanged, both, neither ---\nPASS: VBW 1 install -> marketplace|1.37.1 (unchanged)\nPASS: VBW 1 install -> resolve_vbw2 finds nothing\nPASS: both: active VBW 1 entry still resolves marketplace|1.37.1\nPASS: both: resolve_vbw2 reports 2.1.18\nPASS: neither -> absent\nPASS: neither -> resolve_vbw2 rc 1\n--- setup.sh reports what it detected ---\nPASS: VBW 2 only: setup names VBW 2 and 2.1.18\nPASS: VBW 2 only: not reported as VBW 1\nPASS: VBW 1 only: VBW 1 detection line as before\nPASS: VBW 1 only: no VBW 2 line\nPASS: both: VBW 1 and VBW 2 (2.1.18) reported\nPASS: several VBW 2 versions: setup reports 2.1.18 only\nPASS: neither: reported absent\nResults: 20 passed, 0 failed",
         "fp": "87c3870f0b59cf59e84beb2106a303c2e3c06f5f71f344e559a4ad2748dd6407",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "C3": {
@@ -1986,75 +1994,75 @@
         "reused": true
       },
       "C4": {
-        "status": "fail",
-        "exit": 1,
-        "seconds": 5.3,
-        "tail": "--- installed only when VBW 2 is detected ---\nPASS: VBW 2 detected -> .claude/hooks/cmm-query.sh installed\nPASS: wrapper's libs installed beside it\nFAIL: wrapper installed without VBW 2\n--- the wrapper's own command line passes the enforcer and payload guard ---\nPASS: wrapper names its index command: bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.Niqmsvb7St/v2/proj/.claude/hooks/cmm-query.sh index_repository\nPASS: enforcer is armed in the fixture (main-thread pytest blocked)\nFAIL: enforcer blocks (main thread): bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.Niqmsvb7St/v2/proj/.claude/hooks/cmm-query.sh index_repository\nPASS: enforcer allows (vbw:dev): bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.Niqmsvb7St/v2/proj/.claude/hooks/cmm-query.sh index_repository\nFAIL: enforcer blocks (main thread): bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.Niqmsvb7St/v2/proj/.claude/hooks/cmm-query.sh search_graph '{\"name_pattern\":\"resolve_vbw_source\"}'\nPASS: enforcer allows (vbw:dev): bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.Niqmsvb7St/v2/proj/.claude/hooks/cmm-query.sh search_graph '{\"name_pattern\":\"resolve_vbw_source\"}'\nPASS: compound wrapper call still blocked for the main thread\nPASS: redirected wrapper call still blocked for the main thread\nPASS: ctx-payload-guard allows the wrapper call inside ctx_execute\n--- uninstall removes it ---\nPASS: --uninstall removed .claude/hooks/cmm-query.sh\nResults: 10 passed, 3 failed",
+        "status": "pass",
+        "exit": 0,
+        "seconds": 5.5,
+        "tail": "--- installed only when VBW 2 is detected ---\nPASS: VBW 2 detected -> .claude/hooks/cmm-query.sh installed\nPASS: wrapper's libs installed beside it\nPASS: no VBW 2 -> wrapper not installed\n--- the wrapper's own command line passes the enforcer and payload guard ---\nPASS: wrapper names its index command: bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.VpgcBDrot4/v2/proj/.claude/hooks/cmm-query.sh index_repository\nPASS: enforcer is armed in the fixture (main-thread pytest blocked)\nPASS: enforcer allows (main thread): bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.VpgcBDrot4/v2/proj/.claude/hooks/cmm-query.sh index_repository\nPASS: enforcer allows (vbw:dev): bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.VpgcBDrot4/v2/proj/.claude/hooks/cmm-query.sh index_repository\nPASS: enforcer allows (main thread): bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.VpgcBDrot4/v2/proj/.claude/hooks/cmm-query.sh search_graph '{\"name_pattern\":\"resolve_vbw_source\"}'\nPASS: enforcer allows (vbw:dev): bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.VpgcBDrot4/v2/proj/.claude/hooks/cmm-query.sh search_graph '{\"name_pattern\":\"resolve_vbw_source\"}'\nPASS: compound wrapper call still blocked for the main thread\nPASS: redirected wrapper call still blocked for the main thread\nPASS: ctx-payload-guard allows the wrapper call inside ctx_execute\n--- uninstall removes it ---\nPASS: --uninstall removed .claude/hooks/cmm-query.sh\nResults: 13 passed, 0 failed",
         "fp": "1df4b256512ea698d6e5a164636b4e9c345007a3adfa6c9af69d8376ca4bf235",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "C5": {
-        "status": "fail",
-        "exit": 1,
+        "status": "pass",
+        "exit": 0,
         "seconds": 0.0,
-        "tail": "FAIL: CHECKSUMS.sha256 does not list hooks/project/cmm-query.sh",
+        "tail": "PASS: hooks/project/cmm-query.sh listed and verified in CHECKSUMS.sha256",
         "fp": "9043673716252363dbec704a789f7474dd4c0e84d61739a5e4f99ee243d6be90",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "C6": {
-        "status": "fail",
-        "exit": 1,
-        "seconds": 6.1,
-        "tail": "arch_code(pattern=\"helper\", project=\"private-var-folders-nc-81rj_zg51k175k6rrwr9zmg00000gn-T-tmp.3Q1dJEjF5j-repo\")\n  - Trace callers:  mcp__codebase-memory-mcp__trace_path\n  Grep is allowed for: non-code files (JSON, YAML, Markdown, config, env)\nSee skill `cmm-rules` for the full protocol.)\nFAIL: vbw:dev Bash 'grep -rn helper src/': blocked with no route a vbw:* agent can run (rc=2, err=BLOCKED: Use CMM tools instead of Bash navigation for code search.\n  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"helper\", project=\"private-var-folders-nc-81rj_zg51k175k6rrwr9zmg00000gn-T-tmp.3Q1dJEjF5j-repo\")\n  - Text search:    mcp__codebase-memory-mcp__search_code(pattern=\"helper\", project=\"private-var-folders-nc-81rj_zg51k175k6rrwr9zmg00000gn-T-tmp.3Q1dJEjF5j-repo\")\nSee skill `cmm-rules` for the full protocol.\n(If this target is NOT source code -- generated output, a build artifact, a\ndata file -- add '# cmm-exempt' to the command. Do not use it to grep source.))\nFAIL: cmm-grep-nudge blocks vbw:* with no CLI (rc=2)\nFAIL: cmm-grep-nudge blocks vbw:* with no wrapper (rc=2)\nPASS: cmm-grep-nudge main thread unchanged\n--- cmm-nudge: advisory for vbw:*, names the wrapper ---\nFAIL: vbw:dev 4th read nudge (rc=0, out={\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"additionalContext\": \"You've read 'app.py' 4 times this session. For repeated lookups, mcp__codebase-memory-mcp__get_code_snippet(qualified_name=...) or search_graph is usually cheaper than re-reading the whole file. (advisory \\u2014 this read is allowed)\"}})\nFAIL: vbw:dev without a wrapper is told to use MCP tools (rc=0, out={\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"additionalContext\": \"You've read 'app.py' 4 times this session. For repeated lookups, mcp__codebase-memory-mcp__get_code_snippet(qualified_name=...) or search_graph is usually cheaper than re-reading the whole file. (advisory \\u2014 this read is allowed)\"}})\nPASS: main-thread nudge unchanged\nResults: 8 passed, 12 failed",
+        "status": "pass",
+        "exit": 0,
+        "seconds": 6.7,
+        "tail": "PASS: non-code Grep allowed: {\"pattern\":\"x\",\"glob\":\"*.md\"}\nPASS: non-code Grep allowed: {\"pattern\":\"x\",\"type\":\"json\"}\nPASS: non-code Grep allowed: {\"pattern\":\"x\",\"path\":\"/private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.zgmh2I9XtM/repo/.vbw\"}\nPASS: CMM CLI missing -> fail open for vbw:*\nPASS: wrapper not installed -> fail open for vbw:*\nPASS: repo unindexed -> fail open for vbw:*\n--- grep-cmm-gate: main thread unchanged ---\nPASS: main-thread code Grep still blocked with the MCP call\nPASS: main thread does not fail open on a missing CLI (it has the MCP server)\n--- cmm-grep-nudge: vbw:* either allowed or given the wrapper ---\nPASS: vbw:dev Grep glob *.py: blocked with a runnable wrapper command\nPASS: vbw:dev Bash 'grep -rn helper src/': blocked with a runnable wrapper command\nPASS: cmm-grep-nudge: CMM CLI missing -> fail open for vbw:*\nPASS: cmm-grep-nudge: no wrapper installed -> fail open for vbw:*\nPASS: cmm-grep-nudge main thread unchanged\n--- cmm-nudge: advisory for vbw:*, names the wrapper ---\nPASS: vbw:dev 4th read: exit 0, nudge names the wrapper, no mcp__\nPASS: vbw:dev without a wrapper: exit 0, no MCP tool names\nPASS: main-thread nudge unchanged\nResults: 20 passed, 0 failed",
         "fp": "fab16e8e5e64fc41e937b078014ebe218ee237031345c0021fc522b4420a90c9",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "C7": {
-        "status": "fail",
-        "exit": 1,
-        "seconds": 1.5,
-        "tail": "--- session-gate, CMM index not refreshed ---\nFAIL: vbw:dev blocked with MCP-only instructions it cannot follow (rc=2, err=BLOCKED: CMM index not refreshed for this session.\nRun this to open the gate:\n  mcp__codebase-memory-mcp__index_repository   (incremental — fast when already indexed)\nYou can still use these tools without opening the gate:\n  mcp__codebase-memory-mcp__*  Bash, Read, Grep, Glob, ToolSearch, Agent, SendMessage, Skill\nIf the CMM server is unavailable, create the bypass sentinel in your terminal:\n  touch \"/tmp/cmm-session-ready-85ebfdf66e393a10ee715a1da2f7c602\")\nFAIL: vbw:dev with no wrapper installed is blocked with no route (rc=2)\nPASS: main thread still blocked with the MCP index call\nPASS: non-VBW agent still blocked\n--- session-gate, Context Mode installed but not initialized ---\nFAIL: vbw:dev held for the Context Mode sentinel (rc=2)\nPASS: main thread still held for Context Mode\n--- agent-cmm-gate ---\nFAIL: Agent spawn of vbw:dev blocked for missing CMM keywords (rc=2)\nFAIL: Agent spawn of vbw:scout blocked (rc=2)\nPASS: non-VBW Agent spawn still gated\nFAIL: rules/cmm-rules.md does not document workflow-spawned vbw:* agents and agent-cmm-gate\nResults: 4 passed, 6 failed",
+        "status": "pass",
+        "exit": 0,
+        "seconds": 1.7,
+        "tail": "--- session-gate, CMM index not refreshed ---\nPASS: vbw:dev block names 'bash /private/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.1Uq8JEbMGu/repo/.claude/hooks/cmm-query.sh index_repository '{}''; running it lifts the block\nPASS: vbw:dev with no wrapper installed is not held at the gate\nPASS: main thread still blocked with the MCP index call\nPASS: non-VBW agent still blocked\n--- session-gate, Context Mode installed but not initialized ---\nPASS: vbw:dev not held for a Context Mode sentinel it cannot create\nPASS: main thread still held for Context Mode\n--- agent-cmm-gate ---\nPASS: Agent spawn of vbw:dev not blocked for missing CMM keywords\nPASS: Agent spawn of vbw:scout not blocked\nPASS: non-VBW Agent spawn still gated\nPASS: rules/cmm-rules.md documents that workflow-spawned vbw:* agents bypass agent-cmm-gate\nResults: 10 passed, 0 failed",
         "fp": "95353fd25a7856929ade6c80acd4e249ec75950db2d99f61d016115b8e720663",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "C8": {
-        "status": "fail",
-        "exit": 1,
-        "seconds": 1.3,
-        "tail": "FAIL: vbw:qa: names a tool it does not have (mcp__/ctx_*/Skill)\nFAIL: vbw:qa: does not say when Grep/Read still fit\nFAIL: vbw:scout: missing wrapper command lines for: search_graph trace_path get_code_snippet search_code\nPASS: vbw:scout: names project private-var-folders-nc-81rj_zg51k175k6rrwr9zmg00000gn-T-tmp.HDXTw0taWi-repo\nFAIL: vbw:scout: names a tool it does not have (mcp__/ctx_*/Skill)\nFAIL: vbw:scout: does not say when Grep/Read still fit\nFAIL: vbw:debugger: missing wrapper command lines for: search_graph trace_path get_code_snippet search_code\nPASS: vbw:debugger: names project private-var-folders-nc-81rj_zg51k175k6rrwr9zmg00000gn-T-tmp.HDXTw0taWi-repo\nFAIL: vbw:debugger: names a tool it does not have (mcp__/ctx_*/Skill)\nFAIL: vbw:debugger: does not say when Grep/Read still fit\nFAIL: vbw:docs: missing wrapper command lines for: search_graph trace_path get_code_snippet search_code\nPASS: vbw:docs: names project private-var-folders-nc-81rj_zg51k175k6rrwr9zmg00000gn-T-tmp.HDXTw0taWi-repo\nFAIL: vbw:docs: names a tool it does not have (mcp__/ctx_*/Skill)\nFAIL: vbw:docs: does not say when Grep/Read still fit\n--- R6: never a command that would fail ---\nPASS: CMM CLI missing: no wrapper query lines, no MCP calls\nPASS: unindexed repo: says how to index (or omits CMM advice), no failing command\n--- R6: non-VBW agents keep their guidance ---\nPASS: general-purpose guidance unchanged\nResults: 10 passed, 21 failed",
+        "status": "pass",
+        "exit": 0,
+        "seconds": 1.4,
+        "tail": "PASS: vbw:qa: no mcp__, ctx_* or Skill( calls\nPASS: vbw:qa: says when Grep/Read still fit (non-code, configs)\nPASS: vbw:scout: wrapper command lines for all four query tools\nPASS: vbw:scout: names project private-var-folders-nc-81rj_zg51k175k6rrwr9zmg00000gn-T-tmp.kcccuxaxm9-repo\nPASS: vbw:scout: no mcp__, ctx_* or Skill( calls\nPASS: vbw:scout: says when Grep/Read still fit (non-code, configs)\nPASS: vbw:debugger: wrapper command lines for all four query tools\nPASS: vbw:debugger: names project private-var-folders-nc-81rj_zg51k175k6rrwr9zmg00000gn-T-tmp.kcccuxaxm9-repo\nPASS: vbw:debugger: no mcp__, ctx_* or Skill( calls\nPASS: vbw:debugger: says when Grep/Read still fit (non-code, configs)\nPASS: vbw:docs: wrapper command lines for all four query tools\nPASS: vbw:docs: names project private-var-folders-nc-81rj_zg51k175k6rrwr9zmg00000gn-T-tmp.kcccuxaxm9-repo\nPASS: vbw:docs: no mcp__, ctx_* or Skill( calls\nPASS: vbw:docs: says when Grep/Read still fit (non-code, configs)\n--- R6: never a command that would fail ---\nPASS: CMM CLI missing: no wrapper query lines, no MCP calls\nPASS: unindexed repo: says how to index (or omits CMM advice), no failing command\n--- R6: non-VBW agents keep their guidance ---\nPASS: general-purpose guidance unchanged\nResults: 31 passed, 0 failed",
         "fp": "2cd8a31bfe6bfa1e6f8e916d78ebe75d0c0dfe38fc170c47dc9bddbfd907a730",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "C9": {
-        "status": "fail",
-        "exit": 1,
-        "seconds": 0.5,
-        "tail": "--- R11: scouts take structure from the graph and point the map at it ---\nFAIL: vbw:scout: no get_architecture/search_graph wrapper commands\nFAIL: vbw:scout: not told to take structure from the graph before reading files\nFAIL: vbw:scout: no instruction to name the CMM project and wrapper in the map (Structure / Stack and commands)\nResults: 0 passed, 3 failed",
+        "status": "pass",
+        "exit": 0,
+        "seconds": 0.4,
+        "tail": "--- R11: scouts take structure from the graph and point the map at it ---\nPASS: vbw:scout: get_architecture and search_graph wrapper commands\nPASS: vbw:scout: structure from the graph before reading files\nPASS: vbw:scout: told to put the CMM project and wrapper command in a map section\nResults: 3 passed, 0 failed",
         "fp": "bde2e911ad94875014f06944bba37d4245da6524a6b07eeec19e3a368b2fe0e4",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "C10": {
-        "status": "fail",
-        "exit": 1,
+        "status": "pass",
+        "exit": 0,
         "seconds": 0.1,
-        "tail": "FAIL: .vbw/map.md has no map section naming CMM project Users-ahby-Sources-ccs-vbw2 and cmm-query.sh\nFAIL: wf_29ced0bd-b86 scout stack: no wrapper CMM call\nFAIL: wf_29ced0bd-b86 scout structure: no wrapper CMM call\nFAIL: wf_29ced0bd-b86 scout conventions: no wrapper CMM call\nFAIL: wf_29ced0bd-b86 scout tests: no wrapper CMM call\nFAIL: wf_29ced0bd-b86 scout risks: no wrapper CMM call",
+        "tail": "PASS: .vbw/map.md section 'stack and commands' names CMM project Users-ahby-Sources-ccs-vbw2 and the wrapper\nPASS: wf_13a51508-11e scout structure: 4 wrapper CMM call(s)",
         "fp": "38441f05df3478afa9c6747c1842a60b2d9b19ed7ce7a2cd498aced25b3de74e",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "C11": {
         "status": "pass",
         "exit": 0,
-        "seconds": 4.8,
+        "seconds": 5.4,
         "tail": "--- VBW 2-only install: no VBW 1 overrides ---\nPASS: setup: no .claude/agents/vbw-*.md\nPASS: setup: no VBW 1 deltas in .claude/agents-delta\nPASS: setup: generator not registered\nPASS: generator under VBW 2: exit 0, no overrides, no warnings\n--- VBW 1 install: unchanged ---\nPASS: setup: VBW 1 deltas installed\nPASS: generator under VBW 1: 7 overrides from the VBW 1 bodies\nResults: 6 passed, 0 failed",
         "fp": "10bbaff60ca8e6296d9e7660050d5c7744853ca280d227617113a46d9c12e646",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "C12": {
@@ -2069,10 +2077,10 @@
       "C13": {
         "status": "pass",
         "exit": 0,
-        "seconds": 16.1,
-        "tail": "PASS: -Users-ahby-Sources-ccs-vbw2 wf_19466953-f29 vbw:lead CMM=9 Read=0 Grep=0 Glob=0 Bash=88 delete_project=1 index_repository=2 list_projects=1 search_graph=3 tests=2\nPASS: -Users-ahby-Sources-ccs-vbw2 wf_5198314f-2ad vbw:architect CMM=2 Read=0 Grep=0 Glob=0 Bash=23 list_projects=2\nPASS: -Users-ahby-Sources-ccs-vbw2 wf_52d5dc06-0e7 vbw:dev CMM=3 Read=3 Grep=0 Glob=0 Bash=47 wrapper=3",
+        "seconds": 16.8,
+        "tail": "PASS: -Users-ahby-Sources-ccs-vbw2 wf_13a51508-11e vbw:scout CMM=2 Read=0 Grep=0 Glob=0 Bash=22 get_architecture=1 search_graph=1\nPASS: -Users-ahby-Sources-ccs-vbw2 wf_19466953-f29 vbw:lead CMM=9 Read=0 Grep=0 Glob=0 Bash=88 delete_project=1 index_repository=2 list_projects=1 search_graph=3 tests=2\nPASS: -Users-ahby-Sources-ccs-vbw2 wf_40e3b95a-2c9 vbw:dev CMM=1 Read=0 Grep=0 Glob=0 Bash=9 hash=1\nPASS: -Users-ahby-Sources-ccs-vbw2 wf_4302fe14-a6f vbw:dev CMM=9 Read=4 Grep=0 Glob=0 Bash=69 call=1 get_code_snippet=1 hooks=2 index_repository=1 only=1 wrapper=3\nPASS: -Users-ahby-Sources-ccs-vbw2 wf_5198314f-2ad vbw:architect CMM=2 Read=0 Grep=0 Glob=0 Bash=23 list_projects=2\nPASS: -Users-ahby-Sources-ccs-vbw2 wf_52d5dc06-0e7 vbw:dev CMM=3 Read=3 Grep=0 Glob=0 Bash=47 wrapper=3",
         "fp": "34d2f1a6672191e65260c5bc95d703a6afa09a99a02ed692ea876316b54f9b84",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       }
     },
@@ -2080,30 +2088,30 @@
       "test": {
         "status": "fail",
         "exit": null,
-        "seconds": 240.1,
-        "tail": "tests/test-phase-49-agent-sync.sh fail\ntests/test-phase-62-mcp-grants.sh fail\ntests/test-phase-63-rule-refresh.sh fail\ntests/test-phase-66-install-scope.sh fail",
+        "seconds": 236.4,
+        "tail": "tests/test-agent-gate-blocking.sh fail\ntests/test-cmm-agent-passthrough.sh fail\ntests/test-phase-66-install-scope.sh fail",
         "command": "bash {file} (one test file per run)",
         "of_files": true
       }
     },
     "test_files": {
       "tests/test-agent-gate-blocking.sh": {
-        "status": "pass",
-        "exit": 0,
-        "seconds": 1.6,
-        "tail": "PASS: Test 5: index_repository allowed\n--- Test 6: get_architecture keyword -> allowed (exit 0) ---\nPASS: Test 6: get_architecture allowed\n--- Test 7: detect_changes keyword -> allowed (exit 0) ---\nPASS: Test 7: detect_changes allowed\n--- Test 8: Explore with code signals but no CMM keywords -> blocked (exit 2) ---\nPASS: Test 8: Explore blocked without CMM keywords\n--- Test 9: Plan with code signals but no CMM keywords -> blocked (exit 2) ---\nPASS: Test 9: Plan blocked without CMM keywords\n--- Test 10: Explore with CMM keywords -> allowed (exit 0) ---\nPASS: Test 10: Explore with get_architecture allowed\n--- Test 11: Plan with CMM keywords -> allowed (exit 0) ---\nPASS: Test 11: Plan with trace_path allowed\n--- Test 12: VBW agent type NO LONGER built-in exempt -> blocked (exit 2) ---\nPASS: Test 12: vbw:vbw-dev no longer exempt (blocked)\n--- Test 13: claude-code-guide still exempt (exit 0) ---\nPASS: Test 13: claude-code-guide exempt\n--- Test 14: cmm-exempt marker -> allowed regardless (exit 0) ---\nPASS: Test 14: cmm-exempt marker bypasses gate\nResults: 14 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
+        "status": "fail",
+        "exit": 1,
+        "seconds": 1.4,
+        "tail": "PASS: Test 5: index_repository allowed\n--- Test 6: get_architecture keyword -> allowed (exit 0) ---\nPASS: Test 6: get_architecture allowed\n--- Test 7: detect_changes keyword -> allowed (exit 0) ---\nPASS: Test 7: detect_changes allowed\n--- Test 8: Explore with code signals but no CMM keywords -> blocked (exit 2) ---\nPASS: Test 8: Explore blocked without CMM keywords\n--- Test 9: Plan with code signals but no CMM keywords -> blocked (exit 2) ---\nPASS: Test 9: Plan blocked without CMM keywords\n--- Test 10: Explore with CMM keywords -> allowed (exit 0) ---\nPASS: Test 10: Explore with get_architecture allowed\n--- Test 11: Plan with CMM keywords -> allowed (exit 0) ---\nPASS: Test 11: Plan with trace_path allowed\n--- Test 12: VBW agent type NO LONGER built-in exempt -> blocked (exit 2) ---\nFAIL: Test 12: vbw:vbw-dev no longer exempt (blocked) (expected exit 2, got 0)\n--- Test 13: claude-code-guide still exempt (exit 0) ---\nPASS: Test 13: claude-code-guide exempt\n--- Test 14: cmm-exempt marker -> allowed regardless (exit 0) ---\nPASS: Test 14: cmm-exempt marker bypasses gate\nResults: 13 passed, 1 failed",
         "fp": "dad7cd283e523e1d6d417ce68209df636669223cf288142ea7c2d3df84fc1309",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/project/agent-cmm-gate.sh changed"
       },
       "tests/test-agent-hook-enforcement.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 14.6,
+        "seconds": 14.2,
         "tail": "  PASS: vbw-architect: registers cmm-orient-nudge.sh\n  PASS: vbw-architect: no ctx-search-nudge references\n  PASS: vbw-architect: no ctx-annotate-nudge references\n  PASS: vbw-lead: registers cmm-orient-nudge.sh\n  PASS: vbw-lead: no ctx-search-nudge references\n  PASS: vbw-lead: no ctx-annotate-nudge references\n  PASS: vbw-docs: registers cmm-orient-nudge.sh\n  PASS: vbw-docs: no ctx-search-nudge references\n  PASS: vbw-docs: no ctx-annotate-nudge references\n=== Phase 52: agent body content assertions ===\n  PASS: vbw-qa: write-verification.sh keyword present (count=1, need >=1)\n  PASS: vbw-dev: '## Context Mode Web Fetch' heading preserved (count=1)\n=== Phase 56: cmm-rules.md upstream-behavior contract keywords ===\n  PASS: cmm-rules: search_graph 200-row cap keyword present (count=1, need >=1)\n  PASS: cmm-rules: paging guidance (offset / query_graph) present (count=4, need >=2)\n  PASS: cmm-rules: search_code multi-word regex note present (count=1, need >=1)\n  PASS: cmm-rules: list_projects /tmp visibility note present (count=1, need >=1)\n═══════════════════════════════════════\nResults: 107 passed, 0 failed\n═══════════════════════════════════════",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "31b0998cdc72f3905d6d7f94818ea36c50e4750c5d2c3f7650aee82abff6dc06",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/global/cmm-nudge.sh changed"
       },
       "tests/test-agent-hook-overrides.sh": {
         "status": "pass",
@@ -2133,49 +2141,49 @@
         "reused": true
       },
       "tests/test-cmm-agent-passthrough.sh": {
-        "status": "pass",
-        "exit": 0,
-        "seconds": 1.4,
-        "tail": "--- No config present: normal gating (blocked) ---\nPASS: no config: mr-qa-reviewer blocked\nPASS: no config: vbw:vbw-dev blocked (vbw:* no longer built-in exempt)\n--- Config with literal + glob + comments ---\nPASS: literal match: mr-qa-reviewer exempt (exit 0)\nPASS: literal match (indented+comment): mr-qa-manager exempt\nPASS: glob match: my-review-lens exempt via my-review-*\nPASS: glob match: vbw:vbw-dev exempt via vbw:*\nPASS: not listed: dev still blocked\nPASS: not listed: mr-qa-reviewerX (no glob) blocked\n--- Exempted type still allowed even though prompt has no CMM keywords, but keyword prompt is allowed too ---\nPASS: listed type + CMM keyword prompt still exit 0\n--- Comment-only / blank config never exempts ---\nPASS: comment-only config: mr-qa-reviewer blocked\n--- Built-in exemptions still work (claude-code-guide) regardless of config ---\nPASS: built-in claude-code-guide exempt\nResults: 11 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
+        "status": "fail",
+        "exit": 1,
+        "seconds": 1.2,
+        "tail": "--- No config present: normal gating (blocked) ---\nPASS: no config: mr-qa-reviewer blocked\nFAIL: no config: vbw:vbw-dev blocked (vbw:* no longer built-in exempt) (expected exit 2, got 0)\n--- Config with literal + glob + comments ---\nPASS: literal match: mr-qa-reviewer exempt (exit 0)\nPASS: literal match (indented+comment): mr-qa-manager exempt\nPASS: glob match: my-review-lens exempt via my-review-*\nPASS: glob match: vbw:vbw-dev exempt via vbw:*\nPASS: not listed: dev still blocked\nPASS: not listed: mr-qa-reviewerX (no glob) blocked\n--- Exempted type still allowed even though prompt has no CMM keywords, but keyword prompt is allowed too ---\nPASS: listed type + CMM keyword prompt still exit 0\n--- Comment-only / blank config never exempts ---\nPASS: comment-only config: mr-qa-reviewer blocked\n--- Built-in exemptions still work (claude-code-guide) regardless of config ---\nPASS: built-in claude-code-guide exempt\nResults: 10 passed, 1 failed",
         "fp": "28487762dc5ae417e5037c9301893316393c430b55fd5a1b5e65a3afaf288039",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/project/agent-cmm-gate.sh changed"
       },
       "tests/test-cmm-agent-preamble.sh": {
         "status": "pass",
         "exit": 0,
         "seconds": 0.5,
         "tail": "PASS: startup: adds ctx routing mandate\nPASS: startup: preserves cmm-rules Skill call\nPASS: startup: preserves ctx-rules Skill call\n--- Docs explain the real limitation and point at the asset ---\nPASS: cmm-rules: states hooks do fire in subagents\nPASS: cmm-rules: scopes bypass to the spawn gate\nPASS: cmm-rules: justifies preamble on adoption\nPASS: cmm-rules: points at preamble asset\nPASS: ctx-rules: states hooks do fire in subagents\nPASS: ctx-rules: points at preamble asset\nPASS: preamble: states hooks do reach the agent\nPASS: cmm-rules: stale #34692 claim removed\nPASS: ctx-rules: stale #34692 claim removed\nPASS: preamble: stale #34692 claim removed\nPASS: README: references preamble asset\nPASS: README: notes Workflow bypass\nPASS: CONTRIBUTING: stale #34692 claim removed\nPASS: CONTRIBUTING: states PreToolUse does fire in subagents\nPASS: CONTRIBUTING: scopes the bypass to the spawn gate\nResults: 38 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "b8a7718895c4b24ec8204ba38aab9312472203f0ae1d6f7da73860d3e6136813",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/project/agent-cmm-gate.sh changed"
       },
       "tests/test-cmm-coverage-advisory.sh": {
         "status": "pass",
         "exit": 0,
         "seconds": 0.4,
         "tail": "=== CMM coverage advisory ===\n--- undeclared extension is reported ---\n  [PASS] names the undeclared extension\n  [PASS] reports how many files\n  [PASS] names the setting to add\n  [PASS] says the config is missing entirely\n--- declaring it silences the advisory ---\n  [PASS] silent once the extension is declared\n--- a config that declares something else still reports .cgi ---\n  [PASS] reports .cgi when the config omits it\n  [PASS] uses the has-config wording\n--- ordinary repos stay silent ---\n  [PASS] no advisory for known extensions\n--- noise control ---\n  [PASS] single stray file does not warn\n  [PASS] skips node_modules\n--- never fails the install ---\n  [PASS] missing directory returns cleanly\n  [PASS] malformed config returns cleanly\nResults: 12 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "0941b05bb7884b2ec3d78536842aed9a4be5f001a7b067246fe03976e379075d",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "setup.sh changed"
       },
       "tests/test-cmm-grep-nudge.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 10.2,
+        "seconds": 11.8,
         "tail": "PASS: c21: Perl line correctly absent\n--- Test c22: .cgi not blocked before it is declared ---\nPASS: c22: undeclared .cgi allowed\n--- Test c23: .cgi blocked once declared in extra_extensions ---\nPASS: c23: declared .cgi blocked without clearing the cache\n--- Test c24: echo labels must not hijack the extracted term ---\nPASS: c24: bare grep keeps its own term\nPASS: c24: echo label BEFORE the grep does not win\nPASS: c24: echo labels on both sides\nPASS: c24: grep keeps its pipe sink in the same segment\nPASS: c24: leading git -C branch does not claim the segment\nPASS: c24: git grep IS a search verb\nPASS: c24: git branch + status compound not blocked\n--- Test c25: dangling nav verb after the here-doc cut ---\nPASS: c25: here-doc commit message not blocked as navigation\nPASS: c25: cat inside $() WITH a path still blocked\nPASS: c25: bare input redirect still blocked (F-01)\nPASS: c25: plain cat of a source path still blocked\nPASS: c25: grep with its own term still blocked\nResults: 58 passed, 0 failed",
         "fp": "6e3e3039b07510392de93af32f35ac9dc119a908568a6b14426bbe9bdb565ecf",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-cmm-nudge-blocking.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 6.4,
+        "seconds": 6.8,
         "tail": "PASS: Test 12: large .ts allowed\n--- Test 13: top-level file_path fallback allowed ---\nPASS: Test 13: top-level file_path allowed\n--- Test 14: offset+limit >100 allowed ---\nPASS: Test 14: large offset+limit allowed\n--- Test 15: offset-only allowed ---\nPASS: Test 15: offset-only allowed\n--- Test 16: limit-only allowed ---\nPASS: Test 16: limit-only allowed\n--- Test 17: nudge cadence is '4 5 6 7 8 16 32' ---\nPASS: Test 17: cadence = [4 5 6 7 8 16 32]\n--- Test 18: reads 1..3 (under budget) never nudge ---\nPASS: Test 18: reads 1-3 silent\n--- Test 19: a read between cadence points (9, 17) is silent ---\nPASS: Test 19: reads 9 and 17 silent\n--- Test 20: budget is per-session (fresh session -> silent) ---\nPASS: Test 20: fresh session first read silent\n--- Test 21: '# cmm-exempt' never nudges even when repeated ---\nPASS: Test 21: cmm-exempt never nudges\nResults: 21 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "edc6dd933404e0011b90d92210b30efde9b1b1e67601600d648390acdd0a68a9",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/global/cmm-nudge.sh changed"
       },
       "tests/test-cmm-orient-nudge.sh": {
         "status": "pass",
@@ -2183,17 +2191,17 @@
         "seconds": 0.9,
         "tail": "--- Test 1: first search_graph call emits envelope ---\nPASS: Test 1: envelope emitted with three tool names\n--- Test 2: second call same session exits silent ---\nPASS: Test 2: second call silent\n--- Test 3: different session_id emits again ---\nPASS: Test 3: different session emits\n--- Test 4: non-search_graph tool_name silent ---\nPASS: Test 4: non-matching tool silent\n--- Test 5: session_id missing emits (one-shot per invocation) ---\nPASS: Test 5: missing session_id emits\n--- Test 6: cmm-exempt bypass silent ---\nPASS: Test 6: cmm-exempt silent\n--- Test 7: malformed JSON silent ---\nPASS: Test 7: malformed JSON silent\n--- Test 8: envelope parses via json.loads and names three tools ---\nPASS: Test 8: envelope parses and names all three tools\nResults: 8 passed, 0 failed",
         "fp": "d0f58c048c43b5e0b6212a3aae60adb3b19407890b4724c07c2903a942756256",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-cmm-registered-lib.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 0.6,
+        "seconds": 0.5,
         "tail": "PASS: legacy layout, nothing registered -> not registered\nPASS: legacy ~/.claude/settings.json -> registered\nPASS: legacy ~/.claude/.claude.json -> registered\n--- malformed input must not crash or fail closed ---\nPASS: unparseable settings.json -> not registered, no crash\nPASS: mcpServers of wrong type -> not registered\nPASS: empty repo_root argument -> not registered, no crash\n--- no hook hand-rolls its own cascade any more ---\nPASS: index-root-gate.sh sources the shared lib\nPASS: index-root-gate.sh has no substring probe left\nPASS: ctx-execute-cmm-nudge.sh sources the shared lib\nPASS: ctx-execute-cmm-nudge.sh has no substring probe left\nPASS: grep-cmm-gate.sh sources the shared lib\nPASS: grep-cmm-gate.sh has no substring probe left\nPASS: cmm-grep-nudge.sh sources the shared lib\nPASS: cmm-grep-nudge.sh has no substring probe left\nPASS: cmm-nudge.sh sources the shared lib\nPASS: cmm-nudge.sh has no substring probe left\nPASS: cmm-grep-nudge.sh routes BOTH cascades through the helper\nResults: 24 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "7db4785684e25570dea5618e62b07b6512255e3f9c098f097d78022e186c8ce1",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/global/cmm-grep-nudge.sh changed"
       },
       "tests/test-context-mode-detect.sh": {
         "status": "pass",
@@ -2209,9 +2217,9 @@
         "exit": 0,
         "seconds": 4.6,
         "tail": "  PASS: CTX segment correctly suppressed when ctx_total=false\n=== Test 9: Config cmm_details=false suppresses CMM details ===\n  PASS: CMM total shows (CMM:20)\n  PASS: CMM details correctly suppressed when cmm_details=false\n=== Test 10: No config file -- defaults show all components ===\n  PASS: Default: CMM total present (CMM:30)\n  PASS: Default: CMM details present\n  PASS: Default: CTX total present (CTX:12)\n  PASS: Default: CTX details present\n=== Test 11: Empty stdin -- hook exits 0, no crash ===\n  PASS: Hook exits 0 with empty stdin\n=== Test 12: Invalid JSON in cache -- hook recovers gracefully ===\n  PASS: Hook exits 0 with invalid JSON in cache\n  PASS: Cache recovered from invalid JSON (total_calls=1)\n=== Test 13: Read-only cache directory -- hook exits 0 (never blocks) ===\n  PASS: Hook exits 0 with read-only cache directory\n=== Summary ===\nPassed: 27\nFailed: 0\nAll tests passed.",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "759b1e64e0f92e07c73b81d893646f629f9927a2b8238f805374c5865becbdf6",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "setup.sh changed"
       },
       "tests/test-ctx-execute-cmm-nudge.sh": {
         "status": "pass",
@@ -2219,25 +2227,25 @@
         "seconds": 12.6,
         "tail": "PASS: git grep uses pattern after unwrap\nPASS: git log stays allowed\nPASS: grep foo /tmp/nonexistent-xyz/ fails open\nPASS: git -c foo=bar grep blocks\nPASS: git -c ... grep uses pattern\nPASS: git -C path grep blocks\nPASS: git --no-pager grep blocks\nPASS: git --git-dir=... grep blocks\nPASS: git -c foo=bar log still allowed\n--- Registration gap: all three ctx tools must gate a source search ---\nPASS: ctx_execute gates a source grep\nPASS: ctx_execute_file gates a source grep\nPASS: ctx_batch_execute gates a source grep (THE hole)\nPASS: legacy-form ctx_batch_execute gates too\nPASS: grep buried mid-batch still caught\nPASS: batch with no code search passes\nPASS: cmm-exempt honoured inside a batch\nPASS: non-code dir in a batch still passes\nPASS: non-indexed repo still fails open on batch\nResults: 75 passed, 0 failed",
         "fp": "1d2f4a0b064c297599c5f0a6536dceea79b0df1378e624ae17e5ece82ec286f1",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-ctx-execute-enforcer.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 27.8,
+        "seconds": 30.3,
         "tail": "--- Missing sentinel tests (expect exit 0, deadlock prevention) ---\nPASS: missing sentinel allows npm test\n--- Sentinel liveness tests (expect exit 0, dead-server fail-open) ---\nPASS: unconfirmed 'ready' sentinel allows npm test\nPASS: empty sentinel allows npm test\nPASS: stale 'live' sentinel allows npm test\nPASS: fresh 'live' sentinel still blocks npm test\n--- Context Mode not installed test (expect exit 0) ---\nPASS: no CM install allows npm test\n--- Fail-open tests (empty/malformed JSON, expect exit 0) ---\nPASS: empty JSON fail-open\nPASS: malformed JSON fail-open\n--- Suggested ctx_execute replacement strips output truncation ---\nPASS: suggested replacement strips the truncating pipe\nPASS: suggested replacement names the stripped command concretely\nPASS: suggested replacement offers intent=\nPASS: file write is preserved in the suggestion (not silently dropped)\nPASS: suggestion still strips the truncating pipe\nPASS: non-truncating compound is echoed unchanged\nResults: 137 passed, 0 failed",
         "fp": "4975861537d157c7323a786143b0b3be621e7acfe40c4babb741509ab592a3a6",
-        "at": "2026-10-28T16:15:58Z",
-        "why": "last result failed"
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/project/ctx-execute-enforcer.sh changed"
       },
       "tests/test-ctx-payload-guard.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 16.2,
+        "seconds": 15.8,
         "tail": "--- no escape hatch ---\n  [PASS] '# ctx-truncate-ok' no longer bypasses\n  [PASS] '# ctx-truncate-ok' no longer bypasses a redirect\n  [PASS] '# ctx-truncate-ok' no longer bypasses inside a batch\n  [PASS] '# ctx-exempt' does NOT bypass this guard\n  [PASS] apostrophe in an earlier comment does not hide a truncation\n  [PASS] tee then tail the copy is allowed\n  [PASS] tail block names the tee-then-tail spelling\n  [PASS] head block does not carry the tail hint\n--- block message names the concrete replacement ---\n  [PASS] message echoes the stripped command\n  [PASS] REPLACE WITH line is free of the truncation\n  [PASS] message offers intent=\n  [PASS] message does NOT advertise a bypass\n  [PASS] redirect message does NOT advertise the bypass\n  [PASS] message names the tool form used\n  [PASS] legacy form echoed, not hardcoded plugin form\n  [PASS] redirect message offers tee\n  [PASS] redirect message says stderr is fine\nResults: 94 passed, 0 failed",
         "fp": "87ad5d45cca0bfa3b09c29b18e316862d8d6bf5586816dd928d896760fa11d20",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-ctx-shell-compat.sh": {
@@ -2261,46 +2269,46 @@
       "tests/test-global-allowlist.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 6.2,
+        "seconds": 6.1,
         "tail": "PASS: delete_project excluded\nPASS: ctx_purge excluded (plugin form)\nPASS: ctx_upgrade excluded (legacy form)\nPASS: ctx_doctor included (plugin form)\nPASS: ctx_insight included (legacy form)\nPASS: global settings.json valid JSON\n--- Test 2: --global --skip-context-mode omits context-mode tools ---\nPASS: 13 CMM tools present\nPASS: 0 context-mode entries\n--- Test 3: --all writes global and skips project allowlist ---\nPASS: global allowlist written (13 CMM)\nPASS: project allowlist skipped\nPASS: output notes global coverage\n--- Test 4: --project (no global) writes project allowlist ---\nPASS: project settings created\nPASS: 13 CMM tools in project\nPASS: 18 context-mode entries in project\n--- Test 5: global allowlist satisfies project preflight (no false 'not allowlisted') ---\nPASS: preflight recognizes global allowlist\nResults: 18 passed, 0 failed",
         "fp": "5338257f4d75fa62f3c18962a90ac0c2017e577ca68dd04cb006e90eaf06ab0e",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-grep-cmm-gate.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 7.2,
+        "seconds": 7.1,
         "tail": "PASS: dot metachar order\n--- 20: malformed JSON → fail-open (exit 0) ---\nPASS: malformed JSON no-op\n--- 21: empty stdin → fail-open (exit 0) ---\nPASS: empty stdin fail-open\n--- 22: code-extension glob=*.ts blocked ---\nPASS: Grep glob=*.ts blocked\n--- 23: brace-expansion glob *.{ts,tsx} blocked ---\nPASS: brace glob blocked\n--- 24: large code file (>=50 lines) blocked by path-only ---\nPASS: large code file blocked\n--- 25: path-only on non-code file (README.md) allowed (QA M4) ---\nPASS: Grep path=README.md (no type/glob) allowed\nPASS: Grep path=config.yml (no type/glob) allowed\n--- 26: path-only non-code extension allowed case-insensitively (QA n3) ---\nPASS: Grep path=README.MD allowed (uppercase)\nPASS: Grep path=Config.YAML allowed (mixed case)\nPASS: Grep ALLOWED when config only mentions/denies cmm (no registration)\nPASS: Grep blocked when CMM registered in config .claude.json\nResults: 33 passed, 0 failed",
         "fp": "1e46df4991df644bbec5f33dfbed15891e25870c88dcbdc505f16a17308958a0",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-hook-block-counter.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 3.0,
+        "seconds": 2.8,
         "tail": "  PASS: read_blocks accumulated to 2\n  PASS: bash_blocks accumulated to 1\n=== Test 4: Project isolation -- different repos get different cache files ===\n  PASS: Repo A and B have distinct hashes\n  PASS: Repo A: read_blocks=1, bash_blocks=0 (isolated)\n  PASS: Repo B: read_blocks=0, bash_blocks=1 (isolated)\n=== Test 5: Statusline displays Blk: when block counts exist ===\n  PASS: Statusline output contains 'Blk:R12/B8'\n  PASS: Statusline output contains 'CMM:47'\n=== Test 6: Statusline suppresses Blk: when counts are zero ===\n  PASS: Statusline correctly suppresses 'Blk:' when counts are zero\n=== Test 7: track-hook-blocks.sh always exits 0 (error resilience) ===\n  PASS: exits 0 with no arguments\n  PASS: exits 0 with invalid JSON in cache\n  PASS: cache recovered from invalid JSON (read_blocks=1)\n  PASS: exits 0 with read-only cache directory\n=== Summary ===\nPassed: 22\nFailed: 0\nAll tests passed.",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "3e19fa4055f1a54c85a9ef756ba4afa981e45ae533d6668dae116b031ae8c7f3",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "setup.sh changed"
       },
       "tests/test-hook-driven-indexing.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 12.2,
+        "seconds": 12.3,
         "tail": "PASS: 4e: dead PID does not wait\n--- 5: subagent injection is guidance only ---\nPASS: 5a: resolved project= filled in\nPASS: 5b: repo_path filled in\nPASS: 5c: injection free of 'grep'\nPASS: 5c: injection free of '⚠'\nPASS: 5c: injection free of 'stale'\nPASS: 5c: injection free of 'building'\nPASS: 5d: ctx line present when context-mode is installed\nPASS: 5f: emitted output has Invoke Skill('cmm-rules')\nPASS: 5f: emitted output has Invoke Skill('ctx-rules')\nPASS: 5e: ctx line omitted without context-mode\n--- 6: cmm_project_name normalises like CMM ---\nPASS: 6: space -> '-'\nPASS: 6: '@' and '+' -> '-'\nPASS: 6: runs of '-' and '.' collapsed\nPASS: 6: non-ASCII bytes hex-encoded\nPASS: 6: trailing '-' trimmed\nPASS: 6: symlinked root resolved before naming\nResults: 41 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "23e80e734d4bad11a42ba1e8d0fa3afe88f00191eb9d08010960849e91f3aaec",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/project/agent-cmm-gate.sh changed"
       },
       "tests/test-hooks-use-shared-lib.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 0.5,
+        "seconds": 0.4,
         "tail": "  PASS: reindex-after-commit.sh retains inline traversal (not yet migrated)\n  PASS: track-hook-blocks.sh retains inline traversal (not yet migrated)\n  PASS: cmm-nudge.sh not present (may have been restructured by Plan 02/03)\n  PASS: agent-cmm-gate.sh may have been migrated by Plan 02/03\n=== Test 5: Shared lib sets expected variables ===\n  PASS: PROJECT_ROOT is set (/Users/ahby/Sources/ccs-vbw2)\n  PASS: PROJECT_HASH is set\n  PASS: CMM_SENTINEL is set\n  PASS: CONTEXT_MODE_SENTINEL is set\n  PASS: _PROJECT_ROOT_LOADED guard is set\n=== Test 6: Migrated hooks use PROJECT_ROOT and PROJECT_HASH ===\n  PASS: track-cmm-calls.sh uses PROJECT_ROOT and PROJECT_HASH\n  PASS: track-ctx-calls.sh uses PROJECT_ROOT and PROJECT_HASH\n  PASS: cmm-sentinel-writer.sh uses PROJECT_ROOT and PROJECT_HASH\n  PASS: context-mode-sentinel-writer.sh uses PROJECT_ROOT and PROJECT_HASH\n  PASS: cmm-query-stale-advisory.sh uses PROJECT_ROOT and PROJECT_HASH\n  PASS: subagent-cmm-startup.sh uses PROJECT_ROOT and PROJECT_HASH\n  PASS: cmm-session-start.sh uses PROJECT_ROOT and PROJECT_HASH\n  PASS: ctx-execute-enforcer.sh uses PROJECT_ROOT and PROJECT_HASH\nResults: 51 passed, 0 failed",
         "fp": "05ec935bc422833840b1f9a575970762b83aeee911fd7a65b8a017025bc87803",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-index-root-gate.sh": {
@@ -2315,28 +2323,28 @@
       "tests/test-measure-scripts.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 0.5,
+        "seconds": 0.4,
         "tail": "  [PASS] ASSERT_SELFTEST exists\n  [PASS] selftest actually exercises the weak detectors\n  [PASS] selftest actually exercises the assert detector\n--- scripts are read-only over the transcript corpus ---\n  [PASS] analyze-antipatterns.py performs no writes\n  [PASS] analyze-enforcement.py performs no writes\n--- every emitting hook has a STACK_FP fingerprint ---\n  [PASS] all emitting hooks are fingerprinted\n--- --model filters tool calls by assistant message.model ---\n  [PASS] enforcement --model model-a counts its own block\n  [PASS] enforcement --model model-b excludes model-a's block\n  [PASS] enforcement --model keeps session-level (hook-*) emissions\n  [PASS] enforcement lists every model seen (section 9)\n  [PASS] antipatterns --model model-a sees its STRONG Bash payload\n  [PASS] antipatterns --model model-b excludes model-a's payload\n--- make measure target exists ---\n  [PASS] Makefile defines a measure target\n  [PASS] Makefile exposes DAYS override\n  [PASS] Makefile exposes MODEL override\nResults: 27 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "1281e7f9caa97b9eb78d45e743f2e2dd922de061dba0673a05f7454cbe1ffda2",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/global/cmm-grep-nudge.sh changed"
       },
       "tests/test-per-project-call-count.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 0.6,
-        "tail": "=== TEST 1: Source grep — per-project patterns in source files ===\nPASS: track-cmm-calls.sh contains '_call-counts-'\nPASS: track-cmm-calls.sh contains 'PROJECT_HASH'\nPASS: setup.sh contains '_call-counts-'\nPASS: setup.sh contains 'PROJECT_HASH'\n=== TEST 2: Functional isolation — two projects use independent counter files ===\nPASS: REPO_A counter file exists at _call-counts-48227c4df7747f02ea950de86902b7be.json\nPASS: REPO_B counter file exists at _call-counts-4de0eb5fabb4906b1cb5c92a94c97ca4.json\nPASS: REPO_A and REPO_B counters are independent (A=11 B=21)\nPASS: REPO_A and REPO_B have distinct hashes\n=== TEST 3: Statusline reads correct per-project counter file ===\nINFO: /Users/ahby/Sources/ccs-vbw2/.vbw/runtime/proof.40728.sz8zON/tree/.claude/hooks/statusline-cmm.sh not found — skipping statusline read test\n=== Summary ===\nPassed: 8\nFailed: 0\nAll tests passed.",
-        "at": "2026-10-28T16:12:59Z",
+        "seconds": 0.5,
+        "tail": "=== TEST 1: Source grep — per-project patterns in source files ===\nPASS: track-cmm-calls.sh contains '_call-counts-'\nPASS: track-cmm-calls.sh contains 'PROJECT_HASH'\nPASS: setup.sh contains '_call-counts-'\nPASS: setup.sh contains 'PROJECT_HASH'\n=== TEST 2: Functional isolation — two projects use independent counter files ===\nPASS: REPO_A counter file exists at _call-counts-625bcbfe3c5ac6ddec3fe745dc6006af.json\nPASS: REPO_B counter file exists at _call-counts-7ea408bb33cca8a841acea5bfb0c8601.json\nPASS: REPO_A and REPO_B counters are independent (A=11 B=21)\nPASS: REPO_A and REPO_B have distinct hashes\n=== TEST 3: Statusline reads correct per-project counter file ===\nINFO: /Users/ahby/Sources/ccs-vbw2/.vbw/runtime/proof.64953.mxT7Ic/tree/.claude/hooks/statusline-cmm.sh not found — skipping statusline read test\n=== Summary ===\nPassed: 8\nFailed: 0\nAll tests passed.",
         "fp": "d791a9b50308e68c8481c8fa890e0ea3d19a8f3ae1a73d9c2fa3eb62e08f1437",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "setup.sh changed"
       },
       "tests/test-phase-45-bundle-install.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 3.3,
+        "seconds": 3.2,
         "tail": "PASS: subagent-ctx-startup.sh installed\nPASS: subagent-ctx-startup.sh is executable\nPASS: ctx-rules.md installed\nPASS: ctx-search-nudge.sh NOT installed (retired in phase 47)\nPASS: subagent-ctx-startup registered under SubagentStart\nPASS: ctx-search-nudge matcher NOT registered (retired in phase 47)\nPASS: settings.json byte-identical after second run (idempotent)\nPASS: .claude/hooks/subagent-ctx-startup.sh matches source\nResults: 8 passed, 0 failed",
         "fp": "920905171a180bbe32f4ab25aba66927dd8b904653310725d36b506cec68dd25",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-phase-46-bundle-install.sh": {
@@ -2345,16 +2353,16 @@
         "seconds": 3.4,
         "tail": "PASS: grep-cmm-gate.sh installed\nPASS: grep-cmm-gate.sh is executable\nPASS: ctx-execute-cmm-nudge.sh installed\nPASS: ctx-execute-cmm-nudge.sh is executable\nPASS: ctx-execute-enforcer.sh installed\nPASS: ctx-execute-enforcer.sh contains CMM-search suffix\nPASS: settings.json is valid JSON\nPASS: grep-cmm-gate registered under PreToolUse with matcher Grep\nPASS: ctx-execute-cmm-nudge registered under PreToolUse for plugin form AND legacy form\nPASS: cmm-grep-nudge.sh still registered (coexists with grep-cmm-gate)\nPASS: no duplicate grep-cmm-gate entries\nPASS: no duplicate ctx-execute-cmm-nudge entries\nPASS: settings.json byte-identical after second run (idempotent)\nPASS: .claude/hooks/grep-cmm-gate.sh matches source\nPASS: .claude/hooks/ctx-execute-cmm-nudge.sh matches source\nResults: 15 passed, 0 failed",
         "fp": "3ee116b788234ca8efad5e4c3ec9466058e2de1c408c7a9ed0346f893ca3e264",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-phase-47-bundle-install.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 8.7,
+        "seconds": 8.4,
         "tail": "PASS: cmm-orient-nudge.sh installed\nPASS: cmm-orient-nudge.sh is executable\nPASS: ctx-search-nudge.sh NOT installed (retired)\nPASS: ctx-annotate-nudge.sh NOT installed (retired — duplicated ctx-rules.md guidance)\nPASS: settings.json is valid JSON\nPASS: ctx-annotate-nudge NOT registered in settings.json (retired)\nPASS: cmm-orient-nudge registered under PostToolUse with search_graph matcher\nPASS: ctx-search-nudge NOT registered in settings.json\nPASS: no duplicate cmm-orient-nudge entries\nPASS: ctx-search-nudge.sh purged after re-install\nPASS: ctx-search-nudge settings entry pruned after re-install\nPASS: ctx-annotate-nudge.sh purged after re-install\nPASS: ctx-annotate-nudge settings entry pruned after re-install\nPASS: settings.json byte-identical after second run (idempotent)\nPASS: .claude/hooks/cmm-orient-nudge.sh matches source\nPASS: context-mode registered in .mcp.json with @latest pin\nPASS: context-mode pre-pin entry auto-upgraded to @latest\nPASS: context-mode user-customized entry left untouched\nResults: 18 passed, 0 failed",
         "fp": "c26eb60ca5ba1a78296d11385f4ef200cb045a27fd2c0c925541667f19c908dc",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-phase-48-statusline-reprompt.sh": {
@@ -2363,88 +2371,88 @@
         "seconds": 3.4,
         "tail": "test [y/N] PASS: Enter preserves current=false\ntest [Y/n] PASS: Enter preserves current=true\ntest [y/N] PASS: y flips false->true\ntest [Y/n] PASS: n flips true->false\ntest [y/N] PASS: Y flips false->true (uppercase)\ntest [Y/n] PASS: N flips true->false (uppercase)\ntest [y/N] PASS: unrecognized input keeps current=false\ntest [Y/n] PASS: unrecognized input keeps current=true\nPASS: --yes preserves cmm_total=false in cache\nPASS: --yes preserves ctx_details=false in cache\nPASS: --reconfigure + --yes preserves cmm_total=false\nPASS: --reconfigure + --yes preserves ctx_details=false\nPASS: post-fix writer and reader hash match (F1 resolved)\nPASS: pre-fix writer (md5 of pwd -P in subdir) != reader hash — F1 was load-bearing\nResults: 14 passed, 0 failed",
         "fp": "ed1581d5027c4ade0a168faafac5032a48df9a74b552026c5cf50917216f8e41",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-phase-49-agent-sync.sh": {
-        "status": "fail",
-        "exit": 1,
-        "seconds": 0.3,
-        "tail": "PASS: write-verification.sh in vbw-qa.md description field\nPASS: Tool blocks heading in vbw-dev.md\nPASS: Context Mode Web Fetch in vbw-dev.md\nPASS: CMM EXTENSION in vbw-debugger.md\nPASS: hooks: frontmatter in vbw-dev.md\nPASS: MAINTENANCE override comment in vbw-dev.md\nPASS: hooks: frontmatter in vbw-scout.md\nPASS: MAINTENANCE override comment in vbw-scout.md\nPASS: hooks: frontmatter in vbw-lead.md\nPASS: MAINTENANCE override comment in vbw-lead.md\nPASS: hooks: frontmatter in vbw-qa.md\nPASS: MAINTENANCE override comment in vbw-qa.md\nPASS: hooks: frontmatter in vbw-debugger.md\nPASS: MAINTENANCE override comment in vbw-debugger.md\nPASS: hooks: frontmatter in vbw-docs.md\nPASS: MAINTENANCE override comment in vbw-docs.md\nPASS: vbw-qa.md frontmatter has no tools: allowlist\nFAIL: CHECKSUMS.sha256 verification failed\nPASS: At least 7 agents/vbw-*.md entries verify OK in CHECKSUMS.sha256 (got 7)\nResults: 30 passed, 1 failed",
+        "status": "pass",
+        "exit": 0,
+        "seconds": 0.2,
+        "tail": "PASS: write-verification.sh in vbw-qa.md description field\nPASS: Tool blocks heading in vbw-dev.md\nPASS: Context Mode Web Fetch in vbw-dev.md\nPASS: CMM EXTENSION in vbw-debugger.md\nPASS: hooks: frontmatter in vbw-dev.md\nPASS: MAINTENANCE override comment in vbw-dev.md\nPASS: hooks: frontmatter in vbw-scout.md\nPASS: MAINTENANCE override comment in vbw-scout.md\nPASS: hooks: frontmatter in vbw-lead.md\nPASS: MAINTENANCE override comment in vbw-lead.md\nPASS: hooks: frontmatter in vbw-qa.md\nPASS: MAINTENANCE override comment in vbw-qa.md\nPASS: hooks: frontmatter in vbw-debugger.md\nPASS: MAINTENANCE override comment in vbw-debugger.md\nPASS: hooks: frontmatter in vbw-docs.md\nPASS: MAINTENANCE override comment in vbw-docs.md\nPASS: vbw-qa.md frontmatter has no tools: allowlist\nPASS: shasum -a 256 -c CHECKSUMS.sha256 exits 0\nPASS: At least 7 agents/vbw-*.md entries verify OK in CHECKSUMS.sha256 (got 7)\nResults: 31 passed, 0 failed",
         "fp": "00120481b1774f42a45883f8c8dcc446fba86df67b606938f37638f71562d51a",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "tests/test-phase-51-integration.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 5.1,
-        "tail": "============================================================\nPhase 51 integration tests\n============================================================\nPASS: case 1 - PostToolUse dispatcher invocation (fallback: exit 0, no-crash; expected DB at /Users/ahby/.claude/context-mode/sessions/2da6d7fd47ab1fc7.db not materialized — upstream may use alternate path without CLAUDE_PROJECT_DIR)\nPASS: case 2 - PreToolUse dispatcher cache-redirect (fallback: exit 0, no-crash; stdout is valid JSON for both repeat and fresh — synthesized payload did not trigger a block decision, consistent with dispatcher running without a live CC transcript)\nPASS: case 3 - matcher ordering (runtime) (primary: runtime log observed across Bash/Read/Grep; our hooks precede upstream)\nPASS: case 4 - deprecated-wrapper cleanup (upgrade path) (wrappers removed; settings entries pruned; 5 upstream entries present; user-custom hook preserved)\n============================================================\nSummary: 4 pass / 0 fail / 0 skip\nPASS: phase 51 integration tests\n============================================================",
+        "seconds": 4.6,
+        "tail": "============================================================\nPhase 51 integration tests\n============================================================\nPASS: case 1 - PostToolUse dispatcher invocation (fallback: exit 0, no-crash; expected DB at /Users/ahby/.claude/context-mode/sessions/38d1087355a0252e.db not materialized — upstream may use alternate path without CLAUDE_PROJECT_DIR)\nPASS: case 2 - PreToolUse dispatcher cache-redirect (fallback: exit 0, no-crash; stdout is valid JSON for both repeat and fresh — synthesized payload did not trigger a block decision, consistent with dispatcher running without a live CC transcript)\nPASS: case 3 - matcher ordering (runtime) (primary: runtime log observed across Bash/Read/Grep; our hooks precede upstream)\nPASS: case 4 - deprecated-wrapper cleanup (upgrade path) (wrappers removed; settings entries pruned; 5 upstream entries present; user-custom hook preserved)\n============================================================\nSummary: 4 pass / 0 fail / 0 skip\nPASS: phase 51 integration tests\n============================================================",
         "fp": "74a648157a4f3fd24dddb3ec6fda741a4cffe244b7ecb61a81fabe712bbdb951",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-phase-51-upstream-hooks.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 6.4,
+        "seconds": 6.1,
         "tail": "PASS: case 1 - registration - UserPromptSubmit registered with dispatcher command\nPASS: case 1 - registration - PostToolUse matcher is exact broad matcher string\nPASS: case 1 - registration - PreToolUse matcher is exact canonical 1.0.122 string (plugin form first, MCP-server form second)\nPASS: case 1 - registration - PreToolUse matcher includes plugin-form ctx_execute\nPASS: case 1 - registration - PreToolUse matcher retains legacy MCP-server-form ctx_execute\nPASS: case 1 - registration - PreToolUse plugin-form matcher precedes MCP-server-form matcher\nPASS: case 2 - idempotency - settings.json byte-identical across two runs\nPASS: case 2 - idempotency - exactly 5 upstream entries after double-install\nPASS: case 3 - skip-context-mode - no upstream entries written with --skip-context-mode\nPASS: case 3 - skip-context-mode - session-gate.sh still registered under --skip-context-mode\nPASS: case 4 - matcher ordering - our PreToolUse hooks appear before upstream context-mode entry\nPASS: case 5 - deprecated wrapper cleanup - context-mode-event-logger.sh removed from .claude/hooks/\nPASS: case 5 - deprecated wrapper cleanup - context-mode-pre-compact.sh removed from .claude/hooks/\nPASS: case 5 - deprecated wrapper cleanup - context-mode-event-logger.sh entries pruned from settings.json\nPASS: case 5 - deprecated wrapper cleanup - context-mode-pre-compact.sh entries pruned from settings.json\nPASS: case 5 - deprecated wrapper cleanup - five upstream hooks registered after clean upgrade\n============================================================\nSummary: 20 pass / 0 fail\nPASS: phase 51 upstream hooks registration\n============================================================",
         "fp": "565612507db83ccbac320d543263ea880c80aaa38011cf946e900973be4699dc",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-phase-52-bundle-install.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 3.7,
+        "seconds": 3.5,
         "tail": "PASS: agent-override-generate.sh installed at .claude/hooks/\nPASS: agent-override-generate.sh registered in settings.json (SessionStart)\nPASS: .claude/agents/ directory created by setup.sh\nPASS: vbw-source.sh installed at .claude/hooks/lib/\nPASS: Idempotent: agent-override-generate.sh hash unchanged on re-run\nPASS: Idempotent: settings.json hash unchanged on re-run\nPASS: After re-run: agent-override-generate.sh still registered in settings.json\nResults: 7 passed, 0 failed",
         "fp": "5365c0a0fb18954819b5797ce9e602d53bdbb22340cae04189d2489df11695ab",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-phase-56-cmm-sync.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 4.0,
+        "seconds": 3.7,
         "tail": "PASS: cmm-rules.md contains search_code multi-word regex note (Plan 56-01)\nPASS: cmm-rules.md contains list_projects /tmp visibility note (Plan 56-01)\nPASS: vbw-scout.md delta source contains list_projects /tmp annotation (Plan 56-04)\nPASS: vbw-dev.md delta source contains list_projects /tmp annotation (Plan 56-04)\nPASS: vbw-debugger.md delta source contains list_projects /tmp annotation (Plan 56-04)\nPASS: vbw-scout.md delta source has cmm-orient-nudge.sh hook wiring\nPASS: vbw-scout.md delta source has cmm-query-stale-advisory.sh hook wiring\nPASS: vbw-scout.md delta source has track-cmm-calls.sh hook wiring\nPASS: vbw-dev.md delta source has cmm-orient-nudge.sh hook wiring\nPASS: vbw-dev.md delta source has cmm-query-stale-advisory.sh hook wiring\nPASS: vbw-dev.md delta source has track-cmm-calls.sh hook wiring\nPASS: vbw-debugger.md delta source has cmm-orient-nudge.sh hook wiring\nPASS: vbw-debugger.md delta source has cmm-query-stale-advisory.sh hook wiring\nPASS: vbw-debugger.md delta source has track-cmm-calls.sh hook wiring\nPASS: Idempotent: cmm-rules.md hash unchanged on --force re-run\nPASS: Idempotent: settings.json hash unchanged on --force re-run\nPASS: Idempotent: agent-override-generate.sh hash unchanged on --force re-run\nPASS: After re-run: cmm-rules.md still contains 200-row cap note\nPASS: After re-run: agent-override-generate.sh still registered in settings.json\nResults: 23 passed, 0 failed",
         "fp": "4554137a060c4fc25ce4729278f82125cc63d9b7126733d01cb4158c9ad947dd",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-phase-57-mcp-capture.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 2.1,
+        "seconds": 2.0,
         "tail": "PASS: case 1 - plugin-form detection + canonical PreToolUse matcher - upstream PreToolUse matcher is canonical 1.0.122 (plugin form first, MCP-server form second)\nPASS: case 1 - plugin-form detection + canonical PreToolUse matcher - upstream PostToolUse matcher includes wildcard mcp__ token (#329 fix baseline)\nPASS: case 2 - project-hook plugin-form awareness - track-ctx-calls.sh references plugin-form prefix (2 occurrence(s))\nPASS: case 2 - project-hook plugin-form awareness - ctx-execute-enforcer.sh references plugin-form prefix (3 occurrence(s))\nPASS: case 2 - project-hook plugin-form awareness - ctx-execute-cmm-nudge.sh references plugin-form prefix (8 occurrence(s))\nPASS: case 3 - plugin-form tool_name hook invocation - track-ctx-calls.sh exits 0 under plugin-form PostToolUse payload\nPASS: case 3 - plugin-form tool_name hook invocation - ctx-execute-enforcer.sh fell through (exit 0) under plugin-form payload\nPASS: case 3 - plugin-form tool_name hook invocation - ctx-execute-cmm-nudge.sh exits 0 under safe plugin-form payload (fail-open path)\nPASS: case 4 - migration helper Y branch (R2 fix coverage) - INSTALL_CONTEXT_MODE flipped to false after successful removal (F-01)\nPASS: case 4 - migration helper Y branch (R2 fix coverage) - context-mode entry removed from .mcp.json\nPASS: case 4 - migration helper Y branch (R2 fix coverage) - codebase-memory-mcp entry preserved during migration\nPASS: case 4 - migration helper Y branch (R2 fix coverage) - no leftover .mcp.json.tmp after migration (atomic os.replace, F-02)\nPASS: case 4 - migration helper Y branch (R2 fix coverage) - migration sentinel written\n============================================================\nSummary: 13 pass / 0 fail\nPASS: phase 57 plugin-form mcp__ capture regression coverage\n============================================================",
         "fp": "4e47248ffc28bf3057dded91cc1679aae4bc6f18fc42f65ca3878c4187ff06f3",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-phase-59-cmm-install-scope.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 4.5,
+        "seconds": 5.1,
         "tail": "cp.json - stdout contains '[ok] Registered codebase-memory-mcp'\nPASS: case 2 - no global CMM: write codebase-memory-mcp to .mcp.json - .mcp.json contains codebase-memory-mcp after no-global install\nPASS: case 3 - --force-local-cmm overrides global skip - stdout contains '--force-local-cmm' info message\nPASS: case 3 - --force-local-cmm overrides global skip - .mcp.json contains codebase-memory-mcp when --force-local-cmm used\nPASS: case 4 - dry-run with global CMM: 'Would skip CMM' not 'Would merge CMM' - stdout contains 'Would skip CMM'\nPASS: case 4 - dry-run with global CMM: 'Would skip CMM' not 'Would merge CMM' - stdout does not contain 'Would merge CMM'\nPASS: case 4 - dry-run with global CMM: 'Would skip CMM' not 'Would merge CMM' - no .mcp.json created during dry-run\nPASS: case 5 - extract detect_cmm_install_scope() and assert GLOBAL branch (global-present): INSTALL_CMM_LOCAL=false\nPASS: case 5 - extract detect_cmm_install_scope() and assert GLOBAL branch (global-present): CMM_INSTALL_SCOPE=global\nPASS: case 5 - extract detect_cmm_install_scope() and assert GLOBAL branch (global-absent): INSTALL_CMM_LOCAL=true\nPASS: case 5 - extract detect_cmm_install_scope() and assert GLOBAL branch (global-absent): CMM_INSTALL_SCOPE=none\nPASS: case 6 - BOTH-state cleanup helper (R1 F-03 coverage) (Y branch): codebase-memory-mcp removed from .mcp.json\nPASS: case 6 - BOTH-state cleanup helper (R1 F-03 coverage) (Y branch): sibling context-mode entry preserved\nPASS: case 6 - BOTH-state cleanup helper (R1 F-03 coverage) (Y branch): no leftover .mcp.json.tmp (atomic os.replace)\nPASS: case 6 - BOTH-state cleanup helper (R1 F-03 coverage) (N branch): INSTALL_CMM_LOCAL flipped to true (F-08 fix)\nPASS: case 6 - BOTH-state cleanup helper (R1 F-03 coverage) (N branch): local entry preserved\n============================================================\nSummary: 18 pass / 0 fail\nPASS: phase 59 CMM install-scope regression coverage\n============================================================",
         "fp": "7c5566324f5fea3b465fa4291fb7eda4cf9f6ddf4fd6db23cfd64a0a06932ccd",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-phase-62-mcp-grants.sh": {
-        "status": "fail",
-        "exit": 1,
+        "status": "pass",
+        "exit": 0,
         "seconds": 0.3,
-        "tail": "  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__get_architecture\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__search_graph\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__get_code_snippet\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__trace_path\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__query_graph\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__search_code\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__index_status\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__index_repository\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__get_architecture\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__search_graph\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__get_code_snippet\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__trace_path\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__query_graph\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__search_code\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__index_status\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__index_repository\n--- CHECKSUMS.sha256 verifies all agent files ---\n  FAIL: CHECKSUMS.sha256 verification failed\n  PASS: At least 7 agents/vbw-*.md entries verify OK in CHECKSUMS.sha256 (got 7)\nResults: 52 passed, 1 failed",
+        "tail": "  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__get_architecture\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__search_graph\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__get_code_snippet\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__trace_path\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__query_graph\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__search_code\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__index_status\n  PASS: agents/vbw-lead.md includes mcp__codebase-memory-mcp__index_repository\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__get_architecture\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__search_graph\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__get_code_snippet\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__trace_path\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__query_graph\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__search_code\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__index_status\n  PASS: agents/vbw-debugger.md includes mcp__codebase-memory-mcp__index_repository\n--- CHECKSUMS.sha256 verifies all agent files ---\n  PASS: shasum -a 256 -c CHECKSUMS.sha256 exits 0\n  PASS: At least 7 agents/vbw-*.md entries verify OK in CHECKSUMS.sha256 (got 7)\nResults: 53 passed, 0 failed",
         "fp": "58ab39d62c5346cbc6a19fb387399acc2b81e6c218b83e05296e4206fdc43106",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "tests/test-phase-63-rule-refresh.sh": {
-        "status": "fail",
-        "exit": 1,
+        "status": "pass",
+        "exit": 0,
         "seconds": 0.1,
-        "tail": "  [PASS] cmm-rules notes unresolved languages fall back to heuristics\n  [PASS] cmm-rules records that Perl lacks the cross-file LSP pass\n  [PASS] cmm-rules does not tell agents to trust Perl trace_path as on Go\n--- (f)+(g) installed-rule propagation ---\n  [SKIP] propagation checks: .claude/rules/ absent — run 'bash setup.sh --project' first\n--- cmm-rules SKILL.md carries the same Perl claims as the rules ---\n  [PASS] SKILL.md lists Perl among LSP-resolved languages\n  [PASS] SKILL.md records the cross-file LSP caveat\n  [PASS] SKILL.md does not claim Perl trace_path is as trustworthy as Go\n  [PASS] SKILL.md forbids inferring non-support from an absent language\n  [PASS] SKILL.md states hooks DO fire inside subagents\n  [PASS] SKILL.md scopes the bypass to the Agent spawn gate\n  [PASS] SKILL.md no longer cites the disproven #34692 claim\n--- pre-existing notes still retained in cmm-rules ---\n  [PASS] cmm-rules retains 200-row cap note\n  [PASS] cmm-rules retains search_code regex note\n  [PASS] cmm-rules retains list_projects /tmp note\n--- CHECKSUMS.sha256 verifies all entries ---\n  [FAIL] CHECKSUMS.sha256 verification failed\nResults: 28 passed, 1 failed, 1 skipped (skipped != verified)",
+        "tail": "  [PASS] cmm-rules does not tell agents to trust Perl trace_path as on Go\n--- (f) installed .claude/rules/ctx-rules.md matches source ---\n  [PASS] diff rules/ctx-rules.md .claude/rules/ctx-rules.md exits 0\n--- (g) installed .claude/rules/cmm-rules.md matches source ---\n  [PASS] diff rules/cmm-rules.md .claude/rules/cmm-rules.md exits 0\n--- cmm-rules SKILL.md carries the same Perl claims as the rules ---\n  [PASS] SKILL.md lists Perl among LSP-resolved languages\n  [PASS] SKILL.md records the cross-file LSP caveat\n  [PASS] SKILL.md does not claim Perl trace_path is as trustworthy as Go\n  [PASS] SKILL.md forbids inferring non-support from an absent language\n  [PASS] SKILL.md states hooks DO fire inside subagents\n  [PASS] SKILL.md scopes the bypass to the Agent spawn gate\n  [PASS] SKILL.md no longer cites the disproven #34692 claim\n--- pre-existing notes still retained in cmm-rules ---\n  [PASS] cmm-rules retains 200-row cap note\n  [PASS] cmm-rules retains search_code regex note\n  [PASS] cmm-rules retains list_projects /tmp note\n--- CHECKSUMS.sha256 verifies all entries ---\n  [PASS] shasum -a 256 --check CHECKSUMS.sha256 exits 0\nResults: 31 passed, 0 failed",
         "fp": "72138d982daeb9ba2371a78bf2e2810c25ccf1349a8ccbdfaa831b1e299e44f6",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "tests/test-phase-66-delta-format.sh": {
@@ -2459,19 +2467,19 @@
       "tests/test-phase-66-generate.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 13.0,
+        "seconds": 8.8,
         "tail": "PASS: T2: generated file contains skills: frontmatter\nPASS: T2: x-cmm-base-sha stamped with non-empty value\nPASS: T2: x-cmm-delta-sha stamped with non-empty value\nPASS: T2: generated file contains VBW base body text\n--- T3: SHA match suppresses regen (idempotent) ---\nPASS: T3: No regen when SHAs match (mtime unchanged)\n--- T4: Source change triggers regen ---\nPASS: T4: unedited override regenerated after upstream source change\nPASS: T4: Hook output mentions regeneration\n--- T5: Fail-open when VBW absent ---\n{\"type\":\"systemMessage\",\"message\":\"VBW agent overrides updated (architect debugger dev docs lead qa scout — VBW dev/dev-checkout). RESTART SESSION to apply.\"}\nPASS: T5: Hook exits 0 (fail-open) when VBW absent\n--- T6a: Manual edit, source unchanged → warn + preserve ---\nPASS: T6a: hand edit preserved (not clobbered)\nPASS: T6a: manual-edit warning emitted\n--- T6b: Manual edit + upstream source change → warn + preserve, no clobber [F-01] ---\nPASS: T6b: hand edit preserved despite pending regen (no silent clobber)\nPASS: T6b: regen skipped while edit present\nPASS: T6b: manual-edit warning emitted\nResults: 17 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "790d1d53989a617703a2da1c944542d9e92d44639051542151059d0577d7c8a7",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/project/agent-override-generate.sh changed"
       },
       "tests/test-phase-66-install-scope.sh": {
         "status": "fail",
         "exit": 1,
-        "seconds": 4.3,
+        "seconds": 5.1,
         "tail": "PASS: install_project: references agents-delta install\n--- 7: install_global does NOT reference agents-delta ---\nPASS: install_global: no agents-delta reference\n--- 8: setup.sh --project installs .claude/agents-delta/ + lib files (VBW present) ---\nPASS: setup.sh --project (VBW present): all 7 .claude/agents-delta/vbw-*.md installed\nPASS: setup.sh --project: .claude/hooks/lib/{project-root.sh,vbw-source.sh} installed\n--- 8b: setup.sh --project with VBW absent skips delta injection + moves stale aside ---\nPASS: VBW absent: no vbw deltas injected into .claude/agents-delta/\nPASS: VBW absent: stale override moved aside to .cmm-setup/vbw-agents.bak/\nPASS: VBW absent: vbw-source.sh not installed (zero footprint)\nPASS: VBW absent: agent-override-generate.sh not installed (zero footprint)\nPASS: VBW absent: no agent-override-generate SessionStart registration\nPASS: VBW absent: non-VBW lib project-root.sh still installed\n--- 9: hook exits 0 (clean no-op) when VBW absent ---\nPASS: hook exits 0 when VBW absent (no VBW in plugins)\n--- 10: hook exits 0 (clean no-op) when delta files absent ---\nPASS: hook exits 0 when delta files absent\n--- 11: hook reads delta from .claude/agents-delta/ (installed path) ---\nFAIL: hook reads from .claude/agents-delta/ and generates overrides — exit=0 generated=0 (expected exit=0, ≥1 agent)\nResults: 20 passed, 1 failed",
         "fp": "6c97272badff09ca6932d7d107291626152c8ddaa126203853ec4bc36564d310",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "last result failed"
       },
       "tests/test-phase-66-resolver.sh": {
@@ -2514,18 +2522,18 @@
         "status": "pass",
         "exit": 0,
         "seconds": 2.4,
-        "tail": "PASS: Test 7: Read exits 0 without sentinel\n--- Test 8: Grep tool -> exit 0 (Phase 2 bypass) ---\nPASS: Test 8: Grep exits 0 without sentinel\n--- Test 9: Write tool WITHOUT sentinel -> exit 2 (blocked) ---\nPASS: Test 9: Write blocked (exit 2) without sentinel\n--- Test 10: Write tool WITH sentinel -> exit 0 (allowed) ---\nPASS: Test 10: Write allowed (exit 0) with sentinel\n--- Test 11: Edit tool WITHOUT sentinel -> exit 2 (blocked) ---\nPASS: Test 11: Edit blocked (exit 2) without sentinel\n--- Test 11b: Write WITHOUT sentinel, fresh indexing marker -> exit 0 (fail open) ---\n{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"additionalContext\": \"CMM note: the index is not ready and no background refresh is running \\u2014 proceeding without it.\\nCall mcp__codebase-memory-mcp__index_repository(repo_path=\\\"/private/tmp/cmm-test-root-LufQ4P\\\") now (incremental, fast when already indexed).\"}}\nPASS: Test 11b: Write fails open (exit 0) while indexing marker is fresh\nPASS: Test 11d: no live indexer -> advisory names index_repository\nPASS: Test 11e: live indexer -> 'no action needed'\nPASS: Test 11f: stale-index advisory reaches the model (additionalContext)\n--- Test 11c: Write WITHOUT sentinel, stale indexing marker -> exit 2 (safety valve) ---\nPASS: Test 11c: Write blocked (exit 2) with stale indexing marker\n--- Test 12: legacy-modules worktree -> no path mismatch ---\nPASS: Test 12: legacy-modules worktree session-gate exits 0 without path mismatch\nResults: 19 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
+        "tail": "PASS: Test 7: Read exits 0 without sentinel\n--- Test 8: Grep tool -> exit 0 (Phase 2 bypass) ---\nPASS: Test 8: Grep exits 0 without sentinel\n--- Test 9: Write tool WITHOUT sentinel -> exit 2 (blocked) ---\nPASS: Test 9: Write blocked (exit 2) without sentinel\n--- Test 10: Write tool WITH sentinel -> exit 0 (allowed) ---\nPASS: Test 10: Write allowed (exit 0) with sentinel\n--- Test 11: Edit tool WITHOUT sentinel -> exit 2 (blocked) ---\nPASS: Test 11: Edit blocked (exit 2) without sentinel\n--- Test 11b: Write WITHOUT sentinel, fresh indexing marker -> exit 0 (fail open) ---\n{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"additionalContext\": \"CMM note: the index is not ready and no background refresh is running \\u2014 proceeding without it.\\nCall mcp__codebase-memory-mcp__index_repository(repo_path=\\\"/private/tmp/cmm-test-root-Soy86H\\\") now (incremental, fast when already indexed).\"}}\nPASS: Test 11b: Write fails open (exit 0) while indexing marker is fresh\nPASS: Test 11d: no live indexer -> advisory names index_repository\nPASS: Test 11e: live indexer -> 'no action needed'\nPASS: Test 11f: stale-index advisory reaches the model (additionalContext)\n--- Test 11c: Write WITHOUT sentinel, stale indexing marker -> exit 2 (safety valve) ---\nPASS: Test 11c: Write blocked (exit 2) with stale indexing marker\n--- Test 12: legacy-modules worktree -> no path mismatch ---\nPASS: Test 12: legacy-modules worktree session-gate exits 0 without path mismatch\nResults: 19 passed, 0 failed",
         "fp": "be9410f69d2e11a1f21a6db14648f4ee32e2d08aae09d3300144f456ddfc8cbf",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "hooks/project/session-gate.sh changed"
       },
       "tests/test-statusline-path.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 1.7,
-        "tail": "[STATUSLINE — project]\n  [ok] Statusline config written: /Users/ahby/.cache/codebase-memory-mcp/_statusline-config-14e658cd72fe1281e5fcaac1dc26dab3.json\n  [ok] Generated /var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.DIagj0afBR/.claude/hooks/statusline-cmm.sh\n  [ok] statusLine merged into settings.local.json\n[ALLOWLIST]\n  [skip] Project allowlist not written\n============================================================\nInstallation complete!\nNext steps:\n  1. Restart Claude Code to activate hooks\n  2. If project hooks installed: run 'index_repository' on first session\n  3. If global hooks installed: hooks fire automatically on Read/Write/Edit\n  4. Review .claude/settings.json to confirm hook entries\n  5. If statusline installed: restart Claude Code to see CMM stats in the status bar\n============================================================\nPASS: statusLine command contains absolute path\n  command: bash \"/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.DIagj0afBR/.claude/hooks/statusline-cmm.sh\"\n=== Test 3: statusline runs from a subdirectory ===\nPASS: statusline script runs from subdirectory (output: CMM:0)\nAll tests passed.",
+        "seconds": 1.9,
+        "tail": "[STATUSLINE — project]\n  [ok] Statusline config written: /Users/ahby/.cache/codebase-memory-mcp/_statusline-config-d3e1264f404714499bffa8635535a5f1.json\n  [ok] Generated /var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.cgRvlBsFYq/.claude/hooks/statusline-cmm.sh\n  [ok] statusLine merged into settings.local.json\n[ALLOWLIST]\n  [skip] Project allowlist not written\n============================================================\nInstallation complete!\nNext steps:\n  1. Restart Claude Code to activate hooks\n  2. If project hooks installed: run 'index_repository' on first session\n  3. If global hooks installed: hooks fire automatically on Read/Write/Edit\n  4. Review .claude/settings.json to confirm hook entries\n  5. If statusline installed: restart Claude Code to see CMM stats in the status bar\n============================================================\nPASS: statusLine command contains absolute path\n  command: bash \"/var/folders/nc/81rj_zg51k175k6rrwr9zmg00000gn/T/tmp.cgRvlBsFYq/.claude/hooks/statusline-cmm.sh\"\n=== Test 3: statusline runs from a subdirectory ===\nPASS: statusline script runs from subdirectory (output: CMM:0)\nAll tests passed.",
         "fp": "b68c649b17f670deba28866b1db38d83b2f3a68ab6e6b3e58b4cfaa9c55f332b",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-subagent-ctx-startup.sh": {
@@ -2558,11 +2566,11 @@
       "tests/test-uninstall.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 4.4,
+        "seconds": 2.7,
         "tail": "PASS: unrelated server preserved\nPASS: .mcp.json valid JSON\n--- Test 3: --uninstall without scope ---\nPASS: exits non-zero\nPASS: prints scope-required message\n--- Test 4: --uninstall --dry-run ---\nPASS: fingerprint is non-empty\nPASS: filesystem unchanged\nPASS: prints Would remove\n--- Test 5: --uninstall --global --purge-mcp from inside a project ---\nPASS: CWD project .mcp.json untouched\nPASS: explains .mcp.json is project-scoped\n--- Test 6: cmm-agent-passthrough.txt removed ---\nPASS: passthrough list removed\nPASS: passthrough list backed up\n--- Test 7: settings.json hook match is boundary-anchored ---\nPASS: our session-gate.sh entry stripped\nPASS: lookalike my-session-gate.sh survives\nPASS: settings.json still valid JSON\nResults: 33 passed, 0 failed",
-        "at": "2026-10-28T16:12:59Z",
         "fp": "ea1cd8989848d0f53395e2e5892b9a085ca12b1ef8958c6f4a44fde384b594e9",
-        "reused": true
+        "at": "2026-10-28T16:58:33Z",
+        "why": "setup.sh changed"
       },
       "tests/test-user-prompt-submit-skill-nudge.sh": {
         "status": "pass",
@@ -2579,33 +2587,50 @@
         "seconds": 0.2,
         "tail": "  PASS: T1 marker written, line 1 is the bare version (1.12.0)\n  PASS: T2 DRY_RUN prints 'Would write' and creates no marker\n  PASS: T3 fallback emits unknown/nogit and returns 0 under set -euo pipefail\n  PASS: T4 install_global invokes write_version_stamp with the config dir\n  PASS: T5 install_project invokes write_version_stamp with .claude\n  PASS: T6 uncreatable target returns 0 (install not aborted), writes no marker\nResults: 6 passed, 0 failed",
         "fp": "a1284ef8cced7c442a205590b8aa1e9e3cdb5768fa19c4bfaed0d7cffc8e84a7",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       },
       "tests/test-zero-vbw-footprint.sh": {
         "status": "pass",
         "exit": 0,
-        "seconds": 2.8,
+        "seconds": 2.7,
         "tail": "--- zero-VBW project install ---\nPASS: install produced settings.json\nPASS: settings.json is valid JSON\nPASS: no agent-override-generate.sh hook registration\nPASS: stale agent-override-generate.sh moved out of hooks/\nPASS: stale vbw-source.sh moved out of hooks/lib/\nPASS: stale agent-override-generate.sh is recoverable from backup\nPASS: stale vbw-source.sh is recoverable from backup\nPASS: no VBW agent deltas written\nPASS: CMM hooks still installed (install did not just no-op)\n--- zero-VBW GLOBAL install ---\nPASS: global install wrote hooks\nPASS: global install skips VBW-only vbw-source.sh\nPASS: global install still writes shared libs\n--- deprecated-hook purge matches QUOTED registrations ---\nPASS: quoted deprecated registration purged\nPASS: deprecated hook file removed\nPASS: unrelated user registration preserved\nPASS: settings.json still valid JSON\nResults: 16 passed, 0 failed",
         "fp": "af12261eea8f8ccb900b21736b8440e724279ff5ac2f98a49e7277b8c7bf5ad8",
-        "at": "2026-10-28T16:15:58Z",
+        "at": "2026-10-28T16:58:33Z",
         "why": "reads the project through git"
       }
     },
     "scope": [],
-    "undone": [],
-    "deviations": [],
+    "undone": [
+      {
+        "commit": "86c22b9ba91c650caf0ac2c58f17a47e6f37b3cc",
+        "plan": "P3.1",
+        "by": "e7d4269e2273e03c8fd3f980f98c3b57944daadc"
+      }
+    ],
+    "deviations": [
+      {
+        "file": "hooks/project/subagent-cmm-startup.sh",
+        "plan": "P3.1",
+        "commit": "86c22b9ba91c650caf0ac2c58f17a47e6f37b3cc",
+        "at": "2026-10-28T16:43:01Z",
+        "change": "changed",
+        "by": [
+          "e7d4269e2273e03c8fd3f980f98c3b57944daadc"
+        ]
+      }
+    ],
     "causes": [],
     "full": false,
     "passed": false,
-    "record": "eb3f8ea1a5052f427ab03fe8038d57de32dc529f28d39b195ee0ee228f51f538",
+    "record": "0064d1b5ecafb291d4c72e87bf64e8cc88a386768b8e8866fa68ee49219e4d8a",
     "own": {
-      "planning": 1.282,
-      "copies": 1.847,
-      "tracking": 4.826,
-      "saving": 0.313,
-      "record": 0.605,
-      "wall": 49.439
+      "planning": 1.291,
+      "copies": 2.196,
+      "tracking": 7.141,
+      "saving": 0.381,
+      "record": 0.58,
+      "wall": 56.076
     }
   },
   "costs": {
