@@ -1941,6 +1941,13 @@
       "sort": "later",
       "size": "small",
       "status": "open"
+    },
+    {
+      "id": "T9",
+      "text": "VBW Devs that edit tests/ forget to regenerate CHECKSUMS.sha256 (scripts/generate-checksums.sh): teach it as a project rule (/vbw:teach) or put it in the plan tasks",
+      "sort": "next",
+      "size": "small",
+      "status": "open"
     }
   ],
   "decisions": [
