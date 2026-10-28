@@ -1,15 +1,6 @@
 {
   "schema": 4,
-  "lease": {
-    "run": "qa-20261028T170952Z",
-    "kind": "qa",
-    "started_at": "2026-10-28T17:09:52Z",
-    "files": [],
-    "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
-    "cost": {
-      "usd": 35.210158
-    }
-  },
+  "lease": null,
   "protected": [
     "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1.jsonl",
     "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-adev.jsonl",
@@ -2867,6 +2858,17 @@
         "ended": "2026-10-28T17:08:17Z",
         "cost": {
           "usd": 0.193151
+        }
+      },
+      {
+        "id": "qa-20261028T170952Z",
+        "kind": "qa",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T17:09:52Z",
+        "ended": "2026-10-28T17:13:13Z",
+        "cost": {
+          "usd": 1.304653
         }
       }
     ],
