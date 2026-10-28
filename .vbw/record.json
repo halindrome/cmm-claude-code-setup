@@ -647,6 +647,12 @@
           "from": "standard",
           "to": "deep",
           "reason": "Dev blocked P3.1: C10 (live proof R11.3/R11.4) needs a fresh /vbw:map run after setup.sh --project installs the wrapper: .vbw/map.md has no section naming CMM project Users-ahby-Sources-ccs-vbw2 + cmm-query.sh, and the recorded map run (wf_29ced0bd-b86) predates this guidance. Neither is in the plan's files. Hook (C8, C9) done and committed; test-vbw2-subagent-guidance.sh strengthened (R6.4 survivor) and awaits approval."
+        },
+        {
+          "at": "2026-10-28T16:43:07Z",
+          "from": "deep",
+          "to": "deep",
+          "reason": "Dev blocked P3.1: C10 (R11.4) fails: latest vbw map run wf_13a51508-11e has wrapper CMM calls only in scout structure, not stack/conventions/tests/risks. Strengthened scout guidance (86c22b9: every angle starts with a wrapper query; C8/C9/C11 green) but proof needs a fresh /vbw:map run, which a Dev cannot start."
         }
       ]
     },
@@ -1503,7 +1509,7 @@
       "after": [
         "P2.1"
       ],
-      "status": "planned",
+      "status": "blocked",
       "role": "dev",
       "tasks": [
         "detect vbw:architect/lead/dev/qa/scout/debugger/docs and emit wrapper command lines (search_graph, trace_path, get_code_snippet, search_code) with this repo's project; no mcp__, ctx_* or Skill( lines",
@@ -1652,7 +1658,8 @@
             "tests/test-vbw2-subagent-guidance.sh"
           ]
         }
-      ]
+      ],
+      "note": "C10 (R11.4) fails: latest vbw map run wf_13a51508-11e has wrapper CMM calls only in scout structure, not stack/conventions/tests/risks. Strengthened scout guidance (86c22b9: every angle starts with a wrapper query; C8/C9/C11 green) but proof needs a fresh /vbw:map run, which a Dev cannot start."
     },
     {
       "id": "P3.2",
@@ -2655,6 +2662,17 @@
         "ended": "2026-10-28T16:41:07Z",
         "cost": {
           "usd": 1.688998
+        }
+      },
+      {
+        "id": "build-20261028T164210Z",
+        "kind": "build",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T16:42:10Z",
+        "ended": "2026-10-28T16:43:34Z",
+        "cost": {
+          "usd": 0.444522
         }
       }
     ],
