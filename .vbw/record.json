@@ -1835,6 +1835,13 @@
       "sort": "next",
       "size": "small",
       "status": "open"
+    },
+    {
+      "id": "T8",
+      "text": "scripts/generate-checksums.sh ignores flags: '--help' rewrites CHECKSUMS.sha256 (a map scout did this; VBW guard cannot see writes inside scripts). Add --help/arg check.",
+      "sort": "later",
+      "size": "small",
+      "status": "open"
     }
   ],
   "decisions": [
