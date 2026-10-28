@@ -2777,6 +2777,17 @@
         "cost": {
           "usd": 0.263289
         }
+      },
+      {
+        "id": "fix-20261028T170331Z",
+        "kind": "fix",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T17:03:31Z",
+        "ended": "2026-10-28T17:05:03Z",
+        "cost": {
+          "usd": 0.176678
+        }
       }
     ],
     "milestones": {}
