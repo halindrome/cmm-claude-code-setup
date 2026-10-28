@@ -497,6 +497,8 @@ main() {
   # --- Resolve VBW source ---
   # resolve_vbw_source returns 1 when VBW is absent/disabled. Fail-open: clean no-op.
   if ! resolve_vbw_source 2>/dev/null; then
+    # VBW 2 spawns plugin agents, never .claude/agents/vbw-*.md: quiet no-op.
+    [ "${VBW_SOURCE_TYPE:-}" = "vbw2" ] && exit 0
     # VBW absent or disabled — advisory via systemMessage, then clean no-op
     printf '{"type":"systemMessage","message":"%s"}\n' \
       "CMM agent-override-generate: VBW plugin not found — agent overrides skipped. Install VBW and restart session to generate."
