@@ -119,7 +119,7 @@ Use Grep and Read only for literals the graph does not index, non-code files (co
 After changing code, refresh the graph: ${_Q} index_repository '{}'"
     if [ "$_AGENT_TYPE" = "vbw:scout" ]; then
         V="$V
-Mapping: whatever your angle, make your first Bash call a wrapper query (below) and take codebase structure from the graph before reading files:
+Mapping: take codebase structure from the graph before reading files:
 - ${_Q} get_architecture '{}'
 - ${_Q} search_graph '{\"name_pattern\":\"...\"}'
 In the map, put the CMM project (${_CMM_PROJECT}) and the wrapper command (${_Q}) in the Structure or Stack and commands section, so later agents query the live graph."
