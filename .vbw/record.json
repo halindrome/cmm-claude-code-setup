@@ -1,6 +1,15 @@
 {
   "schema": 4,
-  "lease": null,
+  "lease": {
+    "run": "map-20261028T162926Z",
+    "kind": "map",
+    "started_at": "2026-10-28T16:29:26Z",
+    "files": [],
+    "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+    "cost": {
+      "usd": 28.003425
+    }
+  },
   "protected": [
     "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1.jsonl",
     "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-adev.jsonl",
@@ -1814,6 +1823,13 @@
       "text": "Upstream VBW 2 proposal: make planning cheaper, esp. Lead test-writing (this milestone: ~45 min, 144 tool calls, 1 serial Opus Lead, 0 CMM). Ideas: parallel test-writer per phase, cheaper model for check files, smarter test rules (reuse existing patterns), CMM/context-mode once reachable. Pairs with T2/T3.",
       "sort": "next",
       "size": "medium",
+      "status": "open"
+    },
+    {
+      "id": "T5",
+      "text": "Upstream VBW 2 (with T4): map scouts should not run the full test suite (here tests/stack scouts ran make test 5x in parallel, ~6 min of a small repo's map); reuse vbw prove's recorded per-unit timings instead",
+      "sort": "next",
+      "size": "small",
       "status": "open"
     }
   ],
