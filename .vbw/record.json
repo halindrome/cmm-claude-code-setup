@@ -533,7 +533,7 @@
           "check": "C10"
         },
         {
-          "text": "the latest recorded vbw map run shows at least one wrapper CMM call in every scout angle's transcript",
+          "text": "the latest recorded vbw map run shows at least one wrapper CMM call in the structure scout transcript, and no scout code search (Grep, or Bash grep/rg on code files) runs unredirected; non-code angles (conventions) need no CMM call",
           "check": "C10"
         }
       ]
@@ -1509,7 +1509,7 @@
       "after": [
         "P2.1"
       ],
-      "status": "blocked",
+      "status": "planned",
       "role": "dev",
       "tasks": [
         "detect vbw:architect/lead/dev/qa/scout/debugger/docs and emit wrapper command lines (search_graph, trace_path, get_code_snippet, search_code) with this repo's project; no mcp__, ctx_* or Skill( lines",
@@ -1658,8 +1658,7 @@
             "tests/test-vbw2-subagent-guidance.sh"
           ]
         }
-      ],
-      "note": "C10 (R11.4) fails: latest vbw map run wf_13a51508-11e has wrapper CMM calls only in scout structure, not stack/conventions/tests/risks. Strengthened scout guidance (86c22b9: every angle starts with a wrapper query; C8/C9/C11 green) but proof needs a fresh /vbw:map run, which a Dev cannot start."
+      ]
     },
     {
       "id": "P3.2",
@@ -1895,6 +1894,17 @@
       "id": "D8",
       "at": "2026-10-28T16:25:59Z",
       "text": "Contract approved: 9 requirements, 13 checks, 11 plans (9c37dfaa04f6); express: P4 (R1, C12, C13, P4.1); express: P5 (R9, R10, P5.1)"
+    },
+    {
+      "id": "D9",
+      "text": "R11.4 scoped to code-search angles: structure scout must use the CMM wrapper, no scout code search may bypass it; revert the forced 'first Bash call is a wrapper query' line from 86c22b9; C10 (tests/live/vbw2-map-run.sh) changes to match",
+      "why": "User's choice: forcing CMM calls on doc-reading angles wastes tokens and a re-map; the finished map run already proves the useful part",
+      "at": "2026-10-28T16:45:05Z"
+    },
+    {
+      "id": "D10",
+      "at": "2026-10-28T16:45:50Z",
+      "text": "Contract approved: 9 requirements, 13 checks, 11 plans (95170135c287); express: P4 (R1, C12, C13, P4.1); express: P5 (R9, R10, P5.1)"
     }
   ],
   "commands": {
