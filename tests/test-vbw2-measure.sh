@@ -132,11 +132,13 @@ else
 fi
 
 echo "--- quoted wrapper path (project root with a space) counts as CMM ---"
-if ENF="$ENF" python3 -c '
+# The script has no __main__ guard: importing it runs the analysis, so point HOME
+# at the small scratch corpus and discard its report.
+if HOME="$T/b" ENF="$ENF" python3 -c '
 import importlib.util, os, sys
 s = importlib.util.spec_from_file_location("enf", os.environ["ENF"]); m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
 r = m.CMM_BASH_RE.search("bash '"'"'/My Proj/.claude/hooks/cmm-query.sh'"'"' search_graph '"'"'{}'"'"'")
-sys.exit(0 if r and r.group(1) == "search_graph" else 1)'; then
+sys.exit(0 if r and r.group(1) == "search_graph" else 1)' >/dev/null 2>&1; then
     _pass "quoted cmm-query.sh path attributed to search_graph"
 else
     _fail "quoted cmm-query.sh path not counted as a CMM call"
