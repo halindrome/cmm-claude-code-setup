@@ -2241,6 +2241,11 @@ PASSTHROUGH
   # VBW is available; the dir stays empty otherwise).
   [ "$DRY_RUN" = true ] || mkdir -p ".claude/agents"
 
+  # VBW 2 is detected separately from VBW 1 and reported alongside it.
+  local _vbw2_ver
+  _vbw2_ver="$( source "$SCRIPT_DIR/hooks/lib/vbw-source.sh" 2>/dev/null && resolve_vbw2 >/dev/null 2>&1 && printf '%s' "$VBW2_VERSION" )"  || true
+  [ -z "$_vbw2_ver" ] || echo "  [ok] VBW 2 detected (version ${_vbw2_ver})"
+
   if [ "$_vbw_present" = true ]; then
     if [ "$DRY_RUN" = true ]; then
       echo "  [DRY RUN] Would create .claude/agents-delta/ (VBW installed: ${VBW_DETECTED_TYPE})"
