@@ -70,6 +70,9 @@ if os.environ.get("STUB_MODE") == "notindexed":
 if os.environ.get("STUB_MODE") == "crash":
     print("boom")
     sys.exit(1)
+if os.environ.get("STUB_MODE") == "phrase":
+    print("def f():\n    raise RuntimeError('Required tool not found; project not indexed')")
+    sys.exit(0)
 if os.environ.get("STUB_MODE") == "errjson0":
     print('{"error":"indexing failed"}')
 print("results: 1\n  stub.result Function src/a.py 1-2 0 0")
@@ -208,6 +211,13 @@ if [ "$RC" != 0 ] && printf '%s' "$OUT" | grep -qi 'not indexed' && [ -n "$SUGGE
     _pass "unindexed project -> says so and names: $SUGGEST"
 else
     _fail "unindexed project not reported with the index_repository wrapper command (rc=$RC, out=$OUT)"
+fi
+
+STUB_MODE=phrase _q "$T/repo" "$PATH_STUB" get_code_snippet '{"qualified_name":"f"}'
+if [ "$RC" = 0 ] && ! printf '%s' "$OUT" | grep -q 'cmm-query:'; then
+    _pass "successful query whose payload contains 'not found'/'not indexed' passes through"
+else
+    _fail "successful query with the phrase in its payload reported as failure (rc=$RC, out=$OUT)"
 fi
 
 echo "--- indexing through the wrapper opens the session gate ---"
