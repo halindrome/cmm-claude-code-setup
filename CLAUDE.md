@@ -31,6 +31,7 @@ When VBW is in use for this repo:
 
 - Prefer VBW commands (`/vbw:vibe`) for lifecycle actions; plans are the source of truth. Do not manually edit files in `.vbw-planning/`.
 - Without VBW, develop directly — there is no requirement to route work through VBW commands.
+- VBW 2 PRs follow `CONTRIBUTING.md § VBW 2 + /qa-cycle sequence`: `feature/*` off `develop`, issue as QA contract, push and PR from the main session (VBW never pushes), `/qa-cycle` rounds with fix commits, keep changes, `vbw prove`, accept, ship.
 
 ## Installed Skills
 
@@ -54,6 +55,8 @@ Before marking any PR ready for review, follow the QA cycle defined in `CONTRIBU
 3. **Repeat** — Fresh QA session each round until findings are clean or only minor/hypothetical.
 4. **Post reports** — Paste each round's QA report as a separate PR comment.
 
+With VBW 2, run the rounds with `/qa-cycle <pr-number>`; see `CONTRIBUTING.md § VBW 2 + /qa-cycle sequence`.
+
 > **Skip condition:** Docs-only PRs (no changes to `hooks/`, `setup.sh`, `rules/`, or `agents/`) skip the QA cycle.
 
 ## Merge Requirements
@@ -68,7 +71,7 @@ Before marking any PR ready for review, follow the QA cycle defined in `CONTRIBU
 | `main` | Stable releases. Every merge from `develop` requires a version bump and is tagged `vX.Y.Z`. |
 | `feature/*` | Short-lived work branches. Base from `develop`, PR to `develop`. |
 
-**Release flow:** `feature/* → develop → main` (tagged)
+**Release flow:** `feature/* → develop → main` (tagged). With VBW 2, create the `feature/*` branch off `develop` before the first VBW step; see `CONTRIBUTING.md § VBW 2 + /qa-cycle sequence`.
 
 ## Commands
 
