@@ -8,6 +8,10 @@
     "legacy": {
       "choice": "fresh",
       "at": "2026-10-28T14:35:04Z"
+    },
+    "tools": {
+      "answer": "yes",
+      "at": "2026-10-28T14:39:18Z"
     }
   },
   "milestone": {
@@ -32,5 +36,21 @@
     "profile": "balanced",
     "autonomy_cap": 25
   },
-  "evidence": null
+  "evidence": null,
+  "costs": {
+    "runs": [
+      {
+        "id": "map-20261028T144115Z",
+        "kind": "map",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T14:41:15Z",
+        "ended": "2026-10-28T14:47:29Z",
+        "cost": {
+          "usd": 0.805156
+        }
+      }
+    ],
+    "milestones": {}
+  }
 }

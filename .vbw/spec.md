@@ -2,9 +2,15 @@
 
 ## Goals
 
+A hook-based enforcement layer that makes Claude Code use codebase-memory-mcp (CMM) as its core code-intelligence tool, with Context Mode and VBW as optional, auto-detected add-ons. For Claude Code users who install it via setup.sh.
+
+This milestone: update the stack to work well with VBW 2 (new conventions, e.g. `.vbw/` instead of `.vbw-planning/`).
+
 ## Non-goals
 
 ## Constraints
+
+- VBW 2 reference is the installed plugin (~/.config/claude-code/plugins/cache/vbw-marketplace/vbw/2.1.18); no fork or sibling checkout.
 
 ## Requirements
 
