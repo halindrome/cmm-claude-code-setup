@@ -1503,7 +1503,7 @@
       "after": [
         "P2.1"
       ],
-      "status": "blocked",
+      "status": "planned",
       "role": "dev",
       "tasks": [
         "detect vbw:architect/lead/dev/qa/scout/debugger/docs and emit wrapper command lines (search_graph, trace_path, get_code_snippet, search_code) with this repo's project; no mcp__, ctx_* or Skill( lines",
@@ -1652,8 +1652,7 @@
             "tests/test-vbw2-subagent-guidance.sh"
           ]
         }
-      ],
-      "note": "C10 (live proof R11.3/R11.4) needs a fresh /vbw:map run after setup.sh --project installs the wrapper: .vbw/map.md has no section naming CMM project Users-ahby-Sources-ccs-vbw2 + cmm-query.sh, and the recorded map run (wf_29ced0bd-b86) predates this guidance. Neither is in the plan's files. Hook (C8, C9) done and committed; test-vbw2-subagent-guidance.sh strengthened (R6.4 survivor) and awaits approval."
+      ]
     },
     {
       "id": "P3.2",
@@ -1826,6 +1825,13 @@
     {
       "id": "T6",
       "text": "Parallelize make test (69 serial test files, ~2.5-3 min): run test files concurrently (e.g. make -j / xargs -P) while keeping per-file PASS/FAIL and the non-zero exit",
+      "sort": "next",
+      "size": "small",
+      "status": "open"
+    },
+    {
+      "id": "T7",
+      "text": "T5 detail: VBW map should describe how testing works, not record pass/fail snapshots (map.md is committed and goes stale mid-build). stack scout: verify the test command with one quick file, not the full suite; tests scout: do not run tests; scout.md example ('212 pass in 4 s') implies running them. Current state belongs to vbw prove evidence.",
       "sort": "next",
       "size": "small",
       "status": "open"
