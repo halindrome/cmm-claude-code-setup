@@ -669,7 +669,22 @@
           "to": "deep",
           "reason": "Dev blocked P3.1: C10 (live) fails: latest recorded map run wf_13a51508-11e predates fix 86c22b9; its risks scout made no wrapper CMM call. Code is fixed and C8/C9/C11 pass, but C10 needs a fresh /vbw:map run (a user slash command, not runnable by Dev) after re-running setup.sh --project, then .vbw/map.md refreshed/committed."
         }
-      ]
+      ],
+      "qa": {
+        "result": "pass",
+        "tier": "deep",
+        "tree": "9cabd5f5232ef389c35cfceb9976ef24fcc04c65c9ec15240f349ced25132046",
+        "at": "2026-10-28T17:11:20Z",
+        "note": "18/18 checks"
+      },
+      "outcome": {
+        "tier": "deep",
+        "predicted": "standard",
+        "held": false,
+        "fix_rounds": 0,
+        "qa_findings": 0,
+        "escalations": 3
+      }
     },
     {
       "id": "P4",
