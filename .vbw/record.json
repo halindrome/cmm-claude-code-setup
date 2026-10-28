@@ -1831,6 +1831,13 @@
       "sort": "next",
       "size": "small",
       "status": "open"
+    },
+    {
+      "id": "T6",
+      "text": "Parallelize make test (69 serial test files, ~2.5-3 min): run test files concurrently (e.g. make -j / xargs -P) while keeping per-file PASS/FAIL and the non-zero exit",
+      "sort": "next",
+      "size": "small",
+      "status": "open"
     }
   ],
   "decisions": [
