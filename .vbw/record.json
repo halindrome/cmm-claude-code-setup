@@ -1,0 +1,36 @@
+{
+  "schema": 4,
+  "lease": null,
+  "protected": [],
+  "checks": [],
+  "project": {
+    "name": "ccs-vbw2",
+    "legacy": {
+      "choice": "fresh",
+      "at": "2026-10-28T14:35:04Z"
+    }
+  },
+  "milestone": {
+    "id": "M1",
+    "title": "First milestone",
+    "status": "active"
+  },
+  "shipped": [],
+  "requirements": [],
+  "phases": [],
+  "plans": [],
+  "fixes": [],
+  "todos": [],
+  "decisions": [],
+  "commands": {
+    "test": [
+      "make",
+      "test"
+    ]
+  },
+  "settings": {
+    "profile": "balanced",
+    "autonomy_cap": 25
+  },
+  "evidence": null
+}
