@@ -1,6 +1,15 @@
 {
   "schema": 4,
-  "lease": null,
+  "lease": {
+    "run": "qa-20261028T171710Z",
+    "kind": "qa",
+    "started_at": "2026-10-28T17:17:10Z",
+    "files": [],
+    "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+    "cost": {
+      "usd": 37.222644
+    }
+  },
   "protected": [
     "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1.jsonl",
     "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-adev.jsonl",
@@ -626,12 +635,19 @@
       ],
       "predicted": "deep",
       "qa": {
-        "result": "fail",
+        "result": "pass",
         "tier": "deep",
-        "tree": "fe085be78eb7a40a1e1d1d4c17ac1a2664db534bd2b53d5bc4d5605f21cd7e38",
-        "at": "2026-10-28T17:12:42Z",
-        "note": "21/22 checks",
-        "rounds": 1
+        "tree": "7baa7b2948b71425595ed096d4e03bd9da5cc40a749cb3b2bf7eacf95c843230",
+        "at": "2026-10-28T17:18:20Z",
+        "note": "5/5 checks"
+      },
+      "outcome": {
+        "tier": "deep",
+        "predicted": "deep",
+        "held": true,
+        "fix_rounds": 1,
+        "qa_findings": 1,
+        "escalations": 0
       }
     },
     {
@@ -1873,7 +1889,7 @@
       "req": "R5",
       "source": "qa",
       "attempts": 0,
-      "status": "fixed",
+      "status": "closed",
       "note": "hooks/project/cmm-query.sh line 49 decides the project is unindexed by pattern-matching the words 'not indexed' or 'not found' (case-insensitive) over the CLI's whole stdout, so a successful query whose payload merely contains that text is reported as failure. Reproduced live: running 'bash .claude/hooks/cmm-query.sh get_code_snippet' with qualified_name Users-ahby-Sources-ccs-vbw2.benchmarks.run.check_prereq prints the correct snippet (its source has 'Required tool not found'), then 'cmm-query: project not indexed; run: ...index_repository' and exits 1 (the CLI itself exited 0). Any get_code_snippet, search_code or get_architecture result that includes those words (common in error-handling code) becomes a bogus failure and sends the agent to a needless re-index (R5.5 and R5.1; criterion: when the project is not indexed it says so). The real CLI signals unindexed as exit 1 plus a JSON error 'project not found or not indexed'; the stub in tests/test-cmm-query.sh mirrors that, but no test runs a successful query whose output contains the phrase. Regression test: a stub (or live get_code_snippet on a fixture function containing the string 'not found') answering rc 0 with that phrase in its output must pass through with exit 0 and no 'not indexed' message. Fix: take the unindexed branch only when the CLI RC is non-zero and the output is a JSON error naming it. # cmm-exempt",
       "phase": "P2"
     }
