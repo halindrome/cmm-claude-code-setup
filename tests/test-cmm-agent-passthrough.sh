@@ -34,7 +34,7 @@ cp "$GATE" "$TMP/hooks/agent-cmm-gate.sh"
 
 echo "--- No config present: normal gating (blocked) ---"
 _assert "no config: mr-qa-reviewer blocked" 2 "$TMP" "$(mk_json mr-qa-reviewer)"
-_assert "no config: vbw:vbw-dev blocked (vbw:* no longer built-in exempt)" 2 "$TMP" "$(mk_json 'vbw:vbw-dev')"
+_assert "no config: vbw:vbw-dev exempt (vbw:* built-in exempt, R4)" 0 "$TMP" "$(mk_json 'vbw:vbw-dev')"
 
 echo "--- Config with literal + glob + comments ---"
 cat > "$TMP/cmm-agent-passthrough.txt" <<'CFG'

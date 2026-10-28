@@ -363,7 +363,7 @@ fi
 echo "--- 11: hook reads delta from .claude/agents-delta/ (installed path) ---"
 TMPROOT11=$(mktemp -d /tmp/test-phase-66-scope-XXXXXX)
 SCRATCH11="$TMPROOT11/proj"
-FAKE_VBW11="$TMPROOT11/vbw/2.0.0"
+FAKE_VBW11="$TMPROOT11/vbw/1.37.1"
 FAKE_CFG11="$TMPROOT11/cfg"
 mkdir -p "$SCRATCH11/.claude/hooks/lib"
 mkdir -p "$SCRATCH11/.claude/agents"
@@ -383,7 +383,7 @@ base body
 VBWEOF
 done
 cat >"$FAKE_CFG11/plugins/installed_plugins.json" <<JSON
-{"version":2,"plugins":{"vbw@vbw-marketplace":[{"installPath":"$FAKE_VBW11","version":"2.0.0","scope":"user"}]},"enabledPlugins":{"vbw@vbw-marketplace":true}}
+{"version":2,"plugins":{"vbw@vbw-marketplace":[{"installPath":"$FAKE_VBW11","version":"1.37.1","scope":"user"}]},"enabledPlugins":{"vbw@vbw-marketplace":true}}
 JSON
 # Install delta files from repo into .claude/agents-delta/
 for _ag in architect debugger dev docs lead qa scout; do
