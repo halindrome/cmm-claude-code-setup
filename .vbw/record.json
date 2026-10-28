@@ -631,7 +631,7 @@
         "A recorded vbw map run's scout transcripts (subagents/workflows/<run>/*.jsonl) contain at least one wrapper CMM call per scout angle",
         "agent-override-generate.sh does not generate .claude/agents/vbw-*.md overrides for a VBW 2-only install (they target agent names VBW 2 never spawns), while VBW 1 installs are unaffected"
       ],
-      "tier": "standard",
+      "tier": "deep",
       "reasons": [
         "requirements: 2",
         "files: 3 (183432 bytes)",
@@ -640,7 +640,15 @@
         "breaks: none",
         "tests: project test command"
       ],
-      "predicted": "standard"
+      "predicted": "standard",
+      "escalations": [
+        {
+          "at": "2026-10-28T16:20:33Z",
+          "from": "standard",
+          "to": "deep",
+          "reason": "Dev blocked P3.1: C10 (live proof R11.3/R11.4) needs a fresh /vbw:map run after setup.sh --project installs the wrapper: .vbw/map.md has no section naming CMM project Users-ahby-Sources-ccs-vbw2 + cmm-query.sh, and the recorded map run (wf_29ced0bd-b86) predates this guidance. Neither is in the plan's files. Hook (C8, C9) done and committed; test-vbw2-subagent-guidance.sh strengthened (R6.4 survivor) and awaits approval."
+        }
+      ]
     },
     {
       "id": "P4",
@@ -1188,12 +1196,46 @@
         "P1.2",
         "P2.1"
       ],
-      "status": "planned",
+      "status": "done",
       "role": "dev",
       "tasks": [
         "setup.sh: install .claude/hooks/cmm-query.sh and its libs when VBW 2 is detected; skip it otherwise",
         "uninstall removes it (stack-owned basename); confirm the setup output names the index command",
         "ctx-execute-enforcer: allow a plain wrapper call for the main thread and every agent; compound or redirected wrapper calls stay blocked; ctx-payload-guard lets the wrapper through"
+      ],
+      "mutations": [
+        {
+          "rule": {
+            "req": "R5",
+            "text": "a plain wrapper call passes ctx-execute-enforcer for the main thread and vbw:* agents and passes ctx-payload-guard; piped or redirected wrapper calls stay blocked for the main thread"
+          },
+          "what": "disable wrapper exemption",
+          "files": [
+            "hooks/project/ctx-execute-enforcer.sh"
+          ],
+          "checks": {
+            "C4": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:01Z",
+          "head": "a38c2712e43e5301eadd0e281bd435158d97c4ad"
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "setup.sh installs the wrapper and its libs when VBW 2 is detected and not otherwise; --uninstall removes it"
+          },
+          "what": "install wrapper even without VBW 2",
+          "files": [
+            "setup.sh"
+          ],
+          "checks": {
+            "C4": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:13Z",
+          "head": "af58dfd81b3197f89c18eef10b8d583352084971"
+        }
       ]
     },
     {
@@ -1211,12 +1253,110 @@
       "after": [
         "P2.1"
       ],
-      "status": "planned",
+      "status": "done",
       "role": "dev",
       "tasks": [
         "grep-cmm-gate: block code Grep from vbw:* with the runnable wrapper command on its own line (keep the [grep-cmm-gate] BLOCKED fingerprint); allow non-code Grep including .vbw/; fail open when the CLI or wrapper is missing or the repo is unindexed",
         "cmm-grep-nudge: same route and fail-open rules for vbw:*; main thread unchanged",
         "cmm-nudge: Read stays advisory for vbw:* and names the wrapper, never mcp__ tools; main-thread nudge unchanged"
+      ],
+      "mutations": [
+        {
+          "rule": {
+            "req": "R4",
+            "text": "code Grep from a vbw:* agent is blocked by grep-cmm-gate with a runnable wrapper command that queries CMM for the term, keeping the [grep-cmm-gate] BLOCKED fingerprint"
+          },
+          "what": "gate wrapper drops the search term",
+          "files": [
+            "hooks/project/grep-cmm-gate.sh"
+          ],
+          "checks": {
+            "C6": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:21:01Z",
+          "head": "6c6da76a692ddc43e0692355bcebf5a7cf0b3030"
+        },
+        {
+          "rule": {
+            "req": "R4",
+            "text": "non-code Grep (configs, docs, .vbw/) from a vbw:* agent is allowed"
+          },
+          "what": "gate no longer exempts .vbw",
+          "files": [
+            "hooks/project/grep-cmm-gate.sh"
+          ],
+          "checks": {
+            "C6": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:21:01Z",
+          "head": "6c6da76a692ddc43e0692355bcebf5a7cf0b3030"
+        },
+        {
+          "rule": {
+            "req": "R4",
+            "text": "grep-cmm-gate and cmm-grep-nudge fail open for vbw:* when the CMM CLI or wrapper is missing or the repo is unindexed"
+          },
+          "what": "gate: no CLI check",
+          "files": [
+            "hooks/project/grep-cmm-gate.sh"
+          ],
+          "checks": {
+            "C6": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:21:01Z",
+          "head": "6c6da76a692ddc43e0692355bcebf5a7cf0b3030"
+        },
+        {
+          "rule": {
+            "req": "R4",
+            "text": "cmm-grep-nudge blocks for vbw:* only with a runnable wrapper command"
+          },
+          "what": "nudge wrapper path wrong",
+          "files": [
+            "hooks/global/cmm-grep-nudge.sh"
+          ],
+          "checks": {
+            "C6": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:21:01Z",
+          "head": "6c6da76a692ddc43e0692355bcebf5a7cf0b3030"
+        },
+        {
+          "rule": {
+            "req": "R4",
+            "text": "cmm-nudge on Read stays advisory for vbw:* (exit 0) and names the wrapper, never mcp__ tools"
+          },
+          "what": "read nudge names mcp__",
+          "files": [
+            "hooks/global/cmm-nudge.sh"
+          ],
+          "checks": {
+            "C6": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:21:01Z",
+          "head": "6c6da76a692ddc43e0692355bcebf5a7cf0b3030"
+        },
+        {
+          "rule": {
+            "req": "R4",
+            "text": "main-thread behaviour of grep-cmm-gate, cmm-grep-nudge and cmm-nudge is unchanged"
+          },
+          "what": "main thread takes vbw branch",
+          "files": [
+            "hooks/global/cmm-nudge.sh"
+          ],
+          "checks": {
+            "C6": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:21:01Z",
+          "head": "6c6da76a692ddc43e0692355bcebf5a7cf0b3030"
+        }
       ]
     },
     {
@@ -1234,12 +1374,94 @@
       "after": [
         "P2.1"
       ],
-      "status": "planned",
+      "status": "done",
       "role": "dev",
       "tasks": [
         "session-gate: for vbw:* name the wrapper index_repository call that lifts the CMM block (allow when no wrapper is installed); skip the Context Mode sentinel for vbw:*",
         "agent-cmm-gate: do not keyword-gate an Agent spawn whose subagent_type is vbw:*",
         "rules/cmm-rules.md: document that workflow-spawned vbw:* agents never pass through agent-cmm-gate and use the wrapper (keep the phase-63 rule constraints)"
+      ],
+      "mutations": [
+        {
+          "rule": {
+            "req": "R4",
+            "text": "session-gate either allows a vbw:* agent or names a wrapper call that, once run, lifts the block; with no wrapper installed it does not hold the agent"
+          },
+          "what": "wrapper names index_status",
+          "files": [
+            "hooks/project/session-gate.sh"
+          ],
+          "checks": {
+            "C7": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:32Z",
+          "head": "af58dfd81b3197f89c18eef10b8d583352084971"
+        },
+        {
+          "rule": {
+            "req": "R4",
+            "text": "session-gate does not hold a vbw:* agent for the Context Mode sentinel; the main thread still is"
+          },
+          "what": "drop CM sentinel exemption",
+          "files": [
+            "hooks/project/session-gate.sh"
+          ],
+          "checks": {
+            "C7": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:32Z",
+          "head": "af58dfd81b3197f89c18eef10b8d583352084971"
+        },
+        {
+          "rule": {
+            "req": "R4",
+            "text": "agent-cmm-gate does not block an Agent spawn with subagent_type vbw:* for lacking CMM keywords"
+          },
+          "what": "drop vbw exemption",
+          "files": [
+            "hooks/project/agent-cmm-gate.sh"
+          ],
+          "checks": {
+            "C7": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:32Z",
+          "head": "af58dfd81b3197f89c18eef10b8d583352084971"
+        },
+        {
+          "rule": {
+            "req": "R4",
+            "text": "rules/cmm-rules.md documents that workflow-spawned vbw:* agents never pass through agent-cmm-gate"
+          },
+          "what": "drop doc line",
+          "files": [
+            "rules/cmm-rules.md"
+          ],
+          "checks": {
+            "C7": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:32Z",
+          "head": "af58dfd81b3197f89c18eef10b8d583352084971"
+        },
+        {
+          "rule": {
+            "req": "R4",
+            "text": "main-thread and non-VBW behaviour of session-gate and agent-cmm-gate is unchanged"
+          },
+          "what": "everyone is vbw",
+          "files": [
+            "hooks/project/session-gate.sh"
+          ],
+          "checks": {
+            "C7": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:33Z",
+          "head": "af58dfd81b3197f89c18eef10b8d583352084971"
+        }
       ]
     },
     {
@@ -1281,14 +1503,157 @@
       "after": [
         "P2.1"
       ],
-      "status": "planned",
+      "status": "blocked",
       "role": "dev",
       "tasks": [
         "detect vbw:architect/lead/dev/qa/scout/debugger/docs and emit wrapper command lines (search_graph, trace_path, get_code_snippet, search_code) with this repo's project; no mcp__, ctx_* or Skill( lines",
         "state when Grep/Read still fit (literals, non-code files, configs), consistent with grep-cmm-gate",
         "CLI missing: no query lines; unindexed repo: give the index_repository wrapper command; non-VBW guidance unchanged",
         "vbw:scout: take structure from get_architecture/search_graph via the wrapper before reading files, and record the CMM project and wrapper command in a map section mapping.js allows"
-      ]
+      ],
+      "mutations": [
+        {
+          "rule": {
+            "req": "R11",
+            "text": "vbw:scout guidance says to record the CMM project and wrapper command in a map section"
+          },
+          "what": "map instruction dropped",
+          "files": [
+            "hooks/project/subagent-cmm-startup.sh"
+          ],
+          "checks": {
+            "C9": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:13Z",
+          "head": "af58dfd81b3197f89c18eef10b8d583352084971"
+        },
+        {
+          "rule": {
+            "req": "R6",
+            "text": "vbw:* guidance says when Grep/Read still fit (literals, non-code files, configs)"
+          },
+          "what": "Grep/Read sentence dropped",
+          "files": [
+            "hooks/project/subagent-cmm-startup.sh"
+          ],
+          "checks": {
+            "C8": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:49Z",
+          "head": "4403ca914758005656ae6aca45b2dfbf02da31fe"
+        },
+        {
+          "rule": {
+            "req": "R6",
+            "text": "with the CMM CLI missing or the repo unindexed the guidance gives no failing command: it gives the index_repository wrapper command or omits CMM advice"
+          },
+          "what": "unindexed branch disabled",
+          "files": [
+            "hooks/project/subagent-cmm-startup.sh"
+          ],
+          "checks": {
+            "C8": "green"
+          },
+          "result": "survivor",
+          "at": "2026-10-28T16:19:49Z",
+          "head": "4403ca914758005656ae6aca45b2dfbf02da31fe"
+        },
+        {
+          "rule": {
+            "req": "R11",
+            "text": "vbw:scout guidance gives get_architecture and search_graph wrapper commands and says to take structure from the graph before reading files"
+          },
+          "what": "get_architecture line dropped",
+          "files": [
+            "hooks/project/subagent-cmm-startup.sh"
+          ],
+          "checks": {
+            "C9": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:49Z",
+          "head": "4403ca914758005656ae6aca45b2dfbf02da31fe"
+        },
+        {
+          "rule": {
+            "req": "R11",
+            "text": "vbw:scout guidance says to record the CMM project and wrapper command in a map section"
+          },
+          "what": "map instruction dropped",
+          "files": [
+            "hooks/project/subagent-cmm-startup.sh"
+          ],
+          "checks": {
+            "C9": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:19:50Z",
+          "head": "4403ca914758005656ae6aca45b2dfbf02da31fe"
+        },
+        {
+          "rule": {
+            "req": "R6",
+            "text": "with the CMM CLI missing or the repo unindexed the guidance gives no failing command: it gives the index_repository wrapper command or omits CMM advice"
+          },
+          "what": "unindexed branch disabled",
+          "files": [
+            "hooks/project/subagent-cmm-startup.sh"
+          ],
+          "checks": {
+            "C8": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:20:15Z",
+          "head": "6c6da76a692ddc43e0692355bcebf5a7cf0b3030",
+          "strengthened": [
+            "tests/test-vbw2-subagent-guidance.sh"
+          ],
+          "pending": [
+            "tests/test-vbw2-subagent-guidance.sh"
+          ]
+        },
+        {
+          "rule": {
+            "req": "R6",
+            "text": "each of the 7 vbw:* agent types gets wrapper command lines for search_graph, trace_path, get_code_snippet and search_code naming this repo's project"
+          },
+          "what": "trace_path wrapper line mangled",
+          "files": [
+            "hooks/project/subagent-cmm-startup.sh"
+          ],
+          "checks": {
+            "C8": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:20:24Z",
+          "head": "6c6da76a692ddc43e0692355bcebf5a7cf0b3030",
+          "pending": [
+            "tests/test-vbw2-subagent-guidance.sh"
+          ]
+        },
+        {
+          "rule": {
+            "req": "R6",
+            "text": "vbw:* guidance names no mcp__, ctx_* or Skill( calls; non-VBW guidance is unchanged"
+          },
+          "what": "mcp__ in guidance",
+          "files": [
+            "hooks/project/subagent-cmm-startup.sh"
+          ],
+          "checks": {
+            "C8": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:20:24Z",
+          "head": "6c6da76a692ddc43e0692355bcebf5a7cf0b3030",
+          "pending": [
+            "tests/test-vbw2-subagent-guidance.sh"
+          ]
+        }
+      ],
+      "note": "C10 (live proof R11.3/R11.4) needs a fresh /vbw:map run after setup.sh --project installs the wrapper: .vbw/map.md has no section naming CMM project Users-ahby-Sources-ccs-vbw2 + cmm-query.sh, and the recorded map run (wf_29ced0bd-b86) predates this guidance. Neither is in the plan's files. Hook (C8, C9) done and committed; test-vbw2-subagent-guidance.sh strengthened (R6.4 survivor) and awaits approval."
     },
     {
       "id": "P3.2",
@@ -2154,6 +2519,17 @@
         "ended": "2026-10-28T16:11:31Z",
         "cost": {
           "usd": 1.308532
+        }
+      },
+      {
+        "id": "build-20261028T161729Z",
+        "kind": "build",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T16:17:29Z",
+        "ended": "2026-10-28T16:21:26Z",
+        "cost": {
+          "usd": 1.69032
         }
       }
     ],
