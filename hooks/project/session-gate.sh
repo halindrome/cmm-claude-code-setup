@@ -114,8 +114,30 @@ _advise() {
     || printf '%s\n' "$1" >&2
 }
 
+# vbw:* agents have Bash but no MCP tools and cannot create sentinels: route them
+# through the cmm-query.sh wrapper instead (no wrapper installed -> do not hold them).
+IS_VBW=0
+case "$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('agent_type',''))" 2>/dev/null)" in
+  vbw:*) IS_VBW=1 ;;
+esac
+
 # Check CMM sentinel
 if [ ! -f "$CMM_SENTINEL" ]; then
+  if [ "$IS_VBW" -eq 1 ]; then
+    [ -f "${PROJECT_ROOT}/.claude/hooks/cmm-query.sh" ] || exit 0
+    [ -f "$_LIB_DIR/cmm-registered.sh" ] && source "$_LIB_DIR/cmm-registered.sh"
+    _QCMD="$(cmm_query_cmd index_repository 2>/dev/null)"
+    [ -n "$_QCMD" ] || exit 0
+    cat >&2 <<BLOCKED
+BLOCKED: CMM index not refreshed for this session.
+
+Run this via Bash to open the gate:
+  $_QCMD '{}'
+
+You can still use Bash, Read, Grep, Glob, SendMessage and Skill without opening the gate.
+BLOCKED
+    exit 2
+  fi
   # Fail-open-while-indexing (large-repo startup): cmm-session-start.sh writes
   # /tmp/cmm-indexing-<hash> at session start; cmm-sentinel-writer.sh clears it
   # (and writes the ready sentinel) once index_repository/index_status completes.
@@ -168,6 +190,9 @@ if grep -q '^stale$' "$CMM_SENTINEL"; then
   _advise "CMM note: index may lag recent commit. The server watcher will reindex automatically (5–60s).
 Call mcp__codebase-memory-mcp__index_repository now if you need graph data to be current immediately."
 fi
+
+# vbw:* agents cannot initialize Context Mode: never hold them for its sentinel.
+[ "$IS_VBW" -eq 1 ] && exit 0
 
 # --- Phase 3: Context Mode Gate (only if installed AND loadable) ---
 # See hooks/lib/context-mode-detect.sh: presence on disk is not proof the
