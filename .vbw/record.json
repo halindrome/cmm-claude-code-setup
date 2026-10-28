@@ -1948,6 +1948,13 @@
       "sort": "next",
       "size": "small",
       "status": "open"
+    },
+    {
+      "id": "T10",
+      "text": "setup.sh cosmetic warnings: .mcp.json JSON validation 'failed' when no .mcp.json was created; '0/13 CMM tools allowlisted'; 'VBW not installed (vbw2)' printed next to 'VBW 2 detected'",
+      "sort": "later",
+      "size": "small",
+      "status": "open"
     }
   ],
   "decisions": [
