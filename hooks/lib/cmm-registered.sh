@@ -157,3 +157,14 @@ print(out, end="")' 2>/dev/null)" || name="${root//\//-}"
     while [[ "$name" == *- ]]; do name="${name%-}"; done
     printf '%s' "${name:-root}"
 }
+
+# cmm_query_cmd <tool> -> the exact Bash command line a gate or guidance
+# message should hand an agent that has Bash but no MCP tools:
+#   bash <project-root>/.claude/hooks/cmm-query.sh <tool>
+# Uses PROJECT_ROOT (project-root.sh) or the git toplevel; the caller appends
+# the JSON arguments. Prints nothing when no root can be determined.
+cmm_query_cmd() {
+    local root="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+    [ -n "$root" ] || return 0
+    printf 'bash %s/.claude/hooks/cmm-query.sh %s' "$root" "${1:-search_graph}"
+}
