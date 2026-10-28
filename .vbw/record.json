@@ -70,20 +70,6 @@
       "milestone": "M1"
     },
     {
-      "id": "R7",
-      "text": "docs/vbw2-extension-proposal.md covers the problem, the worker-simulator measurements, proposed extension points (configurable extra tools incl. MCP, MCP inheritance, skills, rule injection, a map provider) and how this stack uses each",
-      "proof": "auto",
-      "status": "open",
-      "milestone": "M1"
-    },
-    {
-      "id": "R8",
-      "text": "The VBW 2 extension proposal is ready to file upstream",
-      "proof": "human",
-      "status": "open",
-      "milestone": "M1"
-    },
-    {
       "id": "R9",
       "text": "CONTRIBUTING.md and CLAUDE.md document the VBW 2 + /qa-cycle PR sequence: feature/* branch off develop before the first VBW step, a GitHub issue mirroring the requirements as the QA contract, push and PR to develop from the main session (VBW never pushes), /qa-cycle rounds with their own fix commits, keep-the-changes then vbw prove, accept, ship",
       "proof": "auto",
@@ -115,9 +101,29 @@
       "sort": "later",
       "size": "medium",
       "status": "open"
+    },
+    {
+      "id": "T2",
+      "text": "Field-test the VBW 2 stack: install it, run VBW 2 on a large repo with many sub-projects, collect make measure before/after CMM vs Read/Grep/Glob counts",
+      "sort": "next",
+      "size": "medium",
+      "status": "open"
     }
   ],
-  "decisions": [],
+  "decisions": [
+    {
+      "id": "D1",
+      "text": "vbw:* enforcement posture: Redirect (grep-cmm-gate blocks code Grep from vbw:* and names the exact codebase-memory-mcp cli command; fails open when CLI missing or repo unindexed; Read stays advisory)",
+      "why": "Same rules as main thread and R4 holds; accepts a turn per blocked Grep and that Bash rg still bypasses",
+      "at": "2026-10-28T15:12:54Z"
+    },
+    {
+      "id": "D2",
+      "text": "CMM CLI access for vbw:* agents: setup.sh installs a wrapper command that enforces a read-tool allowlist plus index_repository, resolves the project from cwd and adds --quiet; agents may index when the project is missing; SessionStart keeps kicking off indexing (existing hook-driven indexing on develop)",
+      "why": "User's choice: shorter agent commands and one place for project lookup, works on never-indexed repos; accepts one more installed file that can drift from CMM CLI flags and agents writing graphs",
+      "at": "2026-10-28T15:16:40Z"
+    }
+  ],
   "commands": {
     "test": [
       "make",
