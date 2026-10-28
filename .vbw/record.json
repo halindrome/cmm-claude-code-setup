@@ -533,7 +533,7 @@
           "check": "C10"
         },
         {
-          "text": "the latest recorded vbw map run shows at least one wrapper CMM call in the structure scout transcript, and no scout code search (Grep, or Bash grep/rg on code files) runs unredirected; non-code angles (conventions) need no CMM call",
+          "text": "the latest recorded vbw map run shows at least one wrapper CMM call in the structure scout transcript; other angles need no CMM call, and code-search redirect is proven by C6",
           "check": "C10"
         }
       ]
@@ -1912,6 +1912,17 @@
       "id": "D10",
       "at": "2026-10-28T16:45:50Z",
       "text": "Contract approved: 9 requirements, 13 checks, 11 plans (95170135c287); express: P4 (R1, C12, C13, P4.1); express: P5 (R9, R10, P5.1)"
+    },
+    {
+      "id": "D11",
+      "text": "R11.4 narrowed to the structure scout only; the 'no unredirected code search' clause dropped (not checkable from transcripts; redirect proven by C6). Forced first-query line reverted and C10 updated in the main session (commits on feature/102) because the P3.1 Dev did not apply D9",
+      "why": "User's choice",
+      "at": "2026-10-28T16:48:49Z"
+    },
+    {
+      "id": "D12",
+      "at": "2026-10-28T16:49:04Z",
+      "text": "Contract approved: 9 requirements, 13 checks, 11 plans (9515b163c394); express: P4 (R1, C12, C13, P4.1); express: P5 (R9, R10, P5.1)"
     }
   ],
   "commands": {
