@@ -5,8 +5,9 @@
 #     commands, Structure, Conventions, Tests, Risks), the CMM project of this
 #     repo and the cmm-query.sh wrapper command for the live graph.
 #  2. The latest recorded `vbw map` run of this repo (a workflow whose journal
-#     starts the five scout angles) shows at least one wrapper (or
-#     `codebase-memory-mcp cli`) Bash call in every scout angle's transcript.
+#     starts the five scout angles): the structure scout makes at least one
+#     wrapper (or `codebase-memory-mcp cli`) Bash call. Other angles need no CMM
+#     call, and redirect of code search is proven by C6 (D9).
 #     No mapping run on this machine -> SKIP (visible), not a failure.
 # Precondition: re-run setup.sh --project here (wrapper installed), then /vbw:map.
 # Usage: bash tests/live/vbw2-map-run.sh
@@ -61,21 +62,21 @@ if not runs:
 else:
     _, d, labels = max(runs)
     cmm = re.compile(r"cmm-query\.sh|codebase-memory-mcp\s+cli\b")
-    for a in angles:
-        n = 0
-        for line in open(os.path.join(d, f"agent-{labels[a]}.jsonl"), errors="replace"):
-            try:
-                r = json.loads(line)
-            except Exception:
-                continue
-            for b in ((r.get("message") or {}).get("content") or []):
-                if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "Bash" \
-                        and cmm.search(str((b.get("input") or {}).get("command", ""))):
-                    n += 1
-        if n:
-            print(f"PASS: {os.path.basename(d)} {a}: {n} wrapper CMM call(s)")
-        else:
-            fails.append(f"{os.path.basename(d)} {a}: no wrapper CMM call")
+    a = "scout structure"
+    n = 0
+    for line in open(os.path.join(d, f"agent-{labels[a]}.jsonl"), errors="replace"):
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        for b in ((r.get("message") or {}).get("content") or []):
+            if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "Bash" \
+                    and cmm.search(str((b.get("input") or {}).get("command", ""))):
+                n += 1
+    if n:
+        print(f"PASS: {os.path.basename(d)} {a}: {n} wrapper CMM call(s)")
+    else:
+        fails.append(f"{os.path.basename(d)} {a}: no wrapper CMM call")
 for f in fails:
     print("FAIL: " + f)
 sys.exit(1 if fails else 0)
