@@ -118,7 +118,9 @@ if [ -z "$ONLY" ] || [ "$ONLY" = agents ]; then
     fi
     _unindexed
     C="$(_ctx vbw:dev)"
-    if printf '%s' "$C" | grep -Eq "$QUERY_RE" && ! printf '%s' "$C" | grep -q 'cmm-query\.sh['"'"'"]\? index_repository'; then
+    if printf '%s' "$C" | grep -Eq "$QUERY_RE"; then
+        _fail "unindexed repo: query commands given that would fail before indexing"
+    elif printf '%s' "$C" | grep -Eq "$QUERY_RE" && ! printf '%s' "$C" | grep -q 'cmm-query\.sh['"'"'"]\? index_repository'; then
         _fail "unindexed repo: query commands given without the index_repository wrapper command"
     elif printf '%s' "$C" | grep -q 'mcp__'; then
         _fail "unindexed repo: guidance names MCP calls"
