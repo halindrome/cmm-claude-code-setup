@@ -94,7 +94,7 @@ else
     _fail "setup registered agent-override-generate.sh for VBW 2 (or wrote no settings.json)"
 fi
 _gen v2
-if [ "$GEN_RC" = 0 ] && [ "$(_count "$GEN_DIR")" = 0 ] && ! grep -q 'WARN' "$T/v2/gen.err"; then
+if [ "$GEN_RC" = 0 ] && [ "$(_count "$GEN_DIR")" = 0 ] && ! grep -q 'WARN' "$T/v2/gen.err" && [ ! -s "$T/v2/gen.out" ]; then
     _pass "generator under VBW 2: exit 0, no overrides, no warnings"
 else
     _fail "generator under VBW 2: rc=$GEN_RC, overrides=$(_count "$GEN_DIR"), stderr=$(head -c 300 "$T/v2/gen.err")"
