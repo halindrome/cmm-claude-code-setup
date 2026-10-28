@@ -24,6 +24,8 @@ Field evidence (2026-10-27, worker-simulator): ../cmm-claude-code-setup/.vbw-pla
 - R6 [auto] All 7 VBW 2 agent types get CMM-first code-search guidance they can act on with their allowed tools
 - R7 [auto] docs/vbw2-extension-proposal.md covers the problem, the worker-simulator measurements, proposed extension points (configurable extra tools incl. MCP, MCP inheritance, skills, rule injection) and how this stack uses each
 - R8 [human] The VBW 2 extension proposal is ready to file upstream
+- R9 [auto] CONTRIBUTING.md and CLAUDE.md document the VBW 2 + /qa-cycle PR sequence: feature/* branch off develop before the first VBW step, a GitHub issue mirroring the requirements as the QA contract, push and PR to develop from the main session (VBW never pushes), /qa-cycle rounds with their own fix commits, keep-the-changes then vbw prove, accept, ship
+- R10 [human] The PR to develop is approved through /qa-cycle (clean round, GitHub issue as contract), and every QA fix commit is kept and re-proven by VBW
 
 <!-- One requirement per line: an id, how it is proved, and a user-observable
      statement. [auto] = a check can prove it; [human] = only a person can judge it.
