@@ -122,6 +122,17 @@ _expect "'vbw decide \$(cat f)' -> block" 2 "$(_json 'vbw decide $(cat f)')"
 _expect "'vbw decide \`cat f\`' -> block" 2 "$(_json 'vbw decide `cat f`')"
 _expect "'vbw show contract > f' -> block" 2 "$(_json 'vbw show contract > f')"
 _expect "'vbwx foo' (name-prefix lookalike) -> block" 2 "$(_json 'vbwx foo')"
+_expect "'vbw decide \"\$(cat f)\"' (live inside double quotes) -> block" 2 "$(_json 'vbw decide "$(cat f)"')"
+_expect "'vbw decide \"a\" ; rm x' (operator outside quotes) -> block" 2 "$(_json 'vbw decide "a" ; rm x')"
+_expect "'vbw decide \"a\" > f' (redirect outside quotes) -> block" 2 "$(_json 'vbw decide "a" > f')"
+_expect "escaped quote pairing 'vbw x \\'; rm y; echo \\'' -> block" 2 "$(_json "vbw x \\'; rm y; echo \\'")"
+
+echo "--- quoted vbw arguments are literal text ---"
+_expect "'vbw todo add \"fix (a); b\"' -> allow" 0 "$(_json 'vbw todo add "fix (a); b"')"
+_expect "vbw decide with ( ) ' | in quotes -> allow" 0 "$(_json "vbw decide 'use X (not Y)' \"why: it's | fine\"")"
+
+echo "--- VBW 1 agent types are not VBW 2 agents ---"
+_expect "agent_type vbw:vbw-dev pytest -> block" 2 "$(_json 'pytest' '"vbw:vbw-dev"')"
 
 echo "--- missing, empty or malformed agent_type falls through to normal enforcement ---"
 _expect "agent_type absent pytest -> block" 2 "$(_json 'pytest')"

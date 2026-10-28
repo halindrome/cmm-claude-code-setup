@@ -117,6 +117,44 @@ else
 fi
 _hook "$R" session-gate.sh "$(_edit "$R" general-purpose)"
 [ "$RC" = 2 ] && _pass "non-VBW agent still blocked" || _fail "non-VBW agent no longer gated (rc=$RC)"
+_hook "$R" session-gate.sh "$(_edit "$R" vbw:vbw-dev)"
+if [ "$RC" = 2 ] && printf '%s' "$ERR" | grep -q 'mcp__codebase-memory-mcp__index_repository'; then
+    _pass "VBW 1 agent (vbw:vbw-dev) gated like any other agent"
+else
+    _fail "VBW 1 agent treated as VBW 2 (rc=$RC)"
+fi
+
+echo "--- session-gate, CLI not on PATH (wrapper cannot run) ---"
+_reset "$H"
+RC=0
+printf '%s' "$(_edit "$R" vbw:dev)" | (cd "$R" && HOME="$T/home" PATH="/usr/bin:/bin:/usr/sbin:/sbin" bash "$R/.claude/hooks/session-gate.sh" >"$T/out" 2>"$T/err") || RC=$?
+[ "$RC" = 0 ] && _pass "vbw:dev not held when the wrapper's CLI is off PATH" ||
+    _fail "vbw:dev held with a wrapper route that cannot run (rc=$RC, err=$(cat "$T/err"))"
+
+echo "--- session-gate, index still being built (fail-open) ---"
+_reset "$H"
+: >"/tmp/cmm-indexing-$H"
+sleep 300 & _SLEEPER=$!
+echo "$_SLEEPER" >"/tmp/cmm-indexer-$H.pid"
+_hook "$R" session-gate.sh "$(_edit "$R" vbw:dev)"
+OUT="$(cat "$T/out")"
+if [ "$RC" = 0 ] && printf '%s' "$OUT" | grep -q 'cmm-query.sh index_status' && ! printf '%s' "$OUT" | grep -q 'mcp__'; then
+    _pass "vbw:dev fails open while the background indexer runs, with a wrapper status command"
+else
+    _fail "vbw:dev not failed open while indexing (rc=$RC, out=$OUT, err=$ERR)"
+fi
+kill "$_SLEEPER" 2>/dev/null || true
+wait "$_SLEEPER" 2>/dev/null || true
+_hook "$R" session-gate.sh "$(_edit "$R" vbw:dev)"
+OUT="$(cat "$T/out")"
+if [ "$RC" = 0 ] && printf '%s' "$OUT" | grep -q 'cmm-query.sh index_repository' && ! printf '%s' "$OUT" | grep -q 'mcp__'; then
+    _pass "vbw:dev fails open with the wrapper index command when no indexer is running"
+else
+    _fail "vbw:dev indexing-marker fail-open without a live indexer (rc=$RC, out=$OUT, err=$ERR)"
+fi
+_hook "$R" session-gate.sh "$(_edit "$R")"
+[ "$RC" = 0 ] && _pass "main thread still fails open while indexing" || _fail "main-thread indexing fail-open changed (rc=$RC)"
+_reset "$H"
 
 echo "--- session-gate, Context Mode installed but not initialized ---"
 _reset "$H"

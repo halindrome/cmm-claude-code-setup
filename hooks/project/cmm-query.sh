@@ -29,14 +29,18 @@ if ! command -v codebase-memory-mcp >/dev/null 2>&1; then
 fi
 
 # Merge project / repo_path into the caller's JSON object (default {}).
-if [ "$TOOL" = index_repository ]; then KEY=repo_path; VAL="$PROJECT_ROOT"; else KEY=project; VAL="$(cmm_project_name)"; fi
-ARGS="$(KEY="$KEY" VAL="$VAL" python3 -c '
+# index_repository always indexes this project: it opens this project's gate.
+if [ "$TOOL" = index_repository ]; then KEY=repo_path; VAL="$PROJECT_ROOT"; FORCE=1; else KEY=project; VAL="$(cmm_project_name)"; FORCE=; fi
+ARGS="$(KEY="$KEY" VAL="$VAL" FORCE="$FORCE" python3 -c '
 import json, os, sys
 raw = sys.argv[1] if len(sys.argv) > 1 else ""
 a = json.loads(raw) if raw.strip() else {}
 if not isinstance(a, dict):
     raise ValueError("arguments must be a JSON object")
-a.setdefault(os.environ["KEY"], os.environ["VAL"])
+if os.environ["FORCE"]:
+    a[os.environ["KEY"]] = os.environ["VAL"]
+else:
+    a.setdefault(os.environ["KEY"], os.environ["VAL"])
 print(json.dumps(a))' "${2:-}" 2>&1)" || {
     echo "cmm-query: invalid JSON arguments for $TOOL (expected an object): ${2:-}" >&2
     exit 2

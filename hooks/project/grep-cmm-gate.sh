@@ -112,10 +112,10 @@ CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
 # If project not yet indexed for this session, fail open (same deadlock-prevention posture as ctx-execute-enforcer)
 [ ! -f "$CMM_SENTINEL" ] && exit 0
 
-# --- vbw:* agents have Bash but no MCP tools: route them to the cmm-query.sh wrapper ---
+# --- VBW 2 agents have Bash but no MCP tools: route them to the cmm-query.sh wrapper ---
 # No CLI or no installed wrapper -> no route to offer, so fail open rather than strand them.
 IS_VBW=false
-case "$AGENT_TYPE" in vbw:*) IS_VBW=true ;; esac
+case "$AGENT_TYPE" in vbw:architect|vbw:lead|vbw:dev|vbw:qa|vbw:scout|vbw:debugger|vbw:docs) IS_VBW=true ;; esac
 if [ "$IS_VBW" = true ]; then
     command -v codebase-memory-mcp >/dev/null 2>&1 || exit 0
     [ -f "$REPO_ROOT/.claude/hooks/cmm-query.sh" ] || exit 0

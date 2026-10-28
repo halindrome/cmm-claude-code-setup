@@ -156,6 +156,12 @@ if [ "$RC" = 0 ] && [ "$(_argv "'index_repository' in a and j is not None and j.
 else
     _fail "index_repository not run with repo_path=$T/repo (rc=$RC, argv=$(cat "$STUB_LOG" 2>/dev/null || echo none))"
 fi
+_q "$T/repo" "$PATH_STUB" index_repository '{"repo_path":"/some/other/dir"}'
+if [ "$(_argv "j is not None and j.get('repo_path')=='$T/repo'")" = "True" ]; then
+    _pass "caller-supplied repo_path is overridden: index_repository always indexes this project"
+else
+    _fail "index_repository indexed a caller-supplied path but opens this project's gate (argv=$(cat "$STUB_LOG" 2>/dev/null || echo none))"
+fi
 
 echo "--- project comes from the monorepo/superproject root, from any cwd ---"
 mkdir -p "$T/subsrc"

@@ -114,29 +114,26 @@ _advise() {
     || printf '%s\n' "$1" >&2
 }
 
-# vbw:* agents have Bash but no MCP tools and cannot create sentinels: route them
-# through the cmm-query.sh wrapper instead (no wrapper installed -> do not hold them).
+# VBW 2 agents have Bash but no MCP tools and cannot create sentinels: route them
+# through the cmm-query.sh wrapper instead. No runnable route (wrapper not
+# installed, or the CLI it calls not on PATH) -> do not hold them.
 IS_VBW=0
 case "$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('agent_type',''))" 2>/dev/null)" in
-  vbw:*) IS_VBW=1 ;;
+  vbw:architect|vbw:lead|vbw:dev|vbw:qa|vbw:scout|vbw:debugger|vbw:docs) IS_VBW=1 ;;
 esac
 
 # Check CMM sentinel
 if [ ! -f "$CMM_SENTINEL" ]; then
+  _IDX_HINT="Call mcp__codebase-memory-mcp__index_repository${PROJECT_ROOT:+(repo_path=\"$PROJECT_ROOT\")} now"
+  _STATUS_HINT="mcp__codebase-memory-mcp__index_status"
   if [ "$IS_VBW" -eq 1 ]; then
     [ -f "${PROJECT_ROOT}/.claude/hooks/cmm-query.sh" ] || exit 0
+    command -v codebase-memory-mcp >/dev/null 2>&1 || exit 0
     [ -f "$_LIB_DIR/cmm-registered.sh" ] && source "$_LIB_DIR/cmm-registered.sh"
     _QCMD="$(cmm_query_cmd index_repository 2>/dev/null)"
     [ -n "$_QCMD" ] || exit 0
-    cat >&2 <<BLOCKED
-BLOCKED: CMM index not refreshed for this session.
-
-Run this via Bash to open the gate:
-  $_QCMD '{}'
-
-You can still use Bash, Read, Grep, Glob, SendMessage and Skill without opening the gate.
-BLOCKED
-    exit 2
+    _IDX_HINT="Run via Bash: $_QCMD '{}'"
+    _STATUS_HINT="$(cmm_query_cmd index_status) '{}'"
   fi
   # Fail-open-while-indexing (large-repo startup): cmm-session-start.sh writes
   # /tmp/cmm-indexing-<hash> at session start; cmm-sentinel-writer.sh clears it
@@ -158,14 +155,27 @@ BLOCKED
     _IDX_PID="$(cat "/tmp/cmm-indexer-${PROJECT_HASH}.pid" 2>/dev/null)"
     if [ -z "$_IDX_PID" ] || ! kill -0 "$_IDX_PID" 2>/dev/null; then
       _advise "CMM note: the index is not ready and no background refresh is running — proceeding without it.
-Call mcp__codebase-memory-mcp__index_repository${PROJECT_ROOT:+(repo_path=\"$PROJECT_ROOT\")} now (incremental, fast when already indexed)."
+${_IDX_HINT} (incremental, fast when already indexed)."
       exit 0
     fi
     _advise "CMM note: the index is still being built for this session — proceeding without it.
 Code-navigation tools may return partial or stale results until indexing finishes.
-Check progress with mcp__codebase-memory-mcp__index_status; the gate closes itself
+Check progress with ${_STATUS_HINT}; the gate closes itself
 once the index is ready (no action needed)."
     exit 0
+  fi
+  if [ "$IS_VBW" -eq 1 ]; then
+    cat >&2 <<BLOCKED
+BLOCKED: CMM index not refreshed for this session.
+
+Run this via Bash to open the gate:
+  $_QCMD '{}'
+
+You can still use Bash, Read, Grep, Glob, SendMessage and Skill without opening the gate.
+If the CMM server is unavailable, ask the user to create the bypass sentinel:
+  touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
+BLOCKED
+    exit 2
   fi
   cat >&2 <<BLOCKED
 BLOCKED: CMM index not refreshed for this session.
@@ -191,7 +201,7 @@ if grep -q '^stale$' "$CMM_SENTINEL"; then
 Call mcp__codebase-memory-mcp__index_repository now if you need graph data to be current immediately."
 fi
 
-# vbw:* agents cannot initialize Context Mode: never hold them for its sentinel.
+# VBW 2 agents cannot initialize Context Mode: never hold them for its sentinel.
 [ "$IS_VBW" -eq 1 ] && exit 0
 
 # --- Phase 3: Context Mode Gate (only if installed AND loadable) ---

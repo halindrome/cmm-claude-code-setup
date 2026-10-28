@@ -36,7 +36,7 @@ import sys,json
 print(json.load(sys.stdin).get('agent_type','') or '')
 " 2>/dev/null)
 IS_VBW=false
-case "$AGENT_TYPE" in vbw:*) IS_VBW=true ;; esac
+case "$AGENT_TYPE" in vbw:architect|vbw:lead|vbw:dev|vbw:qa|vbw:scout|vbw:debugger|vbw:docs) IS_VBW=true ;; esac
 
 # _vbw_route <repo-root> <term> <ident 1|0> -> two runnable cmm-query.sh lines for a vbw:*
 # agent (Bash, no MCP tools). Returns 1 (caller fails open) when there is no runnable
@@ -271,7 +271,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
         _ID=0; printf '%s' "$_TERM" | grep -qE '^[A-Za-z_][A-Za-z0-9_:]{1,63}$' && _ID=1
         _W=$(_vbw_route "$BASH_REPO_ROOT" "$_TERM" "$_ID") || exit 0
         cat >&2 <<EOF
-BLOCKED: Use CMM instead of Bash navigation for code search. Run via Bash:
+BLOCKED: Use CMM tools instead of Bash navigation for code search. Run via Bash:
 $(echo "$_W" | sed -n '1p')
 OR:
 $(echo "$_W" | sed -n '2p')
@@ -456,7 +456,7 @@ if [ "$IS_VBW" = true ]; then
   _ID=0; printf '%s' "$PATTERN_FIELD" | grep -qE '^[A-Za-z_][A-Za-z0-9_:]{1,63}$' && _ID=1
   _W=$(_vbw_route "$_VROOT" "$PATTERN_FIELD" "$_ID") || exit 0
   cat >&2 <<EOF
-BLOCKED: Use CMM instead of Grep for code search on $BLOCK_TARGET. Run via Bash:
+BLOCKED: Use CMM tools instead of Grep for code search on $BLOCK_TARGET. Run via Bash:
 $(echo "$_W" | sed -n '1p')
 OR:
 $(echo "$_W" | sed -n '2p')

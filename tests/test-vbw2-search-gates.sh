@@ -181,7 +181,9 @@ _either() { # <label>
         local line tool
         line="$(_wrapper_line "$ERR")"
         tool="$(printf '%s' "$line" | grep -Eo 'search_(graph|code)' | head -1)"
-        if _runs "$line" "$tool" ""; then
+        if ! printf '%s' "$ERR" | grep -q 'BLOCKED: Use CMM tools'; then
+            _fail "$1: block lacks the 'BLOCKED: Use CMM tools' fingerprint make measure keys on"
+        elif _runs "$line" "$tool" ""; then
             _pass "$1: blocked with a runnable wrapper command"
         else
             _fail "$1: names a wrapper command that does not run"

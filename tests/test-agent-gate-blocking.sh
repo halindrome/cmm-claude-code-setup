@@ -68,9 +68,12 @@ echo "--- Test 11: Plan with CMM keywords -> allowed (exit 0) ---"
 _assert_exit "Test 11: Plan with trace_path allowed" 0 \
     '{"tool_name":"Agent","tool_input":{"subagent_type":"Plan","prompt":"Use trace_path and get_architecture to analyze dependencies before planning the refactor"}}'
 
-echo "--- Test 12: VBW agent type built-in exempt (R4) -> allowed (exit 0) ---"
-# vbw:* is built-in exempt again (P2.4, R4): VBW agents use the cmm-query.sh wrapper.
-_assert_exit "Test 12: vbw:vbw-dev exempt (allowed)" 0 \
+echo "--- Test 12: VBW 2 agent types built-in exempt (R4); VBW 1 types still gated ---"
+# VBW 2 agents use the cmm-query.sh wrapper. VBW 1 agents (vbw:vbw-*) opt in via
+# cmm-agent-passthrough.txt, as before.
+_assert_exit "Test 12a: vbw:dev exempt (allowed)" 0 \
+    '{"tool_name":"Agent","tool_input":{"subagent_type":"vbw:dev","prompt":"Look at the function in this file and refactor the class method"}}'
+_assert_exit "Test 12b: vbw:vbw-dev blocked (VBW 1, no passthrough)" 2 \
     '{"tool_name":"Agent","tool_input":{"subagent_type":"vbw:vbw-dev","prompt":"Look at the function in this file and refactor the class method"}}'
 
 echo "--- Test 13: claude-code-guide still exempt (exit 0) ---"
