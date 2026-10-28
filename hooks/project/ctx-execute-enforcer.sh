@@ -156,6 +156,19 @@ print("true" if d.get("tool_input",{}).get("run_in_background") is True else "fa
     exit 0
 fi
 
+# --- VBW 2 agents (before compound normalization) ---
+# Bash from a vbw:* agent (dev, qa, scout, ...) is VBW's own workflow; its
+# output belongs in that agent's context, so any command passes, compound
+# included. Keyed on the PreToolUse input's agent_type. Missing, empty,
+# non-string or malformed values never match and fall through.
+if [ "$(printf '%s' "$INPUT" | python3 -c 'import sys,json
+try: a=json.load(sys.stdin).get("agent_type")
+except Exception: a=None
+print("true" if isinstance(a,str) and a.startswith("vbw:") else "false")' 2>/dev/null)" = "true" ]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash_exempt" "vbw-agent" 2>/dev/null || true
+    exit 0
+fi
+
 # --- Compound-shell normalization (Phase 61 follow-up) ---
 # Agents frequently bypass exemptions by prefixing with `cd <dir> && <command>`
 # because `cd ` matches the navigation exemption. Peel off any leading
@@ -316,6 +329,17 @@ fi
 _track_exempt() {
   bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-exempt" "$1" 2>/dev/null || true
 }
+
+# --- Bare vbw CLI (VBW 2) ---
+# `vbw <args>` from any caller, optionally with an env prefix or an absolute
+# path to the binary. Runs after the compound scan above; the character class
+# also rejects redirects, substitutions and parens that scan does not cover.
+# `vbwx` and friends do not match: the name must end at whitespace or EOL.
+_VBWCLI='^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]<>|&;$`()]*[[:space:]]+)*(/[^[:space:]<>|&;$`()]*/)?vbw([[:space:]][^<>|&;$`()]*)?$'
+if [[ "$COMMAND" =~ $_VBWCLI ]]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash_exempt" "vbw-cli" 2>/dev/null || true
+    exit 0
+fi
 
 # --- Git global-flag normalization ---
 # The git exemptions below anchor on `git ` followed immediately by the
