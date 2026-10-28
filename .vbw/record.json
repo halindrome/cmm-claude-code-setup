@@ -653,6 +653,12 @@
           "from": "deep",
           "to": "deep",
           "reason": "Dev blocked P3.1: C10 (R11.4) fails: latest vbw map run wf_13a51508-11e has wrapper CMM calls only in scout structure, not stack/conventions/tests/risks. Strengthened scout guidance (86c22b9: every angle starts with a wrapper query; C8/C9/C11 green) but proof needs a fresh /vbw:map run, which a Dev cannot start."
+        },
+        {
+          "at": "2026-10-28T16:46:34Z",
+          "from": "deep",
+          "to": "deep",
+          "reason": "Dev blocked P3.1: C10 (live) fails: latest recorded map run wf_13a51508-11e predates fix 86c22b9; its risks scout made no wrapper CMM call. Code is fixed and C8/C9/C11 pass, but C10 needs a fresh /vbw:map run (a user slash command, not runnable by Dev) after re-running setup.sh --project, then .vbw/map.md refreshed/committed."
         }
       ]
     },
@@ -1509,7 +1515,7 @@
       "after": [
         "P2.1"
       ],
-      "status": "planned",
+      "status": "blocked",
       "role": "dev",
       "tasks": [
         "detect vbw:architect/lead/dev/qa/scout/debugger/docs and emit wrapper command lines (search_graph, trace_path, get_code_snippet, search_code) with this repo's project; no mcp__, ctx_* or Skill( lines",
@@ -1658,7 +1664,8 @@
             "tests/test-vbw2-subagent-guidance.sh"
           ]
         }
-      ]
+      ],
+      "note": "C10 (live) fails: latest recorded map run wf_13a51508-11e predates fix 86c22b9; its risks scout made no wrapper CMM call. Code is fixed and C8/C9/C11 pass, but C10 needs a fresh /vbw:map run (a user slash command, not runnable by Dev) after re-running setup.sh --project, then .vbw/map.md refreshed/committed."
     },
     {
       "id": "P3.2",
@@ -2683,6 +2690,17 @@
         "ended": "2026-10-28T16:43:34Z",
         "cost": {
           "usd": 0.444522
+        }
+      },
+      {
+        "id": "build-20261028T164555Z",
+        "kind": "build",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T16:45:55Z",
+        "ended": "2026-10-28T16:46:48Z",
+        "cost": {
+          "usd": 0.215407
         }
       }
     ],
