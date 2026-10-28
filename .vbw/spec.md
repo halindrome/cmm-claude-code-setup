@@ -6,6 +6,8 @@ A hook-based enforcement layer that makes Claude Code use codebase-memory-mcp (C
 
 This milestone: update the stack to work well with VBW 2 (new conventions, e.g. `.vbw/` instead of `.vbw-planning/`).
 
+Field evidence (2026-10-27, worker-simulator): ../cmm-claude-code-setup/.vbw-planning/todo-details.json items c4e1b7a2 (enforcer patch + 11 test cases) and d81f3c06 (tool-gap measurements, options).
+
 ## Non-goals
 
 ## Constraints
@@ -13,6 +15,15 @@ This milestone: update the stack to work well with VBW 2 (new conventions, e.g. 
 - VBW 2 reference is the installed plugin (~/.config/claude-code/plugins/cache/vbw-marketplace/vbw/2.1.18); no fork or sibling checkout.
 
 ## Requirements
+
+- R1 [auto] make measure counts CMM vs Read/Grep/Glob calls inside VBW 2 workflow agents (from workflow subagent transcripts) and does not score those runs as enforcement bypasses
+- R2 [auto] ctx-execute-enforcer allows Bash from vbw:* agents and bare vbw CLI calls, while still blocking the main thread, other agents, and compound vbw commands
+- R3 [auto] setup.sh detects VBW 2 separately from VBW 1 and reports its version
+- R4 [auto] No stack gate (session-gate, grep-cmm-gate, cmm-nudge, agent-cmm-gate) leaves a vbw:* agent without a permitted route
+- R5 [auto] A VBW 2 agent can run CMM queries (search_graph, trace_path, get_code_snippet, search_code) within its tool allowlist and get results
+- R6 [auto] All 7 VBW 2 agent types get CMM-first code-search guidance they can act on with their allowed tools
+- R7 [auto] docs/vbw2-extension-proposal.md covers the problem, the worker-simulator measurements, proposed extension points (configurable extra tools incl. MCP, MCP inheritance, skills, rule injection) and how this stack uses each
+- R8 [human] The VBW 2 extension proposal is ready to file upstream
 
 <!-- One requirement per line: an id, how it is proved, and a user-observable
      statement. [auto] = a check can prove it; [human] = only a person can judge it.

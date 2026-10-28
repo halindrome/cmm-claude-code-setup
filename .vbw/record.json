@@ -12,15 +12,78 @@
     "tools": {
       "answer": "yes",
       "at": "2026-10-28T14:39:18Z"
-    }
+    },
+    "declined": [
+      {
+        "text": "keep VBW 1 support working (the existing agent-override behavior and its tests stay green) alongside VBW 2",
+        "at": "2026-10-28T14:51:08Z"
+      }
+    ]
   },
   "milestone": {
     "id": "M1",
-    "title": "First milestone",
+    "title": "VBW 2 compatibility",
     "status": "active"
   },
   "shipped": [],
-  "requirements": [],
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "make measure counts CMM vs Read/Grep/Glob calls inside VBW 2 workflow agents (from workflow subagent transcripts) and does not score those runs as enforcement bypasses",
+      "proof": "auto",
+      "status": "open",
+      "milestone": "M1"
+    },
+    {
+      "id": "R2",
+      "text": "ctx-execute-enforcer allows Bash from vbw:* agents and bare vbw CLI calls, while still blocking the main thread, other agents, and compound vbw commands",
+      "proof": "auto",
+      "status": "open",
+      "milestone": "M1"
+    },
+    {
+      "id": "R3",
+      "text": "setup.sh detects VBW 2 separately from VBW 1 and reports its version",
+      "proof": "auto",
+      "status": "open",
+      "milestone": "M1"
+    },
+    {
+      "id": "R4",
+      "text": "No stack gate (session-gate, grep-cmm-gate, cmm-nudge, agent-cmm-gate) leaves a vbw:* agent without a permitted route",
+      "proof": "auto",
+      "status": "open",
+      "milestone": "M1"
+    },
+    {
+      "id": "R5",
+      "text": "A VBW 2 agent can run CMM queries (search_graph, trace_path, get_code_snippet, search_code) within its tool allowlist and get results",
+      "proof": "auto",
+      "status": "open",
+      "milestone": "M1"
+    },
+    {
+      "id": "R6",
+      "text": "All 7 VBW 2 agent types get CMM-first code-search guidance they can act on with their allowed tools",
+      "proof": "auto",
+      "status": "open",
+      "milestone": "M1"
+    },
+    {
+      "id": "R7",
+      "text": "docs/vbw2-extension-proposal.md covers the problem, the worker-simulator measurements, proposed extension points (configurable extra tools incl. MCP, MCP inheritance, skills, rule injection) and how this stack uses each",
+      "proof": "auto",
+      "status": "open",
+      "milestone": "M1"
+    },
+    {
+      "id": "R8",
+      "text": "The VBW 2 extension proposal is ready to file upstream",
+      "proof": "human",
+      "status": "open",
+      "milestone": "M1"
+    }
+  ],
   "phases": [],
   "plans": [],
   "fixes": [],
@@ -48,6 +111,17 @@
         "ended": "2026-10-28T14:47:29Z",
         "cost": {
           "usd": 0.805156
+        }
+      },
+      {
+        "id": "plan-20261028T145542Z",
+        "kind": "plan",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T14:55:42Z",
+        "ended": "2026-10-28T14:59:38Z",
+        "cost": {
+          "usd": 1.057299
         }
       }
     ],
