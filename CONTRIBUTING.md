@@ -127,6 +127,20 @@ feature/my-work
 
    **Proving your work:** Paste each round's QA report as a separate comment on the PR. Reviewers will cross-reference the reports against the fix commits in the PR history.
 
+### VBW 2 + `/qa-cycle` sequence
+
+Alternative to the manual cycle above when the work is built with VBW 2 and reviewed with the `qa-panel` plugin's `/qa-cycle`. Steps, in order:
+
+1. **Branch.** Create `feature/<name>` off `develop` before the first VBW step. VBW commits on the current branch.
+2. **Issue as QA contract.** Open a GitHub issue whose acceptance criteria mirror the VBW requirements (R1, R2, ...). `/qa-cycle` grounds every finding in the linked issue's criteria.
+3. **Push and open the PR to `develop` from the main session.** VBW never pushes. Reference the issue in the PR.
+4. **QA rounds.** Run `/qa-cycle <pr-number>` (flags per `/qa-cycle --help`: `--double`, `--triple`, `--single`, `--reviewer=<name>`, `--non-interactive`, `--interactive`, `--auto-approve`). Each round with blocking findings gets its own fix commit (`fix(scope): address QA round N`); never amend. Re-run until a round comes back clean.
+5. **Keep the changes, re-prove.** Keep every QA fix commit, then run `vbw prove` so the checks cover the fixed tree.
+6. **Accept.** Accept `[human]` requirements with `vbw req accept <ID>` (the clean `/qa-cycle` approval, issue as contract, backs it).
+7. **Ship.** Run `vbw ship` when `vbw next` says so, then merge to `develop`.
+
+**Docs-only skip:** the rule above applies unchanged. A PR touching only docs or repo metadata (nothing under `hooks/`, `setup.sh`, `rules/`, `agents/`) needs no `/qa-cycle` rounds; steps 1-3 and 5-7 still apply.
+
 ## Subagent Hook Behavior
 
 Claude Code project-level hooks (defined in `.claude/settings.json`) fire inside subagents automatically. This means `session-gate.sh`, `cmm-query-stale-advisory.sh`, `track-cmm-calls.sh`, and `reindex-after-commit.sh` all run inside Dev, Scout, QA, and Lead agents without any extra configuration.
