@@ -1,6 +1,15 @@
 {
   "schema": 4,
-  "lease": null,
+  "lease": {
+    "run": "qa-20261028T170952Z",
+    "kind": "qa",
+    "started_at": "2026-10-28T17:09:52Z",
+    "files": [],
+    "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+    "cost": {
+      "usd": 35.210158
+    }
+  },
   "protected": [
     "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1.jsonl",
     "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-adev.jsonl",
@@ -726,7 +735,14 @@
         "breaks: none",
         "tests: project test command"
       ],
-      "predicted": "express"
+      "predicted": "express",
+      "qa": {
+        "result": "pass",
+        "tier": "quick",
+        "tree": "b8061d1ae1c35991912afa7ef7740d9d5052badf06625659597bd90c3ccfc283",
+        "at": "2026-10-28T17:10:44Z",
+        "note": "7/7 checks"
+      }
     }
   ],
   "plans": [
@@ -1948,6 +1964,12 @@
       "id": "D12",
       "at": "2026-10-28T16:49:04Z",
       "text": "Contract approved: 9 requirements, 13 checks, 11 plans (9515b163c394); express: P4 (R1, C12, C13, P4.1); express: P5 (R9, R10, P5.1)"
+    },
+    {
+      "id": "D13",
+      "text": "Keep the changes to hooks/project/subagent-cmm-startup.sh made outside any plan",
+      "why": "User kept e7d4269: it removes the forced-first-wrapper-query line per D9, which the P3.1 Dev did not apply",
+      "at": "2026-10-28T17:09:41Z"
     }
   ],
   "commands": {
