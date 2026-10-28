@@ -1493,12 +1493,30 @@
         "P3.1",
         "P3.2"
       ],
-      "status": "planned",
+      "status": "done",
       "role": "dev",
       "tasks": [
         "regenerate CHECKSUMS.sha256 with scripts/generate-checksums.sh so the new wrapper and every changed hook, rule and setup file are covered",
         "verify shasum -a 256 -c CHECKSUMS.sha256 passes and the phase-62/63 checksum tests pass",
         "run make test: the whole suite passes"
+      ],
+      "mutations": [
+        {
+          "rule": {
+            "req": "R5",
+            "text": "CHECKSUMS.sha256 lists hooks/project/cmm-query.sh with a hash that verifies"
+          },
+          "what": "zeroed cmm-query.sh hash",
+          "files": [
+            "CHECKSUMS.sha256"
+          ],
+          "checks": {
+            "C5": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:57:00Z",
+          "head": "d68b7ba1c597802d857728a2cb574c5e9d3506a4"
+        }
       ]
     },
     {
@@ -1515,7 +1533,7 @@
       "after": [
         "P2.1"
       ],
-      "status": "blocked",
+      "status": "done",
       "role": "dev",
       "tasks": [
         "detect vbw:architect/lead/dev/qa/scout/debugger/docs and emit wrapper command lines (search_graph, trace_path, get_code_snippet, search_code) with this repo's project; no mcp__, ctx_* or Skill( lines",
@@ -1664,8 +1682,7 @@
             "tests/test-vbw2-subagent-guidance.sh"
           ]
         }
-      ],
-      "note": "C10 (live) fails: latest recorded map run wf_13a51508-11e predates fix 86c22b9; its risks scout made no wrapper CMM call. Code is fixed and C8/C9/C11 pass, but C10 needs a fresh /vbw:map run (a user slash command, not runnable by Dev) after re-running setup.sh --project, then .vbw/map.md refreshed/committed."
+      ]
     },
     {
       "id": "P3.2",
@@ -2712,6 +2729,17 @@
         "ended": "2026-10-28T16:46:48Z",
         "cost": {
           "usd": 0.215407
+        }
+      },
+      {
+        "id": "build-20261028T164918Z",
+        "kind": "build",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T16:49:18Z",
+        "ended": "2026-10-28T16:57:34Z",
+        "cost": {
+          "usd": 0.313152
         }
       }
     ],
