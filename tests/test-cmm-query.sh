@@ -67,6 +67,11 @@ with open(os.environ["STUB_LOG"], "w") as f:
 if os.environ.get("STUB_MODE") == "notindexed":
     print('{"error":"project not found or not indexed","hint":"Use list_projects"}')
     sys.exit(1)
+if os.environ.get("STUB_MODE") == "crash":
+    print("boom")
+    sys.exit(1)
+if os.environ.get("STUB_MODE") == "errjson0":
+    print('{"error":"indexing failed"}')
 print("results: 1\n  stub.result Function src/a.py 1-2 0 0")
 PY
 chmod +x "$T/bin/codebase-memory-mcp"
@@ -198,7 +203,7 @@ else
     _fail "CMM CLI missing not reported as one line (rc=$RC, out=$OUT)"
 fi
 STUB_MODE=notindexed _q "$T/repo" "$PATH_STUB" search_graph '{"name_pattern":"x"}'
-SUGGEST="$(printf '%s\n' "$OUT" | grep -Eo 'bash [^ ]*cmm-query\.sh index_repository' | head -1 || true)"
+SUGGEST="$(printf '%s\n' "$OUT" | grep -Eo '(^|: )bash [^ ]*cmm-query\.sh index_repository$' | sed 's/^: //' | head -1 || true)"
 if [ "$RC" != 0 ] && printf '%s' "$OUT" | grep -qi 'not indexed' && [ -n "$SUGGEST" ]; then
     _pass "unindexed project -> says so and names: $SUGGEST"
 else
@@ -222,6 +227,15 @@ if [ ! -e "/tmp/cmm-session-ready-$HASH" ]; then
 else
     _fail "failed index_repository still wrote the sentinel"
 fi
+for mode in crash errjson0; do
+    rm -f "/tmp/cmm-session-ready-$HASH"
+    STUB_MODE=$mode _q "$T/repo" "$PATH_STUB" index_repository
+    if [ ! -e "/tmp/cmm-session-ready-$HASH" ]; then
+        _pass "index_repository failing as '$mode' writes no sentinel"
+    else
+        _fail "index_repository failing as '$mode' still wrote the sentinel"
+    fi
+done
 
 echo "--- VBW 2 guard-bash.jq does not refuse a wrapper call during a run ---"
 GUARD=""
