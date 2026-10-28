@@ -64,7 +64,7 @@ esac
 
 # Planning/config path exemptions (parity with cmm-grep-nudge.sh)
 case "$PATH_FIELD" in
-  */.vbw-planning/*|*/.vbw/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
+  */.vbw-planning/*|*/.vbw|*/.vbw/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
 esac
 
 # --- Determine repo root (walk upward from path or cwd) ---
