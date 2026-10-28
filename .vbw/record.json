@@ -108,6 +108,13 @@
       "sort": "next",
       "size": "medium",
       "status": "open"
+    },
+    {
+      "id": "T3",
+      "text": "Write docs/vbw2-extension-proposal.md from field-test evidence (private repos anonymized): problem, measurements, extension points (configurable extra tools incl. MCP, MCP inheritance, skills, rule injection, map provider), how this stack uses each; ready to file at swt-labs/vibe-better-with-claude-code-vbw",
+      "sort": "next",
+      "size": "medium",
+      "status": "open"
     }
   ],
   "decisions": [
