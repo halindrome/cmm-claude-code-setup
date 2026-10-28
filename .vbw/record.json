@@ -989,6 +989,11 @@
       "text": "R9 docs: add the VBW 2 + /qa-cycle sequence alongside the manual QA cycle; non-VBW contributors keep the manual 2-4 round cycle; docs-only skip unchanged",
       "why": "No contributor loses a path; accepts two processes to keep in step",
       "at": "2026-10-28T15:20:59Z"
+    },
+    {
+      "id": "D5",
+      "at": "2026-10-28T16:06:30Z",
+      "text": "Contract approved: 9 requirements, 13 checks, 11 plans (fc0a4632e718); express: P4 (R1, C12, C13, P4.1); express: P5 (R9, R10, P5.1)"
     }
   ],
   "commands": {
