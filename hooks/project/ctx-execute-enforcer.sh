@@ -362,7 +362,8 @@ while i < len(c):
 sys.stdout.write("".join(out))' 2>/dev/null) || _VBWQ="$COMMAND" ;;
 esac
 _VBWCLI='^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]<>|&;$`()]*[[:space:]]+)*(/[^[:space:]<>|&;$`()]*/)?vbw([[:space:]][^<>|&;$`()]*)?$'
-if [[ "$_VBWQ" =~ $_VBWCLI ]]; then
+# A newline left after blanking is outside any quote: a second command.
+if [[ "$_VBWQ" != *$'\n'* ]] && [[ "$_VBWQ" =~ $_VBWCLI ]]; then
     bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash_exempt" "vbw-cli" 2>/dev/null || true
     exit 0
 fi
@@ -371,7 +372,8 @@ fi
 # A plain `bash <root>/.claude/hooks/cmm-query.sh <tool> ['<json>']` call, for the
 # main thread too. Anchored: no pipe, redirect or chaining outside the quoted JSON
 # (the compound scan above already rejected those), so truncation stays blocked.
-_CMMQ="^bash [^[:space:]<>|&;\$\`()']*/cmm-query\\.sh [a-z_]+( '[^']*')?\$"
+# The path may be single-quoted (a project root with spaces; cmm_query_cmd quotes it).
+_CMMQ="^bash ([^[:space:]<>|&;\$\`()']*/cmm-query\\.sh|'[^'<>|&;\$\`()]*/cmm-query\\.sh') [a-z_]+( '[^']*')?\$"
 if [[ "$COMMAND" =~ $_CMMQ ]]; then
     _track_exempt cmm-query
     exit 0

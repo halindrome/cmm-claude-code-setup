@@ -158,7 +158,9 @@ case "$AGENT_TYPE" in
   vbw:architect|vbw:lead|vbw:dev|vbw:qa|vbw:scout|vbw:debugger|vbw:docs)
     # VBW 2 agents have no MCP tools: name the wrapper, or stay silent when it is not installed.
     if [ -f "$REPO_ROOT/.claude/hooks/cmm-query.sh" ]; then
-      _ALT="bash $REPO_ROOT/.claude/hooks/cmm-query.sh get_code_snippet '{\"qualified_name\":\"...\"}' (or search_graph)"
+      _QP="$REPO_ROOT/.claude/hooks/cmm-query.sh"
+      case "$_QP" in *[!A-Za-z0-9_@%+=:,./-]*) _QP="'${_QP//\'/\'\\\'\'}'" ;; esac
+      _ALT="bash $_QP get_code_snippet '{\"qualified_name\":\"...\"}' (or search_graph)"
     else
       _NUDGE=false
     fi ;;

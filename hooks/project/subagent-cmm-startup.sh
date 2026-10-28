@@ -101,7 +101,9 @@ vbw:architect | vbw:lead | vbw:dev | vbw:qa | vbw:scout | vbw:debugger | vbw:doc
         python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":sys.argv[1]}}))' "$1"
         exit 0
     }
-    _Q="bash ${PROJECT_ROOT}/.claude/hooks/cmm-query.sh"
+    _QP="${PROJECT_ROOT}/.claude/hooks/cmm-query.sh"
+    case "$_QP" in *[!A-Za-z0-9_@%+=:,./-]*) _QP="'${_QP//\'/\'\\\'\'}'" ;; esac
+    _Q="bash $_QP"
     if ! command -v codebase-memory-mcp >/dev/null 2>&1 || [ ! -f "${PROJECT_ROOT}/.claude/hooks/cmm-query.sh" ]; then
         _emit "Use Grep and Read for code search in this repository."
     fi

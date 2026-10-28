@@ -127,9 +127,19 @@ _expect "'vbw decide \"a\" ; rm x' (operator outside quotes) -> block" 2 "$(_jso
 _expect "'vbw decide \"a\" > f' (redirect outside quotes) -> block" 2 "$(_json 'vbw decide "a" > f')"
 _expect "escaped quote pairing 'vbw x \\'; rm y; echo \\'' -> block" 2 "$(_json "vbw x \\'; rm y; echo \\'")"
 
+_expect "quote pairing hides a newline from the compound scan -> block" 2 "$(_json $'vbw decide "it\'s"\ntouch /tmp/proof\n\'')"
+_expect "'vbw x \"a'\"' + newline + cat + '\"'\"' -> block" 2 "$(_json $'vbw x "a\'"\ncat /etc/hosts\n"\'"')"
+
 echo "--- quoted vbw arguments are literal text ---"
+_expect "multi-line quoted vbw argument -> allow" 0 "$(_json $'vbw decide "line one\nline two"')"
 _expect "'vbw todo add \"fix (a); b\"' -> allow" 0 "$(_json 'vbw todo add "fix (a); b"')"
 _expect "vbw decide with ( ) ' | in quotes -> allow" 0 "$(_json "vbw decide 'use X (not Y)' \"why: it's | fine\"")"
+
+echo "--- quoted wrapper path (project root with a space) ---"
+_expect "main thread bash '/My Proj/.claude/hooks/cmm-query.sh' search_graph '{}' -> allow" 0 \
+    "$(_json "bash '/My Proj/.claude/hooks/cmm-query.sh' search_graph '{}'")"
+_expect "quoted wrapper path + '; cat f' -> block" 2 \
+    "$(_json "bash '/My Proj/.claude/hooks/cmm-query.sh' search_graph '{}'; cat f")"
 
 echo "--- VBW 1 agent types are not VBW 2 agents ---"
 _expect "agent_type vbw:vbw-dev pytest -> block" 2 "$(_json 'pytest' '"vbw:vbw-dev"')"

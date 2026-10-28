@@ -201,7 +201,7 @@ if [ "$IS_VBW" = true ]; then
     _W=$(python3 -c 'import json, shlex, sys
 root, term, ident = sys.argv[1:4]
 def q(tool, key):
-    return "bash %s/.claude/hooks/cmm-query.sh %s %s" % (root, tool, shlex.quote(json.dumps({key: term})))
+    return "bash %s %s %s" % (shlex.quote(root + "/.claude/hooks/cmm-query.sh"), tool, shlex.quote(json.dumps({key: term})))
 g, c = q("search_graph", "name_pattern"), q("search_code", "pattern")
 print(g if ident == "1" else c)
 print(c if ident == "1" else g)' "$REPO_ROOT" "$PATTERN_FIELD" "$([ "$IS_IDENTIFIER" = true ] && echo 1 || echo 0)" 2>/dev/null)

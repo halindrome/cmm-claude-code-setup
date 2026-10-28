@@ -125,6 +125,23 @@ else
     _fail "section 5 workflow row still includes vbw:* runs: $(printf '%s\n' "$OUT" | grep -E '^workflow +[0-9]+ +[0-9]+ ' || echo none)"
 fi
 
+if printf '%s\n' "$OUT" | grep -Eq '^workflow +6 +2 +33\.3%'; then
+    _pass "section 1: a hook-reached vbw:* run counts as reached (workflow 2/6)"
+else
+    _fail "section 1 REACH drops hook-reached vbw:* runs: $(printf '%s\n' "$OUT" | grep -E '^workflow +[0-9]+ +[0-9]+ +[0-9.]+%' || echo none)"
+fi
+
+echo "--- quoted wrapper path (project root with a space) counts as CMM ---"
+if ENF="$ENF" python3 -c '
+import importlib.util, os, sys
+s = importlib.util.spec_from_file_location("enf", os.environ["ENF"]); m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
+r = m.CMM_BASH_RE.search("bash '"'"'/My Proj/.claude/hooks/cmm-query.sh'"'"' search_graph '"'"'{}'"'"'")
+sys.exit(0 if r and r.group(1) == "search_graph" else 1)'; then
+    _pass "quoted cmm-query.sh path attributed to search_graph"
+else
+    _fail "quoted cmm-query.sh path not counted as a CMM call"
+fi
+
 echo "--- DAYS and MODEL filters apply to workflow transcripts ---"
 _run "$T/a" 1
 if [ "$RC" = 0 ] && [ -z "$(_row wf_fix-build vbw:dev)" ] && [ -z "$(_row wf_fix-map vbw:scout)" ]; then

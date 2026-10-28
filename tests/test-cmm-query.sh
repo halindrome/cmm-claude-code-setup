@@ -43,7 +43,7 @@ _cleanup() {
     for r in "$T/repo" "$T/mono" "$T/live"; do
         rm -f "/tmp/cmm-session-ready-$(echo "$r" | _md5)" "/tmp/cmm-indexing-$(echo "$r" | _md5)"
     done
-    for d in "$T/repo" "$T/repo/src" "$T/mono" "$T/mono/sub" "$T/mono/sub/pkg" "$T/live"; do
+    for d in "$T/repo" "$T/repo/src" "$T/mono" "$T/mono/sub" "$T/mono/sub/pkg" "$T/live" "$T/my repo"; do
         rm -f "/tmp/cmm-project-root-$(echo -n "$d" | _md5)"
     done
     rm -rf "$T"
@@ -161,6 +161,21 @@ if [ "$(_argv "j is not None and j.get('repo_path')=='$T/repo'")" = "True" ]; th
     _pass "caller-supplied repo_path is overridden: index_repository always indexes this project"
 else
     _fail "index_repository indexed a caller-supplied path but opens this project's gate (argv=$(cat "$STUB_LOG" 2>/dev/null || echo none))"
+fi
+
+echo "--- project root with a space: cmm_query_cmd quotes it, and the command runs ---"
+SP="$T/my repo"
+mkdir -p "$SP"
+git -C "$SP" init -q
+_install "$SP"
+CMD="$(PROJECT_ROOT="$SP" bash -c 'source "$0"; cmm_query_cmd search_graph' "$REPO/hooks/lib/cmm-registered.sh")"
+rm -f "$STUB_LOG"
+RC=0
+(cd "$SP" && PATH="$PATH_STUB" STUB_LOG="$STUB_LOG" STUB_MODE=ok bash -c "$CMD '{\"name_pattern\":\"x\"}'") >/dev/null 2>&1 || RC=$?
+if [ "$RC" = 0 ] && [ "$(_argv "'search_graph' in a")" = "True" ]; then
+    _pass "wrapper command for a root with a space runs: $CMD"
+else
+    _fail "wrapper command for a root with a space does not run (rc=$RC): $CMD"
 fi
 
 echo "--- project comes from the monorepo/superproject root, from any cwd ---"

@@ -68,7 +68,7 @@ CTX_PREFIXES = ("mcp__plugin_context-mode_context-mode__", "mcp__context-mode__"
 RAW_TOOLS = {"Read", "Grep", "Glob"}
 # Bash running the cmm-query.sh wrapper or `codebase-memory-mcp cli [flags] <tool>`
 CMM_BASH_RE = re.compile(
-    r"(?:cmm-query\.sh|codebase-memory-mcp\s+cli)\s+(?:-\S+\s+)*([a-z_]+)")
+    r"(?:cmm-query\.sh'?|codebase-memory-mcp\s+cli)\s+(?:-\S+\s+)*([a-z_]+)")
 
 
 def agent_type_of(path, tier):
@@ -323,11 +323,12 @@ for path in files:
                 spawn_gate[tier][f"{name}:gated"] += 1
 
     if stack_seen:
+        # A reached run counts as reached in section 1 REACH, VBW 2 included.
+        tier_stack_sessions[tier].add((project, sid, os.path.basename(path)))
         if is_vbw:  # reported in section 10, never scored as a bypass (sections 5, 7)
             for hid, kind, _t in hookrecs:
                 hook_by_tier[tier][hid] += 1
             continue
-        tier_stack_sessions[tier].add((project, sid, os.path.basename(path)))
         proj_stack[project] += 1
         for hid, kind, _t in hookrecs:
             hook_by_tier[tier][hid] += 1
