@@ -71,7 +71,7 @@
     },
     {
       "id": "R7",
-      "text": "docs/vbw2-extension-proposal.md covers the problem, the worker-simulator measurements, proposed extension points (configurable extra tools incl. MCP, MCP inheritance, skills, rule injection) and how this stack uses each",
+      "text": "docs/vbw2-extension-proposal.md covers the problem, the worker-simulator measurements, proposed extension points (configurable extra tools incl. MCP, MCP inheritance, skills, rule injection, a map provider) and how this stack uses each",
       "proof": "auto",
       "status": "open",
       "milestone": "M1"
@@ -96,12 +96,27 @@
       "proof": "human",
       "status": "open",
       "milestone": "M1"
+    },
+    {
+      "id": "R11",
+      "text": "VBW 2 mapping scouts get codebase structure from CMM, and .vbw/map.md points later agents to the live CMM graph",
+      "proof": "auto",
+      "status": "open",
+      "milestone": "M1"
     }
   ],
   "phases": [],
   "plans": [],
   "fixes": [],
-  "todos": [],
+  "todos": [
+    {
+      "id": "T1",
+      "text": "Generate .vbw/map.md directly from CMM (get_architecture) so VBW 2 skips its own mapping on large repos",
+      "sort": "later",
+      "size": "medium",
+      "status": "open"
+    }
+  ],
   "decisions": [],
   "commands": {
     "test": [
