@@ -137,6 +137,17 @@
         "cost": {
           "usd": 1.057299
         }
+      },
+      {
+        "id": "map-20261028T150006Z",
+        "kind": "map",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T15:00:06Z",
+        "ended": "2026-10-28T15:03:23Z",
+        "cost": {
+          "usd": 0.870199
+        }
       }
     ],
     "milestones": {}

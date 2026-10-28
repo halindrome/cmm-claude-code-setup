@@ -6,6 +6,8 @@ A hook-based enforcement layer that makes Claude Code use codebase-memory-mcp (C
 
 This milestone: update the stack to work well with VBW 2 (new conventions, e.g. `.vbw/` instead of `.vbw-planning/`).
 
+QA contract: GitHub issue #102 (https://github.com/halindrome/cmm-claude-code-setup/issues/102); branch feature/102-vbw2-compatibility off develop. Keep the issue acceptance criteria in sync with Requirements.
+
 Field evidence (2026-10-27, worker-simulator): ../cmm-claude-code-setup/.vbw-planning/todo-details.json items c4e1b7a2 (enforcer patch + 11 test cases) and d81f3c06 (tool-gap measurements, options).
 
 ## Non-goals
