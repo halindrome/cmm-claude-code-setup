@@ -2008,6 +2008,11 @@
       "text": "Keep the changes to hooks/project/subagent-cmm-startup.sh made outside any plan",
       "why": "User kept e7d4269: it removes the forced-first-wrapper-query line per D9, which the P3.1 Dev did not apply",
       "at": "2026-10-28T17:09:41Z"
+    },
+    {
+      "id": "D14",
+      "at": "2026-10-28T17:16:07Z",
+      "text": "Contract approved: 9 requirements, 13 checks, 11 plans (c092c17b501b); express: P4 (R1, C12, C13, P4.1); express: P5 (R9, R10, P5.1)"
     }
   ],
   "commands": {
