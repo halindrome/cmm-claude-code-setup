@@ -66,6 +66,20 @@ EXPLORE_RE = re.compile(
 CMM_PREFIX = "mcp__codebase-memory-mcp__"
 CTX_PREFIXES = ("mcp__plugin_context-mode_context-mode__", "mcp__context-mode__")
 RAW_TOOLS = {"Read", "Grep", "Glob"}
+# Bash running the cmm-query.sh wrapper or `codebase-memory-mcp cli [flags] <tool>`
+CMM_BASH_RE = re.compile(
+    r"(?:cmm-query\.sh'?|codebase-memory-mcp\s+cli)\s+(?:-\S+\s+)*([a-z_]+)")
+
+
+def agent_type_of(path, tier):
+    """Workflow agent type from the sibling agent-*.meta.json, else None."""
+    if tier != "workflow":
+        return None
+    try:
+        with open(path[:-len(".jsonl")] + ".meta.json") as f:
+            return json.load(f).get("agentType")
+    except Exception:
+        return None
 
 
 def classify_hook(text):
@@ -124,6 +138,8 @@ proj_stack = collections.Counter()
 versions_seen = collections.defaultdict(collections.Counter)
 models_seen = collections.Counter()   # assistant turns per model id, before --model filtering
 # per-session behaviour rows for the adoption table
+# VBW 2 workflow agents: (project, run, agent type) -> Counter of tool names
+vbw_agents = collections.defaultdict(collections.Counter)
 sess_rows = []
 
 files = []
@@ -147,6 +163,8 @@ for path in files:
     tier = tier_of(rel)
     project = rel.split(os.sep)[0]
     sid = rel.split(os.sep)[1] if len(rel.split(os.sep)) > 1 else rel
+    agent_type = agent_type_of(path, tier)
+    is_vbw = bool(agent_type) and agent_type.startswith("vbw:")
 
     stack_seen = set()
     tool_seq = []          # (tool_name, tool_use_id, is_explore_eligible)
@@ -228,6 +246,10 @@ for path in files:
                         elif name == "Bash":
                             cmd = str(inp.get("command", ""))
                             elig = bool(EXPLORE_RE.search(cmd))
+                        if is_vbw and name == "Bash":
+                            m = CMM_BASH_RE.search(str(inp.get("command", "")))
+                            if m:
+                                name = CMM_PREFIX + m.group(1)
                         tool_seq.append((name, b.get("id"), elig))
                         tools_by_tier[tier][name] += 1
 
@@ -249,6 +271,9 @@ for path in files:
     if nrec == 0 or (MODEL and not kept_ids):
         continue
 
+    if is_vbw:
+        run = os.path.basename(os.path.dirname(path))
+        vbw_agents[(project, run, agent_type)].update(n for n, _, _ in tool_seq)
     tier_sessions[tier].add((project, sid, os.path.basename(path)))
     st = tier_stats[tier]
     st["records"] += nrec
@@ -298,7 +323,12 @@ for path in files:
                 spawn_gate[tier][f"{name}:gated"] += 1
 
     if stack_seen:
+        # A reached run counts as reached in section 1 REACH, VBW 2 included.
         tier_stack_sessions[tier].add((project, sid, os.path.basename(path)))
+        if is_vbw:  # reported in section 10, never scored as a bypass (sections 5, 7)
+            for hid, kind, _t in hookrecs:
+                hook_by_tier[tier][hid] += 1
+            continue
         proj_stack[project] += 1
         for hid, kind, _t in hookrecs:
             hook_by_tier[tier][hid] += 1
@@ -439,3 +469,14 @@ print("9. MODELS -- assistant turns per model id (pass one to --model to split)"
 print("=" * 78)
 for m, c in models_seen.most_common():
     print(f"   {c:7d}  {m}")
+
+
+print()
+print("=" * 78)
+print("10. VBW 2 WORKFLOW AGENTS -- CMM vs raw calls per run and agent type")
+print("=" * 78)
+for (project, run, at), c in sorted(vbw_agents.items()):
+    cmm = {n[len(CMM_PREFIX):]: v for n, v in c.items() if n.startswith(CMM_PREFIX)}
+    print(f"   {project} {run} {at} CMM={sum(cmm.values())} Read={c['Read']} "
+          f"Grep={c['Grep']} Glob={c['Glob']} Bash={c['Bash']}"
+          + "".join(f" {k}={v}" for k, v in sorted(cmm.items())))

@@ -1,7 +1,7 @@
 #!/bin/bash
 # test-cmm-agent-passthrough.sh — Tests for the per-project CMM spawn-gate
 # pass-through allow-list (.claude/cmm-agent-passthrough.txt) in agent-cmm-gate.sh,
-# and confirmation that vbw:* is no longer a built-in exemption.
+# and confirmation that only VBW 2 agent types are built-in exempt (VBW 1 opts in here).
 # Usage: bash tests/test-cmm-agent-passthrough.sh
 # Exit: 0 = all pass, 1 = any failure
 set -euo pipefail
@@ -34,7 +34,8 @@ cp "$GATE" "$TMP/hooks/agent-cmm-gate.sh"
 
 echo "--- No config present: normal gating (blocked) ---"
 _assert "no config: mr-qa-reviewer blocked" 2 "$TMP" "$(mk_json mr-qa-reviewer)"
-_assert "no config: vbw:vbw-dev blocked (vbw:* no longer built-in exempt)" 2 "$TMP" "$(mk_json 'vbw:vbw-dev')"
+_assert "no config: vbw:dev exempt (VBW 2 built-in exempt, R4)" 0 "$TMP" "$(mk_json 'vbw:dev')"
+_assert "no config: vbw:vbw-dev blocked (VBW 1 opts in via config)" 2 "$TMP" "$(mk_json 'vbw:vbw-dev')"
 
 echo "--- Config with literal + glob + comments ---"
 cat > "$TMP/cmm-agent-passthrough.txt" <<'CFG'

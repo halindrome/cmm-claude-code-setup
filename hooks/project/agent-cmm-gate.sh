@@ -20,6 +20,9 @@ case "$SUBAGENT_TYPE" in
     echo "CMM note: agent type '$SUBAGENT_TYPE' exempted from keyword gate."
     exit 0
     ;;
+  # VBW 2 agents use the cmm-query.sh wrapper, not CMM keywords. VBW 1 agents
+  # (vbw:vbw-*) still opt in via cmm-agent-passthrough.txt.
+  vbw:architect|vbw:lead|vbw:dev|vbw:qa|vbw:scout|vbw:debugger|vbw:docs) exit 0 ;;
 esac
 
 # --- Hold the spawn until the session-start index refresh finishes ---

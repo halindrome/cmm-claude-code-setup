@@ -1,0 +1,3 @@
+{"type":"launched"}
+{"type":"started","key":"v2:a","agentId":"adev","label":"build P1.1","phase":"Build"}
+{"type":"started","key":"v2:b","agentId":"aqa","label":"qa P1","phase":"Verify"}

@@ -31,6 +31,28 @@ import sys,json
 d=json.load(sys.stdin)
 print(d.get('tool_name','') or '')
 " 2>/dev/null)
+AGENT_TYPE=$(echo "$INPUT" | python3 -c "
+import sys,json
+print(json.load(sys.stdin).get('agent_type','') or '')
+" 2>/dev/null)
+IS_VBW=false
+case "$AGENT_TYPE" in vbw:architect|vbw:lead|vbw:dev|vbw:qa|vbw:scout|vbw:debugger|vbw:docs) IS_VBW=true ;; esac
+
+# _vbw_route <repo-root> <term> <ident 1|0> -> two runnable cmm-query.sh lines for a vbw:*
+# agent (Bash, no MCP tools). Returns 1 (caller fails open) when there is no runnable
+# route: no term, no CMM CLI, or no installed wrapper.
+_vbw_route() {
+  [ -n "$2" ] || return 1
+  command -v codebase-memory-mcp >/dev/null 2>&1 || return 1
+  [ -f "$1/.claude/hooks/cmm-query.sh" ] || return 1
+  python3 -c 'import json, shlex, sys
+root, term, ident = sys.argv[1:4]
+def q(tool, key):
+    return "bash %s %s %s" % (shlex.quote(root + "/.claude/hooks/cmm-query.sh"), tool, shlex.quote(json.dumps({key: term})))
+g, c = q("search_graph", "name_pattern"), q("search_code", "pattern")
+print(g if ident == "1" else c)
+print(c if ident == "1" else g)' "$1" "$2" "$3" 2>/dev/null
+}
 
 # --- Bash navigation block ---
 # When invoked for a Bash tool call: check for code-navigation commands against source paths.
@@ -245,6 +267,19 @@ if [ "$TOOL_NAME" = "Bash" ]; then
       # "..." placeholder convert 13-25%, and gates naming no alternative ~0%,
       # sending 90-95% of blocks straight back to Read/Bash.
       _TERM=$(_extract_term "$BASH_CMD")
+      if [ "$IS_VBW" = true ]; then
+        _ID=0; printf '%s' "$_TERM" | grep -qE '^[A-Za-z_][A-Za-z0-9_:]{1,63}$' && _ID=1
+        _W=$(_vbw_route "$BASH_REPO_ROOT" "$_TERM" "$_ID") || exit 0
+        cat >&2 <<EOF
+BLOCKED: Use CMM tools instead of Bash navigation for code search. Run via Bash:
+$(echo "$_W" | sed -n '1p')
+OR:
+$(echo "$_W" | sed -n '2p')
+(If this target is NOT source code, add '# cmm-exempt' to the command.)
+EOF
+        bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-nav" 2>/dev/null || true
+        exit 2
+      fi
       # The bypass is deliberately NOT the closing line. Observed 2026-09-04: a
       # session read "Add # cmm-exempt to bypass" as the recommended next action,
       # appended it to its next four commands -- including a source-code grep
@@ -287,7 +322,7 @@ PATTERN_FIELD=$(echo "$PARSED" | sed -n '4p')
 
 # --- Exception: Planning/Config Paths (check path early) ---
 case "$PATH_FIELD" in
-  */.vbw-planning/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
+  */.vbw-planning/*|*/.vbw|*/.vbw/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
 esac
 
 # --- CMM Availability Check (safety valve — don't block if CMM isn't configured) ---
@@ -412,6 +447,24 @@ fi
 
 # --- Allow if no code target detected ---
 [ "$SHOULD_BLOCK" = false ] && exit 0
+
+# --- vbw:* agents: same block, but with the runnable wrapper command ---
+if [ "$IS_VBW" = true ]; then
+  _VROOT=$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null || echo "$REPO_ROOT")
+  _VHASH=$(echo "$_VROOT" | md5 -q 2>/dev/null || echo "$_VROOT" | md5sum | awk '{print $1}')
+  [ -f "/tmp/cmm-session-ready-${_VHASH}" ] || exit 0
+  _ID=0; printf '%s' "$PATTERN_FIELD" | grep -qE '^[A-Za-z_][A-Za-z0-9_:]{1,63}$' && _ID=1
+  _W=$(_vbw_route "$_VROOT" "$PATTERN_FIELD" "$_ID") || exit 0
+  cat >&2 <<EOF
+BLOCKED: Use CMM tools instead of Grep for code search on $BLOCK_TARGET. Run via Bash:
+$(echo "$_W" | sed -n '1p')
+OR:
+$(echo "$_W" | sed -n '2p')
+  Grep is allowed for: non-code files (JSON, YAML, Markdown, config, env)
+EOF
+  bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "grep" 2>/dev/null || true
+  exit 2
+fi
 
 # --- Block: Redirect to CMM search tools (stderr, exit 2) ---
 # PATTERN_FIELD is the term the agent was actually looking for; substituting it

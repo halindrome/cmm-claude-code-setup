@@ -2041,6 +2041,10 @@ install_project() {
   # settings merge below. Re-run setup.sh after installing VBW to enable it.
   local _vbw_present=false
   if vbw_is_available; then _vbw_present=true; fi
+  # cmm-query.sh (MCP-less CMM wrapper for VBW 2 agents) is installed only with VBW 2.
+  local _vbw2_present=false
+  # shellcheck disable=SC1091
+  if ( source "$SCRIPT_DIR/hooks/lib/vbw-source.sh" 2>/dev/null && resolve_vbw2 >/dev/null 2>&1 ); then _vbw2_present=true; fi
 
   # Pre-scan: report drift summary before per-file prompts
   # shellcheck disable=SC2046
@@ -2110,10 +2114,16 @@ install_project() {
     if [ "$(basename "$file")" = "agent-override-generate.sh" ] && [ "$_vbw_present" != true ]; then
       continue
     fi
+    if [ "$(basename "$file")" = "cmm-query.sh" ] && [ "$_vbw2_present" != true ]; then
+      continue
+    fi
     copy_file "$file" ".claude/hooks/$(basename "$file")"
     set_executable ".claude/hooks/$(basename "$file")"
   done
   shopt -u nullglob
+  if [ "$_vbw2_present" = true ]; then
+    echo "  [ok] VBW 2 CMM wrapper installed; index with: bash .claude/hooks/cmm-query.sh index_repository"
+  fi
 
   # Seed the per-project CMM spawn-gate pass-through allow-list (create-once —
   # never overwrite user edits). Lists agent TYPES that agent-cmm-gate.sh lets
@@ -2240,6 +2250,11 @@ PASSTHROUGH
   # VBW so the project layout is consistent (VBW overrides land here only when
   # VBW is available; the dir stays empty otherwise).
   [ "$DRY_RUN" = true ] || mkdir -p ".claude/agents"
+
+  # VBW 2 is detected separately from VBW 1 and reported alongside it.
+  local _vbw2_ver
+  _vbw2_ver="$( source "$SCRIPT_DIR/hooks/lib/vbw-source.sh" 2>/dev/null && resolve_vbw2 >/dev/null 2>&1 && printf '%s' "$VBW2_VERSION" )"  || true
+  [ -z "$_vbw2_ver" ] || echo "  [ok] VBW 2 detected (version ${_vbw2_ver})"
 
   if [ "$_vbw_present" = true ]; then
     if [ "$DRY_RUN" = true ]; then

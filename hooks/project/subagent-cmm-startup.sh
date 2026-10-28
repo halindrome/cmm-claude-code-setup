@@ -86,6 +86,50 @@ else
     _CMM_PROJECT="${PROJECT_ROOT#/}"
     _CMM_PROJECT="${_CMM_PROJECT//\//-}"
 fi
+# --- VBW 2 agents (vbw:architect|lead|dev|qa|scout|debugger|docs) ---
+# They have Bash but no MCP tools and no Skill tool, so guidance is the exact
+# cmm-query.sh wrapper command lines. Never emit a command that would fail:
+# CLI or wrapper missing -> no CMM advice; repo not indexed -> only the
+# index_repository command.
+_INPUT="$(cat 2>/dev/null)"
+_AGENT_TYPE="$(printf '%s' "$_INPUT" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("agent_type","") or "")
+except Exception: print("")' 2>/dev/null)"
+case "$_AGENT_TYPE" in
+vbw:architect | vbw:lead | vbw:dev | vbw:qa | vbw:scout | vbw:debugger | vbw:docs)
+    _emit() {
+        python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":sys.argv[1]}}))' "$1"
+        exit 0
+    }
+    _QP="${PROJECT_ROOT}/.claude/hooks/cmm-query.sh"
+    case "$_QP" in *[!A-Za-z0-9_@%+=:,./-]*) _QP="'${_QP//\'/\'\\\'\'}'" ;; esac
+    _Q="bash $_QP"
+    if ! command -v codebase-memory-mcp >/dev/null 2>&1 || [ ! -f "${PROJECT_ROOT}/.claude/hooks/cmm-query.sh" ]; then
+        _emit "Use Grep and Read for code search in this repository."
+    fi
+    if [ ! -f "$CMM_SENTINEL" ]; then
+        _emit "This repository is not yet indexed in codebase-memory-mcp (CMM). Index it once with Bash:
+${_Q} index_repository '{}'
+Then use CMM for code navigation."
+    fi
+    V="This repository is indexed in codebase-memory-mcp (CMM). Run these with Bash for all code navigation; the project (${_CMM_PROJECT}) is filled in for you:
+- Find a function/class/module by name: ${_Q} search_graph '{\"name_pattern\":\"...\"}'
+- A symbol's source: ${_Q} get_code_snippet '{\"qualified_name\":\"...\"}'
+- Who calls X / what X calls: ${_Q} trace_path '{\"function_name\":\"...\",\"direction\":\"both\"}'
+- Literal text in code (strings, error messages, TODOs): ${_Q} search_code '{\"pattern\":\"...\"}'
+Use Grep and Read only for literals the graph does not index, non-code files (config, JSON, Markdown), and files you are about to edit.
+After changing code, refresh the graph: ${_Q} index_repository '{}'"
+    if [ "$_AGENT_TYPE" = "vbw:scout" ]; then
+        V="$V
+Mapping: take codebase structure from the graph before reading files:
+- ${_Q} get_architecture '{}'
+- ${_Q} search_graph '{\"name_pattern\":\"...\"}'
+In the map, put the CMM project (${_CMM_PROJECT}) and the wrapper command (${_Q}) in the Structure or Stack and commands section, so later agents query the live graph."
+    fi
+    _emit "$V"
+    ;;
+esac
+
 ADVISORY="This repository is indexed in codebase-memory-mcp (CMM); use it for all code navigation.
 Pass project=\"${_CMM_PROJECT}\" on every CMM call below (required; it is not inferred).
 - Find a function/class/module by name: search_graph(project, name_pattern=\"...\")

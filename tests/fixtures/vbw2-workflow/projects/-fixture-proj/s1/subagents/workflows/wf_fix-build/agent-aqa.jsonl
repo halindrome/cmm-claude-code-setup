@@ -1,0 +1,7 @@
+{"type":"attachment","timestamp":"2026-10-01T12:02:00.000Z","attachment":{"type":"hook_additional_context","toolUseID":"hook-q1","content":"This repository is indexed in codebase-memory-mcp (CMM); use it for all code navigation."}}
+{"type":"assistant","timestamp":"2026-10-01T12:02:01.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"q1","name":"Bash","input":{"command":"pytest -q"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:02:02.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"q2","name":"Bash","input":{"command":"pytest -q tests/a.py"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:02:03.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"q3","name":"Bash","input":{"command":"pytest -q tests/b.py"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:02:04.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"q4","name":"Bash","input":{"command":"ruff check ."}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:02:05.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"q5","name":"Bash","input":{"command":"mypy src"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:02:06.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"q6","name":"Bash","input":{"command":"vbw show contract"}}]}}

@@ -35,10 +35,12 @@ fp=ti.get('file_path','') or d.get('file_path','')
 sid=d.get('session_id','') or ''
 print(fp)
 print(sid)
+print(d.get('agent_type','') or '')
 " 2>/dev/null)
 
 FILE_PATH=$(echo "$PARSED" | sed -n '1p')
 SESSION_ID=$(echo "$PARSED" | sed -n '2p')
+AGENT_TYPE=$(echo "$PARSED" | sed -n '3p')
 
 [ -z "$FILE_PATH" ] && exit 0
 
@@ -151,8 +153,20 @@ if [ "$_CNT" -ge "$((READ_BUDGET + 1))" ] && [ "$_CNT" -le "$NUDGE_CONSECUTIVE_U
 elif [ "$_CNT" -gt "$NUDGE_CONSECUTIVE_UNTIL" ] && [ "$(( _CNT & (_CNT - 1) ))" -eq 0 ]; then
   _NUDGE=true
 fi
+_ALT="mcp__codebase-memory-mcp__get_code_snippet(qualified_name=...) or search_graph"
+case "$AGENT_TYPE" in
+  vbw:architect|vbw:lead|vbw:dev|vbw:qa|vbw:scout|vbw:debugger|vbw:docs)
+    # VBW 2 agents have no MCP tools: name the wrapper, or stay silent when it is not installed.
+    if [ -f "$REPO_ROOT/.claude/hooks/cmm-query.sh" ]; then
+      _QP="$REPO_ROOT/.claude/hooks/cmm-query.sh"
+      case "$_QP" in *[!A-Za-z0-9_@%+=:,./-]*) _QP="'${_QP//\'/\'\\\'\'}'" ;; esac
+      _ALT="bash $_QP get_code_snippet '{\"qualified_name\":\"...\"}' (or search_graph)"
+    else
+      _NUDGE=false
+    fi ;;
+esac
 if [ "$_NUDGE" = true ]; then
-  _MSG="You've read '${BASENAME}' ${_CNT} times this session. For repeated lookups, mcp__codebase-memory-mcp__get_code_snippet(qualified_name=...) or search_graph is usually cheaper than re-reading the whole file. (advisory — this read is allowed)"
+  _MSG="You've read '${BASENAME}' ${_CNT} times this session. For repeated lookups, ${_ALT} is usually cheaper than re-reading the whole file. (advisory — this read is allowed)"
   python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$_MSG" 2>/dev/null || true
 fi
 

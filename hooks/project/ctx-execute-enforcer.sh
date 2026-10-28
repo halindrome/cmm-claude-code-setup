@@ -156,6 +156,21 @@ print("true" if d.get("tool_input",{}).get("run_in_background") is True else "fa
     exit 0
 fi
 
+# --- VBW 2 agents (before compound normalization) ---
+# Bash from a VBW 2 agent (vbw:dev, vbw:qa, vbw:scout, ...) is VBW's own workflow;
+# its output belongs in that agent's context, so any command passes, compound
+# included. Keyed on the PreToolUse input's agent_type. VBW 1 agents
+# (vbw:vbw-*) are not VBW 2 types and are enforced as before. Missing, empty,
+# non-string or malformed values never match and fall through.
+if [ "$(printf '%s' "$INPUT" | python3 -c 'import sys,json
+try: a=json.load(sys.stdin).get("agent_type")
+except Exception: a=None
+V={"vbw:architect","vbw:lead","vbw:dev","vbw:qa","vbw:scout","vbw:debugger","vbw:docs"}
+print("true" if isinstance(a,str) and a in V else "false")' 2>/dev/null)" = "true" ]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash_exempt" "vbw-agent" 2>/dev/null || true
+    exit 0
+fi
+
 # --- Compound-shell normalization (Phase 61 follow-up) ---
 # Agents frequently bypass exemptions by prefixing with `cd <dir> && <command>`
 # because `cd ` matches the navigation exemption. Peel off any leading
@@ -316,6 +331,53 @@ fi
 _track_exempt() {
   bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-exempt" "$1" 2>/dev/null || true
 }
+
+# --- Bare vbw CLI (VBW 2) ---
+# `vbw <args>` from any caller, optionally with an env prefix or an absolute
+# path to the binary. Runs after the compound scan above; the character class
+# also rejects redirects, substitutions and parens that scan does not cover.
+# `vbwx` and friends do not match: the name must end at whitespace or EOL.
+# Quoted arguments (`vbw decide "use X (not Y); why" 'it's ok'`) are literal
+# text, so they are blanked before the match: single-quoted spans always,
+# double-quoted spans only when they hold no $, backtick or backslash (those
+# stay live inside double quotes and still fail the match). A command with any
+# backslash is matched raw: escaped quotes would mis-pair the spans.
+_VBWQ="$COMMAND"
+case "$COMMAND" in
+  *\\*) ;;
+  *) _VBWQ=$(COMMAND="$COMMAND" python3 -c '
+import os, re, sys
+c = os.environ["COMMAND"]; out = []; i = 0
+while i < len(c):
+    q = c[i]
+    if q in "\"'"'"'":
+        j = c.find(q, i + 1)
+        if j < 0:
+            out.append(c[i:]); break
+        body = c[i + 1:j]
+        out.append(q + q if q == "'"'"'" or not re.search(r"[$`]", body) else c[i:j + 1])
+        i = j + 1
+    else:
+        out.append(q); i += 1
+sys.stdout.write("".join(out))' 2>/dev/null) || _VBWQ="$COMMAND" ;;
+esac
+_VBWCLI='^([A-Za-z_][A-Za-z0-9_]*=[^[:space:]<>|&;$`()]*[[:space:]]+)*(/[^[:space:]<>|&;$`()]*/)?vbw([[:space:]][^<>|&;$`()]*)?$'
+# A newline left after blanking is outside any quote: a second command.
+if [[ "$_VBWQ" != *$'\n'* ]] && [[ "$_VBWQ" =~ $_VBWCLI ]]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash_exempt" "vbw-cli" 2>/dev/null || true
+    exit 0
+fi
+
+# --- CMM wrapper (VBW 2) ---
+# A plain `bash <root>/.claude/hooks/cmm-query.sh <tool> ['<json>']` call, for the
+# main thread too. Anchored: no pipe, redirect or chaining outside the quoted JSON
+# (the compound scan above already rejected those), so truncation stays blocked.
+# The path may be single-quoted (a project root with spaces; cmm_query_cmd quotes it).
+_CMMQ="^bash ([^[:space:]<>|&;\$\`()']*/cmm-query\\.sh|'[^'<>|&;\$\`()]*/cmm-query\\.sh') [a-z_]+( '[^']*')?\$"
+if [[ "$COMMAND" =~ $_CMMQ ]]; then
+    _track_exempt cmm-query
+    exit 0
+fi
 
 # --- Git global-flag normalization ---
 # The git exemptions below anchor on `git ` followed immediately by the

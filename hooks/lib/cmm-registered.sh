@@ -157,3 +157,19 @@ print(out, end="")' 2>/dev/null)" || name="${root//\//-}"
     while [[ "$name" == *- ]]; do name="${name%-}"; done
     printf '%s' "${name:-root}"
 }
+
+# cmm_query_cmd <tool> -> the exact Bash command line a gate or guidance
+# message should hand an agent that has Bash but no MCP tools:
+#   bash <project-root>/.claude/hooks/cmm-query.sh <tool>
+# Uses PROJECT_ROOT (project-root.sh) or the git toplevel; the caller appends
+# the JSON arguments. Prints nothing when no root can be determined. The path is
+# single-quoted only when it needs it (spaces etc.), like Python's shlex.quote.
+cmm_query_cmd() {
+    local root="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+    [ -n "$root" ] || return 0
+    local p="$root/.claude/hooks/cmm-query.sh"
+    case "$p" in
+        *[!A-Za-z0-9_@%+=:,./-]*) p="'${p//\'/\'\\\'\'}'" ;;
+    esac
+    printf 'bash %s %s' "$p" "${1:-search_graph}"
+}
