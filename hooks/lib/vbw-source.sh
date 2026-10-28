@@ -6,7 +6,8 @@
 #
 # Exported vars (after resolve_vbw_source returns 0):
 #   VBW_AGENTS_DIR   — absolute path to the agents/ directory of the active VBW tree
-#   VBW_SOURCE_TYPE  — one of: local-symlink | marketplace | dev-checkout | absent
+#   VBW_SOURCE_TYPE  — one of: local-symlink | marketplace | dev-checkout | vbw2 | absent
+#                      (vbw2 = vbw-marketplace/vbw/2.x; returns 1 — use resolve_vbw2 for VBW 2)
 #   VBW_VERSION      — version string (e.g. "1.37.1", "local", "dev") or "absent"
 #
 # Exit codes from resolve_vbw_source():
@@ -84,6 +85,53 @@ _vbw_config_dir() {
 }
 
 # ---------------------------------------------------------------------------
+# _vbw2_pick <config_dir> — pick the VBW 2.x plugin tree Claude Code loads
+# Sets _V2_DIR and _V2_VER (version from the tree's VERSION file); returns 1 if none.
+# Order: first 2.x entry of installed_plugins.json whose installPath exists,
+# else the highest semver 2.x directory in the plugin cache.
+# ---------------------------------------------------------------------------
+_vbw2_pick() {
+  local base="${1}/plugins/cache/vbw-marketplace/vbw" dir="" d v
+  _V2_DIR=""
+  _V2_VER=""
+  if [ -f "${1}/plugins/installed_plugins.json" ] && command -v python3 >/dev/null 2>&1; then
+    dir=$(python3 -c "
+import json, os, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    for e in d.get('plugins', {}).get('vbw@vbw-marketplace', []):
+        if str(e.get('version', '')).startswith('2.') and os.path.isdir(e.get('installPath', '')):
+            print(e['installPath']); break
+except Exception:
+    pass
+" "${1}/plugins/installed_plugins.json" 2>/dev/null)
+  fi
+  if [ -z "$dir" ]; then
+    d=$(for v in "$base"/2.*; do [ -d "$v" ] && basename "$v"; done 2>/dev/null | sort -V | tail -n 1)
+    [ -n "$d" ] && dir="$base/$d"
+  fi
+  [ -n "$dir" ] || return 1
+  v=$(head -n 1 "$dir/VERSION" 2>/dev/null | tr -d '[:space:]')
+  _V2_DIR="$dir"
+  _V2_VER="${v:-$(basename "$dir")}"
+}
+
+# ---------------------------------------------------------------------------
+# resolve_vbw2 — locate the VBW 2 plugin tree; independent of resolve_vbw_source
+# Returns 0 and exports VBW2_VERSION (and VBW2_DIR), or 1 when no VBW 2 is installed.
+# ---------------------------------------------------------------------------
+resolve_vbw2() {
+  local config_dir
+  VBW2_VERSION=""
+  VBW2_DIR=""
+  config_dir=$(_vbw_config_dir) || return 1
+  _vbw2_pick "$config_dir" || return 1
+  VBW2_DIR="$_V2_DIR"
+  VBW2_VERSION="$_V2_VER"
+  export VBW2_DIR VBW2_VERSION
+}
+
+# ---------------------------------------------------------------------------
 # resolve_vbw_source — locate the active VBW plugin tree and export vars
 #
 # Resolution order: local-symlink > marketplace > dev-checkout > absent
@@ -151,6 +199,31 @@ except Exception:
       VBW_SOURCE_TYPE="absent"
       VBW_VERSION="absent"
       VBW_AGENTS_DIR=""
+      export VBW_AGENTS_DIR VBW_SOURCE_TYPE VBW_VERSION
+      return 1
+    fi
+  fi
+
+  # --- VBW 2 (vbw-marketplace/vbw/2.x): its own source type, never "marketplace" ---
+  # Taken when the active (first) registry entry is 2.x, or when there is no
+  # registry entry at all but a 2.x tree is cached. Returns 1 (VBW 1 callers
+  # treat it as absent and fail open); callers wanting VBW 2 use resolve_vbw2.
+  local first_ver=""
+  if [ -f "$plugins_json" ] && command -v python3 >/dev/null 2>&1; then
+    first_ver=$(python3 -c "
+import json, sys
+try:
+    e = json.load(open(sys.argv[1])).get('plugins', {}).get('$plugin_key', [])
+    print(e[0].get('version', '') if e else '')
+except Exception:
+    pass
+" "$plugins_json" 2>/dev/null)
+  fi
+  if [ -z "$first_ver" ] || [ "${first_ver#2.}" != "$first_ver" ]; then
+    if _vbw2_pick "$config_dir"; then
+      VBW_AGENTS_DIR="${_V2_DIR}/agents"
+      VBW_SOURCE_TYPE="vbw2"
+      VBW_VERSION="$_V2_VER"
       export VBW_AGENTS_DIR VBW_SOURCE_TYPE VBW_VERSION
       return 1
     fi
