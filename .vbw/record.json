@@ -581,7 +581,22 @@
         "breaks: none",
         "tests: project test command"
       ],
-      "predicted": "standard"
+      "predicted": "standard",
+      "qa": {
+        "result": "pass",
+        "tier": "standard",
+        "tree": "7a11794541ea5e82215d35c5c4b910c231d88854f7ead668e0c7c31754624e85",
+        "at": "2026-10-28T17:11:34Z",
+        "note": "18/18 checks"
+      },
+      "outcome": {
+        "tier": "standard",
+        "predicted": "standard",
+        "held": true,
+        "fix_rounds": 0,
+        "qa_findings": 0,
+        "escalations": 0
+      }
     },
     {
       "id": "P2",
