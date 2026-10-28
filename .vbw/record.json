@@ -206,6 +206,10 @@
       {
         "text": "keep VBW 1 support working (the existing agent-override behavior and its tests stay green) alongside VBW 2",
         "at": "2026-10-28T14:51:08Z"
+      },
+      {
+        "text": "R9 (the qa-cycle docs) has no check, so vbw prove can't verify it. Add a small grep check that CONTRIBUTING.md and CLAUDE.md each name /qa-cycle, the issue-as-contract step, and 'VBW never pushes'",
+        "at": "2026-10-28T16:06:35Z"
       }
     ]
   },
@@ -709,12 +713,126 @@
         "hooks/project/ctx-execute-enforcer.sh"
       ],
       "after": [],
-      "status": "planned",
+      "status": "done",
       "role": "dev",
       "tasks": [
         "vbw:* agent_type exemption read from the PreToolUse JSON, placed before compound-shell normalization; missing/empty/malformed agent_type falls through",
         "bare vbw CLI exemption (env-prefix and absolute path allowed; pipes, ;, &&, $(), backticks, redirects and vbwx-style lookalikes stay blocked)",
         "log both exemptions through track-hook-blocks.sh with reasons vbw-agent and vbw-cli; leave the VBW 1 allowlist entries as they are"
+      ],
+      "mutations": [
+        {
+          "rule": {
+            "req": "R2",
+            "text": "Bash from an agent whose agent_type matches vbw:* exits 0 for any command, compound included, decided before compound-shell normalization"
+          },
+          "what": "agent prefix vbwz:",
+          "files": [
+            "hooks/project/ctx-execute-enforcer.sh"
+          ],
+          "checks": {
+            "C1": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:01Z",
+          "head": "ea157dcc26355488e32b62397999336823968fe6"
+        },
+        {
+          "rule": {
+            "req": "R2",
+            "text": "bare vbw calls exit 0 from any caller, with an env prefix or an absolute path to vbw"
+          },
+          "what": "cli name vbq",
+          "files": [
+            "hooks/project/ctx-execute-enforcer.sh"
+          ],
+          "checks": {
+            "C1": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:01Z",
+          "head": "ea157dcc26355488e32b62397999336823968fe6"
+        },
+        {
+          "rule": {
+            "req": "R2",
+            "text": "main-thread pytest, Explore cat and general-purpose large-output commands are still blocked"
+          },
+          "what": "any string agent exempt",
+          "files": [
+            "hooks/project/ctx-execute-enforcer.sh"
+          ],
+          "checks": {
+            "C1": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:01Z",
+          "head": "ea157dcc26355488e32b62397999336823968fe6"
+        },
+        {
+          "rule": {
+            "req": "R2",
+            "text": "vbw piped, chained with && or ;, with $() or backtick substitution, or redirected is still blocked, and a vbwx-style name lookalike is not exempt"
+          },
+          "what": "drop end anchor",
+          "files": [
+            "hooks/project/ctx-execute-enforcer.sh"
+          ],
+          "checks": {
+            "C1": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:01Z",
+          "head": "ea157dcc26355488e32b62397999336823968fe6"
+        },
+        {
+          "rule": {
+            "req": "R2",
+            "text": "a missing, empty or malformed agent_type falls through to normal enforcement without crashing"
+          },
+          "what": "prefix vbw without colon",
+          "files": [
+            "hooks/project/ctx-execute-enforcer.sh"
+          ],
+          "checks": {
+            "C1": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:02Z",
+          "head": "ea157dcc26355488e32b62397999336823968fe6"
+        },
+        {
+          "rule": {
+            "req": "R2",
+            "text": "each exemption is logged through track-hook-blocks.sh with its own reason, vbw-agent or vbw-cli"
+          },
+          "what": "agent logged as vbw-cli",
+          "files": [
+            "hooks/project/ctx-execute-enforcer.sh"
+          ],
+          "checks": {
+            "C1": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:02Z",
+          "head": "ea157dcc26355488e32b62397999336823968fe6"
+        },
+        {
+          "rule": {
+            "req": "R2",
+            "text": "the VBW 1 allowlist entries (*/.vbw-planning/*, /tmp/.vbw-plugin-root-link-*) behave as before"
+          },
+          "what": "vbw1 allowlist pattern",
+          "files": [
+            "hooks/project/ctx-execute-enforcer.sh"
+          ],
+          "checks": {
+            "C1": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:02Z",
+          "head": "ea157dcc26355488e32b62397999336823968fe6"
+        }
       ]
     },
     {
@@ -729,12 +847,110 @@
         "setup.sh"
       ],
       "after": [],
-      "status": "planned",
+      "status": "done",
       "role": "dev",
       "tasks": [
         "vbw-source.sh: classify vbw-marketplace/vbw/2.x as VBW_SOURCE_TYPE=vbw2 with VBW_VERSION from its VERSION file; add resolve_vbw2 (rc 0 + VBW2_VERSION)",
         "pick the version Claude Code loads: the active installed_plugins.json entry, else the highest semver in the cache",
         "setup.sh: print a VBW 2 line with version; keep the VBW 1 line as it is; report both when both are present, absent when neither"
+      ],
+      "mutations": [
+        {
+          "rule": {
+            "req": "R3",
+            "text": "vbw-source.sh returns a VBW 2 source type distinct from the VBW 1 types for a vbw-marketplace/vbw/2.x cache, with the version from its VERSION file"
+          },
+          "what": "source type vbw2 -> vbw3",
+          "files": [
+            "hooks/lib/vbw-source.sh"
+          ],
+          "checks": {
+            "C2": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:59Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R3",
+            "text": "setup.sh prints a line naming VBW 2 and its version when only VBW 2 is installed, and does not report it as VBW 1"
+          },
+          "what": "VBW 2 line renamed",
+          "files": [
+            "setup.sh"
+          ],
+          "checks": {
+            "C2": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:59Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R3",
+            "text": "with only VBW 1 present setup.sh prints the VBW 1 detection line as before and no VBW 2 line"
+          },
+          "what": "VBW 2 line printed unconditionally",
+          "files": [
+            "setup.sh"
+          ],
+          "checks": {
+            "C2": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:59Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R3",
+            "text": "with both present setup.sh reports both"
+          },
+          "what": "no VBW 2 line when VBW 1 present",
+          "files": [
+            "setup.sh"
+          ],
+          "checks": {
+            "C2": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:59Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R3",
+            "text": "with neither present setup.sh reports VBW absent"
+          },
+          "what": "absent message changed",
+          "files": [
+            "setup.sh"
+          ],
+          "checks": {
+            "C2": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:10:00Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R3",
+            "text": "with several VBW 2 versions cached the reported version is the one Claude Code loads (active entry, else highest)"
+          },
+          "what": "lexical sort not semver",
+          "files": [
+            "hooks/lib/vbw-source.sh"
+          ],
+          "checks": {
+            "C2": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:10:00Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        }
       ]
     },
     {
@@ -749,13 +965,203 @@
         "hooks/lib/cmm-registered.sh"
       ],
       "after": [],
-      "status": "planned",
+      "status": "done",
       "role": "dev",
       "tasks": [
         "wrapper with a read-tool allowlist (search_graph trace_path get_code_snippet search_code query_graph get_architecture list_projects index_status) plus index_repository; refuse anything else and list the allowed tools",
         "inject project (cmm_project_name via project-root.sh) or repo_path for index_repository; always pass --quiet; validate JSON args itself",
         "one-line errors: CLI not on PATH; project not indexed names the index_repository wrapper command; on index_repository success write the session-ready sentinel and clear the indexing marker",
         "cmm-registered.sh: helper (cmm_query_cmd) that builds the exact wrapper command line for gates and guidance"
+      ],
+      "mutations": [
+        {
+          "rule": {
+            "req": "R5",
+            "text": "malformed JSON arguments exit non-zero with an error, never an empty result"
+          },
+          "what": "malformed JSON falls back to {}",
+          "files": [
+            "hooks/project/cmm-query.sh"
+          ],
+          "checks": {
+            "C3": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:08:54Z",
+          "head": "ea157dcc26355488e32b62397999336823968fe6"
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "the wrapper runs the allowed read tools and index_repository as codebase-memory-mcp cli --quiet <tool>, keeping the caller's arguments"
+          },
+          "what": "drop --quiet",
+          "files": [
+            "hooks/project/cmm-query.sh"
+          ],
+          "checks": {
+            "C3": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:58Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "any other tool name, or none, exits non-zero listing the allowed tools without calling CMM"
+          },
+          "what": "allow delete_project",
+          "files": [
+            "hooks/project/cmm-query.sh"
+          ],
+          "checks": {
+            "C3": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:58Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "the project is resolved from cwd with project-root.sh (subdirectory and superproject) and injected; index_repository gets repo_path"
+          },
+          "what": "wrong project injected",
+          "files": [
+            "hooks/project/cmm-query.sh"
+          ],
+          "checks": {
+            "C3": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:58Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "codebase-memory-mcp missing from PATH exits non-zero with one line naming the fix"
+          },
+          "what": "missing CLI exits 0",
+          "files": [
+            "hooks/project/cmm-query.sh"
+          ],
+          "checks": {
+            "C3": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:58Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "an unindexed project is reported as such with the index_repository wrapper command"
+          },
+          "what": "no unindexed report",
+          "files": [
+            "hooks/project/cmm-query.sh"
+          ],
+          "checks": {
+            "C3": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:58Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "a successful index_repository writes the session-ready sentinel and clears the indexing marker; a failed one writes none"
+          },
+          "what": "sentinel on failure too",
+          "files": [
+            "hooks/project/cmm-query.sh"
+          ],
+          "checks": {
+            "C3": "green"
+          },
+          "result": "survivor",
+          "at": "2026-10-28T16:09:59Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "VBW 2's guard-bash.jq with a run open does not refuse a wrapper call, index_repository included"
+          },
+          "what": "helper emits piped command",
+          "files": [
+            "hooks/lib/cmm-registered.sh"
+          ],
+          "checks": {
+            "C3": "green"
+          },
+          "result": "survivor",
+          "at": "2026-10-28T16:09:59Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "search_graph, trace_path, get_code_snippet and search_code via the wrapper return results in an indexed fixture repo (visible SKIP without the CMM binary)"
+          },
+          "what": "caller args dropped",
+          "files": [
+            "hooks/project/cmm-query.sh"
+          ],
+          "checks": {
+            "C3": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:09:59Z",
+          "head": "bcc8da51c74b5d22340152ef265e46eedbc56beb"
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "a successful index_repository writes the session-ready sentinel and clears the indexing marker; a failed one writes none"
+          },
+          "what": "sentinel on failure too",
+          "files": [
+            "hooks/project/cmm-query.sh"
+          ],
+          "checks": {
+            "C3": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:11:13Z",
+          "head": "e040210419c2acb1f4bc4126e509f55ac29262ba",
+          "strengthened": [
+            "tests/test-cmm-query.sh"
+          ],
+          "pending": [
+            "tests/test-cmm-query.sh"
+          ]
+        },
+        {
+          "rule": {
+            "req": "R5",
+            "text": "VBW 2's guard-bash.jq with a run open does not refuse a wrapper call, index_repository included"
+          },
+          "what": "helper emits piped command",
+          "files": [
+            "hooks/lib/cmm-registered.sh"
+          ],
+          "checks": {
+            "C3": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:11:13Z",
+          "head": "e040210419c2acb1f4bc4126e509f55ac29262ba",
+          "strengthened": [
+            "tests/test-cmm-query.sh"
+          ],
+          "pending": [
+            "tests/test-cmm-query.sh"
+          ]
+        }
       ]
     },
     {
@@ -910,7 +1316,7 @@
         "scripts/analyze-enforcement.py"
       ],
       "after": [],
-      "status": "planned",
+      "status": "done",
       "role": "dev",
       "tasks": [
         "read projects/<slug>/<session>/subagents/workflows/<wf>/agent-*.jsonl with agentType from the sibling .meta.json; skip a missing dir, empty files and malformed lines; apply DAYS and MODEL",
@@ -932,7 +1338,7 @@
         "CLAUDE.md"
       ],
       "after": [],
-      "status": "planned",
+      "status": "done",
       "role": "docs",
       "tasks": [
         "CONTRIBUTING.md: VBW 2 + /qa-cycle subsection next to the manual cycle with the steps in order (feature/* off develop, issue as QA contract, push and PR from the main session, /qa-cycle rounds with their own fix commits, keep the changes, vbw prove, accept, ship); state how the docs-only skip applies",
@@ -1062,6 +1468,17 @@
         "ended": "2026-10-28T16:05:06Z",
         "cost": {
           "usd": 14.565671
+        }
+      },
+      {
+        "id": "build-20261028T160641Z",
+        "kind": "build",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T16:06:41Z",
+        "ended": "2026-10-28T16:11:31Z",
+        "cost": {
+          "usd": 1.308532
         }
       }
     ],
