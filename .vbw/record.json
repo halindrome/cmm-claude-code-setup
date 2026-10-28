@@ -1670,12 +1670,78 @@
         "P1.2",
         "P2.2"
       ],
-      "status": "planned",
+      "status": "done",
       "role": "dev",
       "tasks": [
         "setup.sh: for a VBW 2-only install skip VBW 1 deltas and do not register agent-override-generate",
         "agent-override-generate.sh: quiet exit 0 with no overrides when only VBW 2 is installed",
         "keep the VBW 1 path unchanged (7 deltas, 7 overrides)"
+      ],
+      "mutations": [
+        {
+          "task": 2,
+          "what": "generator: drop the quiet vbw2 exit",
+          "files": [
+            "hooks/project/agent-override-generate.sh"
+          ],
+          "checks": {
+            "C11": "green"
+          },
+          "result": "survivor",
+          "at": "2026-10-28T16:23:39Z",
+          "head": "b2eae628b9bc3dd3f3c8c0edc088611a9a21b035"
+        },
+        {
+          "rule": {
+            "req": "R6",
+            "text": "a VBW 2-only install gets no .claude/agents/vbw-*.md overrides, no VBW 1 deltas and no generator registration, and the generator is a quiet no-op"
+          },
+          "what": "vbw_is_available: absent/vbw2 returns available",
+          "files": [
+            "setup.sh"
+          ],
+          "checks": {
+            "C11": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:23:44Z",
+          "head": "b2eae628b9bc3dd3f3c8c0edc088611a9a21b035"
+        },
+        {
+          "rule": {
+            "req": "R6",
+            "text": "VBW 1 installs still get their deltas and generated overrides"
+          },
+          "what": "vbw_is_available: marketplace returns unavailable",
+          "files": [
+            "setup.sh"
+          ],
+          "checks": {
+            "C11": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:23:44Z",
+          "head": "b2eae628b9bc3dd3f3c8c0edc088611a9a21b035"
+        },
+        {
+          "task": 2,
+          "what": "generator: drop the quiet vbw2 exit",
+          "files": [
+            "hooks/project/agent-override-generate.sh"
+          ],
+          "checks": {
+            "C11": "red"
+          },
+          "result": "red",
+          "at": "2026-10-28T16:24:06Z",
+          "head": "42f5a7acf94718db5df14ce5224b25dc03e75726",
+          "strengthened": [
+            "tests/test-vbw2-override-skip.sh"
+          ],
+          "pending": [
+            "tests/test-vbw2-override-skip.sh"
+          ]
+        }
       ]
     },
     {
@@ -2535,6 +2601,17 @@
         "ended": "2026-10-28T16:21:26Z",
         "cost": {
           "usd": 1.69032
+        }
+      },
+      {
+        "id": "build-20261028T162209Z",
+        "kind": "build",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T16:22:09Z",
+        "ended": "2026-10-28T16:24:25Z",
+        "cost": {
+          "usd": 0.364277
         }
       }
     ],
