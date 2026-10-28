@@ -163,6 +163,17 @@
         "cost": {
           "usd": 0.870199
         }
+      },
+      {
+        "id": "plan-20261028T150408Z",
+        "kind": "plan",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T15:04:08Z",
+        "ended": "2026-10-28T15:11:17Z",
+        "cost": {
+          "usd": 2.010622
+        }
       }
     ],
     "milestones": {}
