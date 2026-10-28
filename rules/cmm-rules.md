@@ -85,6 +85,7 @@ The enforcement hooks **do** fire inside subagents. Measured over 1,798 transcri
 
 One bypass is real, and it is narrow:
 
+- Workflow-spawned `vbw:*` agents never pass through `agent-cmm-gate.sh`, and it also exempts any `vbw:*` Agent spawn; they reach CMM via the `cmm-query.sh` Bash wrapper (`session-gate.sh` names its `index_repository` call to lift the block).
 - `agent-cmm-gate.sh` is `PreToolUse:**Agent**`. A **Workflow-spawned worker** (`agent()` / `parallel()` / `pipeline()` lens) surfaces as a `Workflow` call, so it never matches that gate — 163 `Workflow` calls, 0 gated, against 1,477 `Agent` calls of which 183 were gated. This affects the **spawn** check only; every other `PreToolUse` gate still fires on the worker's own tool calls.
 
 **Paste the preamble anyway — for a different reason than you may have been told.** The problem is not delivery, it is adoption: 52% of gated subagent transcripts making 5+ tool calls still issue **zero** CMM calls, and only 13–25% of blocked code searches are followed by a CMM call. A hook that blocks a tool does not change the agent's strategy — blocked agents pivot to `Read`/`Bash` rather than to `search_graph`. The prompt is where strategy is set. When authoring a Workflow or subagent, paste the block from `rules/cmm-agent-preamble.md` (installed to `.claude/rules/cmm-agent-preamble.md`) into every `agent()` prompt and agent definition.
