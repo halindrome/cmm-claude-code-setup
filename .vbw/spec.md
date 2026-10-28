@@ -24,8 +24,6 @@ Field evidence (2026-10-27, worker-simulator): ../cmm-claude-code-setup/.vbw-pla
 - R4 [auto] No stack gate (session-gate, grep-cmm-gate, cmm-nudge, agent-cmm-gate) leaves a vbw:* agent without a permitted route
 - R5 [auto] A VBW 2 agent can run CMM queries (search_graph, trace_path, get_code_snippet, search_code) within its tool allowlist and get results
 - R6 [auto] All 7 VBW 2 agent types get CMM-first code-search guidance they can act on with their allowed tools
-- R7 [auto] docs/vbw2-extension-proposal.md covers the problem, the worker-simulator measurements, proposed extension points (configurable extra tools incl. MCP, MCP inheritance, skills, rule injection, a map provider) and how this stack uses each
-- R8 [human] The VBW 2 extension proposal is ready to file upstream
 - R9 [auto] CONTRIBUTING.md and CLAUDE.md document the VBW 2 + /qa-cycle PR sequence: feature/* branch off develop before the first VBW step, a GitHub issue mirroring the requirements as the QA contract, push and PR to develop from the main session (VBW never pushes), /qa-cycle rounds with their own fix commits, keep-the-changes then vbw prove, accept, ship
 - R10 [human] The PR to develop is approved through /qa-cycle (clean round, GitHub issue as contract), and every QA fix commit is kept and re-proven by VBW
 - R11 [auto] VBW 2 mapping scouts get codebase structure from CMM, and .vbw/map.md points later agents to the live CMM graph

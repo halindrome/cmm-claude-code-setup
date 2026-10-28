@@ -129,6 +129,18 @@
       "text": "CMM CLI access for vbw:* agents: setup.sh installs a wrapper command that enforces a read-tool allowlist plus index_repository, resolves the project from cwd and adds --quiet; agents may index when the project is missing; SessionStart keeps kicking off indexing (existing hook-driven indexing on develop)",
       "why": "User's choice: shorter agent commands and one place for project lookup, works on never-indexed repos; accepts one more installed file that can drift from CMM CLI flags and agents writing graphs",
       "at": "2026-10-28T15:16:40Z"
+    },
+    {
+      "id": "D3",
+      "text": "Upstream proposal (old R7/R8) moved to next milestone, after a field test on a large multi-sub-project repo; private-repo evidence anonymized",
+      "why": "User wants better evidence before filing upstream",
+      "at": "2026-10-28T15:18:54Z"
+    },
+    {
+      "id": "D4",
+      "text": "R9 docs: add the VBW 2 + /qa-cycle sequence alongside the manual QA cycle; non-VBW contributors keep the manual 2-4 round cycle; docs-only skip unchanged",
+      "why": "No contributor loses a path; accepts two processes to keep in step",
+      "at": "2026-10-28T15:20:59Z"
     }
   ],
   "commands": {
