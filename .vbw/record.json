@@ -1,6 +1,15 @@
 {
   "schema": 4,
-  "lease": null,
+  "lease": {
+    "run": "qa-20261028T182749Z",
+    "kind": "qa",
+    "started_at": "2026-10-28T18:27:49Z",
+    "files": [],
+    "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+    "cost": {
+      "usd": 54.350985
+    }
+  },
   "protected": [
     "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1.jsonl",
     "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-adev.jsonl",
@@ -576,8 +585,8 @@
       "qa": {
         "result": "pass",
         "tier": "standard",
-        "tree": "7a11794541ea5e82215d35c5c4b910c231d88854f7ead668e0c7c31754624e85",
-        "at": "2026-10-28T17:11:34Z",
+        "tree": "76f541ad58b81ba6cf66c87d5ab069baf9c33b1df87bbdfd67996bda9c861b0a",
+        "at": "2026-10-28T18:29:20Z",
         "note": "18/18 checks"
       },
       "outcome": {
@@ -2025,6 +2034,12 @@
       "id": "D15",
       "at": "2026-10-28T18:25:09Z",
       "text": "Contract approved: 9 requirements, 13 checks, 11 plans (e2c88070bf62); express: P4 (R1, C12, C13, P4.1); express: P5 (R9, R10, P5.1)"
+    },
+    {
+      "id": "D16",
+      "text": "Keep the changes to hooks/lib/cmm-registered.sh, hooks/project/cmm-query.sh, hooks/project/ctx-execute-enforcer.sh, hooks/global/cmm-grep-nudge.sh, hooks/global/cmm-nudge.sh, hooks/project/grep-cmm-gate.sh, hooks/project/agent-cmm-gate.sh, hooks/project/session-gate.sh, rules/cmm-rules.md, CHECKSUMS.sha256 and scripts/analyze-enforcement.py made outside any plan",
+      "why": "They are the user's own /qa-cycle fix commits on PR #103 (d263044 round 1, a37d7f2 round 2, 3338045 round 3), reviewed across three QA rounds and proven green",
+      "at": "2026-10-28T18:27:37Z"
     }
   ],
   "commands": {
