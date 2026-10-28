@@ -341,6 +341,16 @@ if [[ "$COMMAND" =~ $_VBWCLI ]]; then
     exit 0
 fi
 
+# --- CMM wrapper (VBW 2) ---
+# A plain `bash <root>/.claude/hooks/cmm-query.sh <tool> ['<json>']` call, for the
+# main thread too. Anchored: no pipe, redirect or chaining outside the quoted JSON
+# (the compound scan above already rejected those), so truncation stays blocked.
+_CMMQ="^bash [^[:space:]<>|&;\$\`()']*/cmm-query\\.sh [a-z_]+( '[^']*')?\$"
+if [[ "$COMMAND" =~ $_CMMQ ]]; then
+    _track_exempt cmm-query
+    exit 0
+fi
+
 # --- Git global-flag normalization ---
 # The git exemptions below anchor on `git ` followed immediately by the
 # subcommand, so any global flag in between defeats every one of them. That
