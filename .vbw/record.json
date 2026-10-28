@@ -216,9 +216,15 @@
   "milestone": {
     "id": "M1",
     "title": "VBW 2 compatibility",
-    "status": "active"
+    "status": "shipped"
   },
-  "shipped": [],
+  "shipped": [
+    {
+      "id": "M1",
+      "title": "VBW 2 compatibility",
+      "at": "2026-10-28T18:34:07Z"
+    }
+  ],
   "requirements": [
     {
       "id": "R1",
@@ -510,7 +516,7 @@
       "id": "R10",
       "text": "The PR to develop is approved through /qa-cycle (clean round, GitHub issue as contract), and every QA fix commit is kept and re-proven by VBW",
       "proof": "human",
-      "status": "open",
+      "status": "accepted",
       "milestone": "M1"
     },
     {
@@ -778,6 +784,14 @@
         "tree": "b8061d1ae1c35991912afa7ef7740d9d5052badf06625659597bd90c3ccfc283",
         "at": "2026-10-28T17:10:44Z",
         "note": "7/7 checks"
+      },
+      "outcome": {
+        "tier": "express",
+        "predicted": "express",
+        "held": true,
+        "fix_rounds": 0,
+        "qa_findings": 0,
+        "escalations": 0
       }
     }
   ],
@@ -2045,6 +2059,11 @@
       "text": "Keep the changes to hooks/lib/cmm-registered.sh, hooks/project/cmm-query.sh, hooks/project/ctx-execute-enforcer.sh, hooks/global/cmm-grep-nudge.sh, hooks/global/cmm-nudge.sh, hooks/project/grep-cmm-gate.sh, hooks/project/agent-cmm-gate.sh, hooks/project/session-gate.sh, rules/cmm-rules.md, CHECKSUMS.sha256 and scripts/analyze-enforcement.py made outside any plan",
       "why": "They are the user's own /qa-cycle fix commits on PR #103 (d263044 round 1, a37d7f2 round 2, 3338045 round 3), reviewed across three QA rounds and proven green",
       "at": "2026-10-28T18:27:37Z"
+    },
+    {
+      "id": "D17",
+      "at": "2026-10-28T18:34:07Z",
+      "text": "Shipped M1 VBW 2 compatibility: 9 requirements proven or accepted"
     }
   ],
   "commands": {
@@ -3059,7 +3078,15 @@
         }
       }
     ],
-    "milestones": {}
+    "milestones": {
+      "M1": {
+        "baseline": {},
+        "total": {
+          "usd": 56.729402,
+          "sessions": 1
+        }
+      }
+    }
   },
   "test_files": {
     "run": [
