@@ -26,6 +26,7 @@ print(ti.get('type','') or '')
 print(ti.get('glob','') or '')
 print(ti.get('path','') or '')
 print(d.get('cwd','') or '')
+print(d.get('agent_type','') or '')
 " 2>/dev/null)
 
 # Malformed JSON or parse failure → fail open
@@ -37,6 +38,7 @@ TYPE_FIELD=$(echo "$PARSED" | sed -n '3p')
 GLOB_FIELD=$(echo "$PARSED" | sed -n '4p')
 PATH_FIELD=$(echo "$PARSED" | sed -n '5p')
 CWD_FIELD=$(echo "$PARSED" | sed -n '6p')
+AGENT_TYPE=$(echo "$PARSED" | sed -n '7p')
 
 # Only match Grep — every other tool is a no-op
 [ "$TOOL_NAME" != "Grep" ] && exit 0
@@ -62,7 +64,7 @@ esac
 
 # Planning/config path exemptions (parity with cmm-grep-nudge.sh)
 case "$PATH_FIELD" in
-  */.vbw-planning/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
+  */.vbw-planning/*|*/.vbw/*|*/.planning/*|*/.claude/*|*/node_modules/*|*/.git/*) exit 0 ;;
 esac
 
 # --- Determine repo root (walk upward from path or cwd) ---
@@ -109,6 +111,15 @@ PROJECT_HASH=$(echo "$REPO_ROOT" | md5 -q 2>/dev/null || echo "$REPO_ROOT" | md5
 CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
 # If project not yet indexed for this session, fail open (same deadlock-prevention posture as ctx-execute-enforcer)
 [ ! -f "$CMM_SENTINEL" ] && exit 0
+
+# --- vbw:* agents have Bash but no MCP tools: route them to the cmm-query.sh wrapper ---
+# No CLI or no installed wrapper -> no route to offer, so fail open rather than strand them.
+IS_VBW=false
+case "$AGENT_TYPE" in vbw:*) IS_VBW=true ;; esac
+if [ "$IS_VBW" = true ]; then
+    command -v codebase-memory-mcp >/dev/null 2>&1 || exit 0
+    [ -f "$REPO_ROOT/.claude/hooks/cmm-query.sh" ] || exit 0
+fi
 
 # --- Block-trigger decision tree ---
 SHOULD_BLOCK=false
@@ -185,6 +196,28 @@ else
 fi
 
 # --- Block message (stderr, exit 2) ---
+if [ "$IS_VBW" = true ]; then
+    # Two runnable Bash lines (preferred tool first).
+    _W=$(python3 -c 'import json, shlex, sys
+root, term, ident = sys.argv[1:4]
+def q(tool, key):
+    return "bash %s/.claude/hooks/cmm-query.sh %s %s" % (root, tool, shlex.quote(json.dumps({key: term})))
+g, c = q("search_graph", "name_pattern"), q("search_code", "pattern")
+print(g if ident == "1" else c)
+print(c if ident == "1" else g)' "$REPO_ROOT" "$PATTERN_FIELD" "$([ "$IS_IDENTIFIER" = true ] && echo 1 || echo 0)" 2>/dev/null)
+    [ -n "$_W" ] || exit 0
+    cat >&2 <<EOF
+[grep-cmm-gate] BLOCKED -- source-code search in indexed repo. Run via Bash:
+$(echo "$_W" | sed -n '1p')
+OR:
+$(echo "$_W" | sed -n '2p')
+(Non-code target? Use an explicit non-code type/glob, or add '# cmm-exempt' to
+your pattern. Not for searching source.)
+EOF
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "grep" 2>/dev/null || true
+    exit 2
+fi
+
 # Bypass last and scoped to non-code: see the note in cmm-grep-nudge.sh.
 cat >&2 <<EOF
 [grep-cmm-gate] BLOCKED -- source-code search in indexed repo.
