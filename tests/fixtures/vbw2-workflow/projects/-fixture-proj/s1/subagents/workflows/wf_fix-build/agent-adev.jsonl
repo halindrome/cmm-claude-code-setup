@@ -1,0 +1,10 @@
+{"type":"user","timestamp":"2026-10-01T12:01:00.000Z","isSidechain":true,"message":{"role":"user","content":"Build plan P1.1"}}
+{"type":"assistant","timestamp":"2026-10-01T12:01:01.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"d1","name":"Bash","input":{"command":"bash /fixture/proj/.claude/hooks/cmm-query.sh search_graph '{\"name_pattern\":\"resolve_vbw_source\"}'"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:01:02.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"d2","name":"Bash","input":{"command":"cd \"/fixture/proj\" && bash /fixture/proj/.claude/hooks/cmm-query.sh search_graph '{\"name_pattern\":\"cmm_project_name\"}'"}}]}}
+{not json at all
+{"type":"assistant","timestamp":"2026-10-01T12:01:03.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"d3","name":"Bash","input":{"command":"codebase-memory-mcp cli --quiet trace_path '{\"function_name\":\"main\",\"project\":\"fixture-proj\"}'"}}]}}
+
+{"type":"assistant","timestamp":"2026-10-01T12:01:04.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"d4","name":"Bash","input":{"command":"pytest -q tests/test_app.py"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:01:05.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"d5","name":"Read","input":{"file_path":"/fixture/proj/src/app.py"}},{"type":"tool_use","id":"d6","name":"Read","input":{"file_path":"/fixture/proj/src/lib.py"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:01:06.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"d7","name":"Grep","input":{"pattern":"TODO","glob":"*.md"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:01:07.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"d8","name":"Glob","input":{"pattern":"src/**/*.py"}}]}}

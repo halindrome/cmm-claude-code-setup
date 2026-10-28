@@ -1,0 +1,2 @@
+{"type":"assistant","timestamp":"2026-10-01T12:03:01.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"s11","name":"Bash","input":{"command":"bash /fixture/proj/.claude/hooks/cmm-query.sh get_architecture"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:03:02.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"s12","name":"Read","input":{"file_path":"/fixture/proj/README.md"}}]}}

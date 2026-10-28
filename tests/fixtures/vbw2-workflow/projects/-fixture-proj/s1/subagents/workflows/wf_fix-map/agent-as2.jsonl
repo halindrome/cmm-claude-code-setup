@@ -1,0 +1,2 @@
+{"type":"assistant","timestamp":"2026-10-01T12:03:03.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"s21","name":"Bash","input":{"command":"bash /fixture/proj/.claude/hooks/cmm-query.sh get_architecture '{\"aspects\":[\"structure\"]}'"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:03:04.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"s22","name":"Read","input":{"file_path":"/fixture/proj/Makefile"}}]}}

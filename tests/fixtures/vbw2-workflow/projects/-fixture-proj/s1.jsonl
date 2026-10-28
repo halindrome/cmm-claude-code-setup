@@ -1,0 +1,6 @@
+{"type":"attachment","timestamp":"2026-10-01T12:00:00.000Z","cwd":"/fixture/proj","version":"2.1.300","attachment":{"type":"hook_additional_context","toolUseID":"hook-m1","content":"This repository is indexed in codebase-memory-mcp (CMM); use it for all code navigation."}}
+{"type":"assistant","timestamp":"2026-10-01T12:00:01.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"m1","name":"Bash","input":{"command":"ls src"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:00:02.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"m2","name":"Bash","input":{"command":"ls tests"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:00:03.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"m3","name":"Bash","input":{"command":"ls hooks"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:00:04.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"m4","name":"Bash","input":{"command":"ls rules"}}]}}
+{"type":"assistant","timestamp":"2026-10-01T12:00:05.000Z","message":{"model":"claude-test-model","content":[{"type":"tool_use","id":"m5","name":"Bash","input":{"command":"ls agents"}}]}}

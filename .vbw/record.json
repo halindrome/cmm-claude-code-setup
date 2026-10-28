@@ -1,8 +1,197 @@
 {
   "schema": 4,
   "lease": null,
-  "protected": [],
-  "checks": [],
+  "protected": [
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1.jsonl",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-adev.jsonl",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-adev.meta.json",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-aempty.jsonl",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-aempty.meta.json",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-aqa.jsonl",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-aqa.meta.json",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/journal.jsonl",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-map/agent-as1.jsonl",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-map/agent-as1.meta.json",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-map/agent-as2.jsonl",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-map/agent-as2.meta.json",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-other/agent-agp.jsonl",
+    "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-other/agent-agp.meta.json",
+    "tests/live/vbw2-map-run.sh",
+    "tests/live/vbw2-measure-live.sh",
+    "tests/test-cmm-query-install.sh",
+    "tests/test-cmm-query.sh",
+    "tests/test-vbw2-checksums.sh",
+    "tests/test-vbw2-detect.sh",
+    "tests/test-vbw2-enforcer.sh",
+    "tests/test-vbw2-measure.sh",
+    "tests/test-vbw2-override-skip.sh",
+    "tests/test-vbw2-search-gates.sh",
+    "tests/test-vbw2-session-gates.sh",
+    "tests/test-vbw2-subagent-guidance.sh"
+  ],
+  "checks": [
+    {
+      "id": "C1",
+      "req": "R2",
+      "run": [
+        "bash",
+        "tests/test-vbw2-enforcer.sh"
+      ],
+      "files": [
+        "tests/test-vbw2-enforcer.sh"
+      ]
+    },
+    {
+      "id": "C2",
+      "req": "R3",
+      "run": [
+        "bash",
+        "tests/test-vbw2-detect.sh"
+      ],
+      "files": [
+        "tests/test-vbw2-detect.sh"
+      ]
+    },
+    {
+      "id": "C3",
+      "req": "R5",
+      "run": [
+        "bash",
+        "tests/test-cmm-query.sh"
+      ],
+      "files": [
+        "tests/test-cmm-query.sh"
+      ],
+      "timeout": 300
+    },
+    {
+      "id": "C4",
+      "req": "R5",
+      "run": [
+        "bash",
+        "tests/test-cmm-query-install.sh"
+      ],
+      "files": [
+        "tests/test-cmm-query-install.sh"
+      ]
+    },
+    {
+      "id": "C5",
+      "req": "R5",
+      "run": [
+        "bash",
+        "tests/test-vbw2-checksums.sh"
+      ],
+      "files": [
+        "tests/test-vbw2-checksums.sh"
+      ]
+    },
+    {
+      "id": "C6",
+      "req": "R4",
+      "run": [
+        "bash",
+        "tests/test-vbw2-search-gates.sh"
+      ],
+      "files": [
+        "tests/test-vbw2-search-gates.sh"
+      ]
+    },
+    {
+      "id": "C7",
+      "req": "R4",
+      "run": [
+        "bash",
+        "tests/test-vbw2-session-gates.sh"
+      ],
+      "files": [
+        "tests/test-vbw2-session-gates.sh"
+      ]
+    },
+    {
+      "id": "C8",
+      "req": "R6",
+      "run": [
+        "bash",
+        "tests/test-vbw2-subagent-guidance.sh",
+        "agents"
+      ],
+      "files": [
+        "tests/test-vbw2-subagent-guidance.sh"
+      ]
+    },
+    {
+      "id": "C9",
+      "req": "R11",
+      "run": [
+        "bash",
+        "tests/test-vbw2-subagent-guidance.sh",
+        "mapping"
+      ],
+      "files": [
+        "tests/test-vbw2-subagent-guidance.sh"
+      ]
+    },
+    {
+      "id": "C10",
+      "req": "R11",
+      "run": [
+        "bash",
+        "tests/live/vbw2-map-run.sh"
+      ],
+      "files": [
+        "tests/live/vbw2-map-run.sh"
+      ]
+    },
+    {
+      "id": "C11",
+      "req": "R6",
+      "run": [
+        "bash",
+        "tests/test-vbw2-override-skip.sh"
+      ],
+      "files": [
+        "tests/test-vbw2-override-skip.sh"
+      ]
+    },
+    {
+      "id": "C12",
+      "req": "R1",
+      "run": [
+        "bash",
+        "tests/test-vbw2-measure.sh"
+      ],
+      "files": [
+        "tests/test-vbw2-measure.sh",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1.jsonl",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-adev.jsonl",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-adev.meta.json",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-aempty.jsonl",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-aempty.meta.json",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-aqa.jsonl",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/agent-aqa.meta.json",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-build/journal.jsonl",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-map/agent-as1.jsonl",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-map/agent-as1.meta.json",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-map/agent-as2.jsonl",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-map/agent-as2.meta.json",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-other/agent-agp.jsonl",
+        "tests/fixtures/vbw2-workflow/projects/-fixture-proj/s1/subagents/workflows/wf_fix-other/agent-agp.meta.json"
+      ]
+    },
+    {
+      "id": "C13",
+      "req": "R1",
+      "run": [
+        "bash",
+        "tests/live/vbw2-measure-live.sh"
+      ],
+      "files": [
+        "tests/live/vbw2-measure-live.sh"
+      ],
+      "timeout": 300
+    }
+  ],
   "project": {
     "name": "ccs-vbw2",
     "legacy": {
@@ -32,42 +221,279 @@
       "text": "make measure counts CMM vs Read/Grep/Glob calls inside VBW 2 workflow agents (from workflow subagent transcripts) and does not score those runs as enforcement bypasses",
       "proof": "auto",
       "status": "open",
-      "milestone": "M1"
+      "milestone": "M1",
+      "rules": [
+        {
+          "text": "workflow subagent transcripts are read with the agent type from their .meta.json",
+          "check": "C12"
+        },
+        {
+          "text": "a Bash call running the wrapper or codebase-memory-mcp cli <tool> counts as a CMM call of that tool",
+          "check": "C12"
+        },
+        {
+          "text": "a VBW 2 WORKFLOW AGENTS section lists per run and agent type the CMM, Read, Grep, Glob and Bash counts; non-VBW workflow agents are not listed",
+          "check": "C12"
+        },
+        {
+          "text": "vbw:* runs are left out of the bypass scoring while main-thread and non-VBW scoring is unchanged",
+          "check": "C12"
+        },
+        {
+          "text": "a missing workflows dir, empty files and malformed lines are skipped without crashing",
+          "check": "C12"
+        },
+        {
+          "text": "DAYS and MODEL filters apply to workflow transcripts",
+          "check": "C12"
+        },
+        {
+          "text": "analyze-enforcement.py 30 over this repo's own transcripts shows a VBW 2 agent row with CMM>0",
+          "check": "C13"
+        }
+      ]
     },
     {
       "id": "R2",
       "text": "ctx-execute-enforcer allows Bash from vbw:* agents and bare vbw CLI calls, while still blocking the main thread, other agents, and compound vbw commands",
       "proof": "auto",
       "status": "open",
-      "milestone": "M1"
+      "milestone": "M1",
+      "rules": [
+        {
+          "text": "Bash from an agent whose agent_type matches vbw:* exits 0 for any command, compound included, decided before compound-shell normalization",
+          "check": "C1"
+        },
+        {
+          "text": "bare vbw calls exit 0 from any caller, with an env prefix or an absolute path to vbw",
+          "check": "C1"
+        },
+        {
+          "text": "main-thread pytest, Explore cat and general-purpose large-output commands are still blocked",
+          "check": "C1"
+        },
+        {
+          "text": "vbw piped, chained with && or ;, with $() or backtick substitution, or redirected is still blocked, and a vbwx-style name lookalike is not exempt",
+          "check": "C1"
+        },
+        {
+          "text": "a missing, empty or malformed agent_type falls through to normal enforcement without crashing",
+          "check": "C1"
+        },
+        {
+          "text": "each exemption is logged through track-hook-blocks.sh with its own reason, vbw-agent or vbw-cli",
+          "check": "C1"
+        },
+        {
+          "text": "the VBW 1 allowlist entries (*/.vbw-planning/*, /tmp/.vbw-plugin-root-link-*) behave as before",
+          "check": "C1"
+        }
+      ]
     },
     {
       "id": "R3",
       "text": "setup.sh detects VBW 2 separately from VBW 1 and reports its version",
       "proof": "auto",
       "status": "open",
-      "milestone": "M1"
+      "milestone": "M1",
+      "rules": [
+        {
+          "text": "vbw-source.sh returns a VBW 2 source type distinct from the VBW 1 types for a vbw-marketplace/vbw/2.x cache, with the version from its VERSION file",
+          "check": "C2"
+        },
+        {
+          "text": "setup.sh prints a line naming VBW 2 and its version when only VBW 2 is installed, and does not report it as VBW 1",
+          "check": "C2"
+        },
+        {
+          "text": "with only VBW 1 present setup.sh prints the VBW 1 detection line as before and no VBW 2 line",
+          "check": "C2"
+        },
+        {
+          "text": "with both present setup.sh reports both",
+          "check": "C2"
+        },
+        {
+          "text": "with neither present setup.sh reports VBW absent",
+          "check": "C2"
+        },
+        {
+          "text": "with several VBW 2 versions cached the reported version is the one Claude Code loads (active entry, else highest)",
+          "check": "C2"
+        }
+      ]
     },
     {
       "id": "R4",
       "text": "No stack gate (session-gate, grep-cmm-gate, cmm-nudge, agent-cmm-gate) leaves a vbw:* agent without a permitted route",
       "proof": "auto",
       "status": "open",
-      "milestone": "M1"
+      "milestone": "M1",
+      "rules": [
+        {
+          "text": "code Grep from a vbw:* agent is blocked by grep-cmm-gate with a runnable wrapper command that queries CMM for the term, keeping the [grep-cmm-gate] BLOCKED fingerprint",
+          "check": "C6",
+          "plan": "P2.3"
+        },
+        {
+          "text": "non-code Grep (configs, docs, .vbw/) from a vbw:* agent is allowed",
+          "check": "C6",
+          "plan": "P2.3"
+        },
+        {
+          "text": "grep-cmm-gate and cmm-grep-nudge fail open for vbw:* when the CMM CLI or wrapper is missing or the repo is unindexed",
+          "check": "C6",
+          "plan": "P2.3"
+        },
+        {
+          "text": "cmm-grep-nudge blocks for vbw:* only with a runnable wrapper command",
+          "check": "C6",
+          "plan": "P2.3"
+        },
+        {
+          "text": "cmm-nudge on Read stays advisory for vbw:* (exit 0) and names the wrapper, never mcp__ tools",
+          "check": "C6",
+          "plan": "P2.3"
+        },
+        {
+          "text": "main-thread behaviour of grep-cmm-gate, cmm-grep-nudge and cmm-nudge is unchanged",
+          "check": "C6",
+          "plan": "P2.3"
+        },
+        {
+          "text": "session-gate either allows a vbw:* agent or names a wrapper call that, once run, lifts the block; with no wrapper installed it does not hold the agent",
+          "check": "C7",
+          "plan": "P2.4"
+        },
+        {
+          "text": "session-gate does not hold a vbw:* agent for the Context Mode sentinel; the main thread still is",
+          "check": "C7",
+          "plan": "P2.4"
+        },
+        {
+          "text": "agent-cmm-gate does not block an Agent spawn with subagent_type vbw:* for lacking CMM keywords",
+          "check": "C7",
+          "plan": "P2.4"
+        },
+        {
+          "text": "rules/cmm-rules.md documents that workflow-spawned vbw:* agents never pass through agent-cmm-gate",
+          "check": "C7",
+          "plan": "P2.4"
+        },
+        {
+          "text": "main-thread and non-VBW behaviour of session-gate and agent-cmm-gate is unchanged",
+          "check": "C7",
+          "plan": "P2.4"
+        }
+      ]
     },
     {
       "id": "R5",
       "text": "A VBW 2 agent can run CMM queries (search_graph, trace_path, get_code_snippet, search_code) within its tool allowlist and get results",
       "proof": "auto",
       "status": "open",
-      "milestone": "M1"
+      "milestone": "M1",
+      "rules": [
+        {
+          "text": "the wrapper runs the allowed read tools and index_repository as codebase-memory-mcp cli --quiet <tool>, keeping the caller's arguments",
+          "check": "C3",
+          "plan": "P2.1"
+        },
+        {
+          "text": "any other tool name, or none, exits non-zero listing the allowed tools without calling CMM",
+          "check": "C3",
+          "plan": "P2.1"
+        },
+        {
+          "text": "the project is resolved from cwd with project-root.sh (subdirectory and superproject) and injected; index_repository gets repo_path",
+          "check": "C3",
+          "plan": "P2.1"
+        },
+        {
+          "text": "codebase-memory-mcp missing from PATH exits non-zero with one line naming the fix",
+          "check": "C3",
+          "plan": "P2.1"
+        },
+        {
+          "text": "an unindexed project is reported as such with the index_repository wrapper command",
+          "check": "C3",
+          "plan": "P2.1"
+        },
+        {
+          "text": "malformed JSON arguments exit non-zero with an error, never an empty result",
+          "check": "C3",
+          "plan": "P2.1"
+        },
+        {
+          "text": "a successful index_repository writes the session-ready sentinel and clears the indexing marker; a failed one writes none",
+          "check": "C3",
+          "plan": "P2.1"
+        },
+        {
+          "text": "VBW 2's guard-bash.jq with a run open does not refuse a wrapper call, index_repository included",
+          "check": "C3",
+          "plan": "P2.1"
+        },
+        {
+          "text": "search_graph, trace_path, get_code_snippet and search_code via the wrapper return results in an indexed fixture repo (visible SKIP without the CMM binary)",
+          "check": "C3",
+          "plan": "P2.1"
+        },
+        {
+          "text": "setup.sh installs the wrapper and its libs when VBW 2 is detected and not otherwise; --uninstall removes it",
+          "check": "C4",
+          "plan": "P2.2"
+        },
+        {
+          "text": "a plain wrapper call passes ctx-execute-enforcer for the main thread and vbw:* agents and passes ctx-payload-guard; piped or redirected wrapper calls stay blocked for the main thread",
+          "check": "C4",
+          "plan": "P2.2"
+        },
+        {
+          "text": "CHECKSUMS.sha256 lists hooks/project/cmm-query.sh with a hash that verifies",
+          "check": "C5",
+          "plan": "P2.5"
+        }
+      ]
     },
     {
       "id": "R6",
       "text": "All 7 VBW 2 agent types get CMM-first code-search guidance they can act on with their allowed tools",
       "proof": "auto",
       "status": "open",
-      "milestone": "M1"
+      "milestone": "M1",
+      "rules": [
+        {
+          "text": "each of the 7 vbw:* agent types gets wrapper command lines for search_graph, trace_path, get_code_snippet and search_code naming this repo's project",
+          "check": "C8",
+          "plan": "P3.1"
+        },
+        {
+          "text": "vbw:* guidance names no mcp__, ctx_* or Skill( calls; non-VBW guidance is unchanged",
+          "check": "C8",
+          "plan": "P3.1"
+        },
+        {
+          "text": "vbw:* guidance says when Grep/Read still fit (literals, non-code files, configs)",
+          "check": "C8",
+          "plan": "P3.1"
+        },
+        {
+          "text": "with the CMM CLI missing or the repo unindexed the guidance gives no failing command: it gives the index_repository wrapper command or omits CMM advice",
+          "check": "C8",
+          "plan": "P3.1"
+        },
+        {
+          "text": "a VBW 2-only install gets no .claude/agents/vbw-*.md overrides, no VBW 1 deltas and no generator registration, and the generator is a quiet no-op",
+          "check": "C11",
+          "plan": "P3.2"
+        },
+        {
+          "text": "VBW 1 installs still get their deltas and generated overrides",
+          "check": "C11",
+          "plan": "P3.2"
+        }
+      ]
     },
     {
       "id": "R9",
@@ -88,11 +514,433 @@
       "text": "VBW 2 mapping scouts get codebase structure from CMM, and .vbw/map.md points later agents to the live CMM graph",
       "proof": "auto",
       "status": "open",
-      "milestone": "M1"
+      "milestone": "M1",
+      "rules": [
+        {
+          "text": "vbw:scout guidance gives get_architecture and search_graph wrapper commands and says to take structure from the graph before reading files",
+          "check": "C9"
+        },
+        {
+          "text": "vbw:scout guidance says to record the CMM project and wrapper command in a map section",
+          "check": "C9"
+        },
+        {
+          "text": ".vbw/map.md has a mapping.js map section naming the CMM project and the wrapper command",
+          "check": "C10"
+        },
+        {
+          "text": "the latest recorded vbw map run shows at least one wrapper CMM call in every scout angle's transcript",
+          "check": "C10"
+        }
+      ]
     }
   ],
-  "phases": [],
-  "plans": [],
+  "phases": [
+    {
+      "id": "P1",
+      "title": "Unblock VBW 2 runs: enforcer exemption and VBW 2 detection",
+      "reqs": [
+        "R2",
+        "R3"
+      ],
+      "milestone": "M1",
+      "goal": "VBW 2 workflow agents and bare vbw CLI calls pass ctx-execute-enforcer, and setup.sh identifies a VBW 2 install as distinct from VBW 1 and prints its version.",
+      "criteria": [
+        "ctx-execute-enforcer exits 0 for Bash with agent_type matching vbw:* (any command, compound included, e.g. agent_type vbw:dev `pytest`, agent_type vbw:qa `cd x && mypy`), checked before compound-shell normalization; the exemption is keyed on the PreToolUse input's agent_type field",
+        "Bare vbw calls exit 0 from any caller: `vbw show contract`, `VBW_SESSION_ID=abc vbw next --json`, `/abs/path/vbw prove`",
+        "Still blocked (exit 2): main-thread `pytest`; agent_type Explore `cat`; general-purpose agent large-output commands; `vbw next | jq`, `vbw x && cat`, `vbw x; y`, `vbw decide $(cat f)`, a backtick substitution, `vbw x > f`; `vbwx foo` (name-prefix lookalike)",
+        "Missing, empty or malformed agent_type falls through to the normal enforcement path (no exemption, no crash)",
+        "Each exemption is logged through track-hook-blocks.sh with a distinct reason (vbw-agent, vbw-cli)",
+        "Existing VBW 1 allowlist entries (`*/.vbw-planning/*`, `/tmp/.vbw-plugin-root-link-*`) keep their current behavior",
+        "A new or extended tests/test-*.sh covers all 11 field cases from worker-simulator todo c4e1b7a2 plus the `;`, backtick and redirect cases, and passes under `make test`",
+        "hooks/lib/vbw-source.sh returns a VBW 2 source type distinct from VBW 1 types when the plugin cache holds vbw-marketplace/vbw/2.x (and/or a `vbw` CLI on PATH), and exposes the version read from the plugin's VERSION file",
+        "setup.sh prints a line naming VBW 2 and its version (e.g. 2.1.18) when VBW 2 is installed; prints VBW 1 detection as before when only VBW 1 is present; reports both when both are present; reports absent when neither",
+        "With multiple VBW 2 versions in the plugin cache, the reported version is the one Claude Code loads (highest/active), and the choice is covered by a test",
+        "Detection tests use fixture plugin trees in mktemp dirs (no dependency on the developer's real install) and pass under `make test`"
+      ],
+      "proposed": "standard",
+      "tier": "standard",
+      "reasons": [
+        "requirements: 2",
+        "files: 3 (189561 bytes)",
+        "files: more than 2 in a repository tracking 270 files",
+        "risk: none",
+        "breaks: none",
+        "tests: project test command"
+      ],
+      "predicted": "standard"
+    },
+    {
+      "id": "P2",
+      "title": "A permitted CMM route for VBW 2 agents: CLI wrapper and gate audit",
+      "reqs": [
+        "R5",
+        "R4"
+      ],
+      "milestone": "M1",
+      "goal": "A vbw:* agent can query the CMM graph through Bash with its existing tool allowlist, and every stack gate either allows it or names that exact working command.",
+      "criteria": [
+        "setup.sh installs a CMM wrapper command (per D2) when VBW 2 is detected; uninstall removes it; it is listed in stack-owned files and covered by CHECKSUMS.sha256 if under a checksummed tree",
+        "Wrapper accepts search_graph, trace_path, get_code_snippet, search_code (plus the other read tools: query_graph, get_architecture, list_projects/index_status) and index_repository; any other tool name (e.g. delete_project) exits non-zero with a message listing allowed tools",
+        "Wrapper resolves the CMM project from cwd using the shared hooks/lib/project-root.sh logic (monorepo/superproject root), injects it so the agent need not pass project, and always passes --quiet to `codebase-memory-mcp cli`",
+        "Wrapper errors clearly (non-zero, one-line message naming the fix) when codebase-memory-mcp is not on PATH; when the project is not indexed it says so and names the index_repository wrapper command",
+        "Malformed JSON args yield a non-zero exit and an error message, never a silent empty result",
+        "Each of search_graph, trace_path, get_code_snippet and search_code run via the wrapper from a Bash call in an indexed fixture repo returns non-empty results (test under make test, skipped with a visible SKIP when the CMM binary is absent)",
+        "A wrapper call, including index_repository, is not refused by VBW 2's guard-bash.jq while a vbw run is open (verified live in a vbw run, or by feeding the guard its input with run-open set)",
+        "Wrapper call passes ctx-execute-enforcer and ctx-payload-guard for vbw:* agents and the main thread",
+        "grep-cmm-gate (per D1): code-file Grep from a vbw:* agent exits 2 with a message containing the exact wrapper command line to run instead; non-code Grep (configs, docs, .vbw/) is allowed; exits 0 (fail-open) when the CMM CLI is missing or the repo is unindexed",
+        "cmm-nudge on Read stays advisory for vbw:* agents (exit 0) and its message names the wrapper command, not MCP tool names",
+        "session-gate: a vbw:* agent is never blocked waiting for a sentinel it cannot create with its tools; either it is allowed or the block message names a wrapper call that satisfies the gate, and a test proves that call lifts the block",
+        "agent-cmm-gate: an Agent call with subagent_type vbw:* is not blocked for lacking a CMM keyword in a way the caller cannot satisfy; workflow-spawned vbw:* agents (spawned via workflow ask, no Agent tool call) are documented as not passing through this gate",
+        "Main-thread and non-VBW agent behavior of all four gates is unchanged (existing tests still pass)",
+        "Tests for each gate with agent_type vbw:* inputs pass under make test"
+      ],
+      "proposed": "deep",
+      "tier": "deep",
+      "reasons": [
+        "requirements: 2",
+        "files: 11 (268021 bytes)",
+        "files: more than 2 in a repository tracking 270 files",
+        "risk: none",
+        "breaks: none",
+        "tests: project test command"
+      ],
+      "predicted": "deep"
+    },
+    {
+      "id": "P3",
+      "title": "Actionable CMM-first guidance for all 7 VBW 2 agents and CMM-backed mapping",
+      "reqs": [
+        "R6",
+        "R11"
+      ],
+      "milestone": "M1",
+      "goal": "Every VBW 2 agent type is told, at start, how to search code via the CMM wrapper with tools it actually has, and vbw map produces a map.md that points later agents at the live CMM graph.",
+      "criteria": [
+        "subagent-cmm-startup.sh (SubagentStart) detects agent_type vbw:architect, vbw:lead, vbw:dev, vbw:qa, vbw:scout, vbw:debugger, vbw:docs and emits additionalContext containing the exact wrapper command lines for search_graph, trace_path, get_code_snippet and search_code with this repo's resolved project",
+        "Guidance for vbw:* agents names no MCP tool calls (no mcp__ names, no ctx_execute) since their allowlists lack them; non-VBW agents keep their current guidance",
+        "Guidance tells agents when Grep/Read is still right (literals, non-code files, configs) consistent with grep-cmm-gate's rules from P2",
+        "When the CMM CLI is missing or the repo is unindexed, vbw:* guidance says so and gives the index_repository wrapper command or omits CMM advice; it never instructs a command that will fail",
+        "A test feeds SubagentStart JSON for each of the 7 agent types and asserts the wrapper command appears and no mcp__ name appears",
+        "vbw:scout guidance during mapping instructs scouts to take structure (architecture, entry points, call relationships) from get_architecture/search_graph via the wrapper before reading files",
+        "After a `vbw map` run on an indexed repo, .vbw/map.md contains a section naming the CMM project and the wrapper command for querying the live graph (verified by grep on the produced file), landing in a section the mapping.js MAP schema allows",
+        "A recorded vbw map run's scout transcripts (subagents/workflows/<run>/*.jsonl) contain at least one wrapper CMM call per scout angle",
+        "agent-override-generate.sh does not generate .claude/agents/vbw-*.md overrides for a VBW 2-only install (they target agent names VBW 2 never spawns), while VBW 1 installs are unaffected"
+      ],
+      "tier": "standard",
+      "reasons": [
+        "requirements: 2",
+        "files: 3 (183432 bytes)",
+        "files: more than 2 in a repository tracking 270 files",
+        "risk: none",
+        "breaks: none",
+        "tests: project test command"
+      ],
+      "predicted": "standard"
+    },
+    {
+      "id": "P4",
+      "title": "make measure reports CMM usage inside VBW 2 workflow agents",
+      "reqs": [
+        "R1"
+      ],
+      "milestone": "M1",
+      "goal": "make measure shows per-run CMM vs Read/Grep/Glob counts for VBW 2 workflow agents and does not count those runs as enforcement bypasses.",
+      "criteria": [
+        "scripts/analyze-enforcement.py reads workflow subagent transcripts at projects/<slug>/<session>/subagents/workflows/<wf_id>/*.jsonl in addition to existing transcript locations",
+        "A Bash tool_use whose command invokes the CMM wrapper (or `codebase-memory-mcp cli <tool>`) counts as a CMM call, attributed to the tool name",
+        "Output lists, per workflow run and per agent type (from agentType vbw:*), counts of CMM, Read, Grep, Glob and Bash calls",
+        "VBW 2 workflow agent runs are reported in their own section and excluded from the enforcement-bypass score; the main-thread and non-VBW subagent scoring is unchanged",
+        "Missing workflows dir, empty files and malformed JSONL lines are skipped without crashing; DAYS and MODEL filters apply to workflow transcripts",
+        "A fixture jsonl under tests/fixtures/ with known counts (including wrapper calls, Read, Grep, Glob) produces exactly those counts in a test that passes under make test",
+        "Running make measure DAYS=30 against this repo's own transcripts after P3 shows non-zero CMM counts for VBW 2 agents"
+      ],
+      "tier": "express",
+      "reasons": [
+        "requirements: 1",
+        "files: 1 (18711 bytes)",
+        "risk: none",
+        "breaks: none",
+        "tests: project test command"
+      ],
+      "predicted": "express"
+    },
+    {
+      "id": "P5",
+      "title": "VBW 2 + /qa-cycle PR process documented and used for this PR",
+      "reqs": [
+        "R9",
+        "R10"
+      ],
+      "milestone": "M1",
+      "goal": "Contributors can follow a documented VBW 2 + /qa-cycle PR sequence, and this milestone's PR to develop is approved through it.",
+      "criteria": [
+        "CONTRIBUTING.md has a VBW 2 + /qa-cycle subsection alongside (not replacing) the manual 2-4 round QA cycle, per D4",
+        "The subsection states, in order: create feature/* off develop before the first VBW step; open a GitHub issue mirroring the requirements as the QA contract; push and open the PR to develop from the main session (VBW never pushes); run /qa-cycle rounds, each fix its own `fix(scope): address QA round N` commit, never amended; keep the changes, then vbw prove, accept, ship",
+        "CLAUDE.md's Pull Request QA, Branch Model and VBW workflow sections reference the same sequence consistently with CONTRIBUTING.md",
+        "The docs-only skip rule is unchanged for the manual cycle, and the docs state explicitly how it applies to VBW 2 PRs that touch hooks/, setup.sh, rules/ or agents/",
+        "/qa-cycle invocation in the docs matches the installed command's actual syntax (no invented flags)",
+        "`grep -i qa-cycle CONTRIBUTING.md CLAUDE.md` matches in both files",
+        "Issue #102 acceptance criteria match the milestone requirements R1-R6, R9-R11",
+        "[human] `gh pr view` shows the PR from feature/102-vbw2-compatibility with base develop",
+        "[human] The PR has /qa-cycle round reports as comments, the last one clean, each referencing issue #102 as contract",
+        "[human] Every QA fix commit is present in branch history un-amended, and the VBW record shows a passing vbw prove after the last fix commit, then accept"
+      ],
+      "tier": "express",
+      "reasons": [
+        "requirements: 2",
+        "files: 2 (18915 bytes)",
+        "risk: none",
+        "breaks: none",
+        "tests: project test command"
+      ],
+      "predicted": "express"
+    }
+  ],
+  "plans": [
+    {
+      "id": "P1.1",
+      "phase": "P1",
+      "title": "ctx-execute-enforcer: exempt vbw:* agents and bare vbw CLI calls",
+      "reqs": [
+        "R2"
+      ],
+      "files": [
+        "hooks/project/ctx-execute-enforcer.sh"
+      ],
+      "after": [],
+      "status": "planned",
+      "role": "dev",
+      "tasks": [
+        "vbw:* agent_type exemption read from the PreToolUse JSON, placed before compound-shell normalization; missing/empty/malformed agent_type falls through",
+        "bare vbw CLI exemption (env-prefix and absolute path allowed; pipes, ;, &&, $(), backticks, redirects and vbwx-style lookalikes stay blocked)",
+        "log both exemptions through track-hook-blocks.sh with reasons vbw-agent and vbw-cli; leave the VBW 1 allowlist entries as they are"
+      ]
+    },
+    {
+      "id": "P1.2",
+      "phase": "P1",
+      "title": "Detect VBW 2 separately from VBW 1 and report its version",
+      "reqs": [
+        "R3"
+      ],
+      "files": [
+        "hooks/lib/vbw-source.sh",
+        "setup.sh"
+      ],
+      "after": [],
+      "status": "planned",
+      "role": "dev",
+      "tasks": [
+        "vbw-source.sh: classify vbw-marketplace/vbw/2.x as VBW_SOURCE_TYPE=vbw2 with VBW_VERSION from its VERSION file; add resolve_vbw2 (rc 0 + VBW2_VERSION)",
+        "pick the version Claude Code loads: the active installed_plugins.json entry, else the highest semver in the cache",
+        "setup.sh: print a VBW 2 line with version; keep the VBW 1 line as it is; report both when both are present, absent when neither"
+      ]
+    },
+    {
+      "id": "P2.1",
+      "phase": "P2",
+      "title": "cmm-query.sh: Bash wrapper over codebase-memory-mcp cli",
+      "reqs": [
+        "R5"
+      ],
+      "files": [
+        "hooks/project/cmm-query.sh",
+        "hooks/lib/cmm-registered.sh"
+      ],
+      "after": [],
+      "status": "planned",
+      "role": "dev",
+      "tasks": [
+        "wrapper with a read-tool allowlist (search_graph trace_path get_code_snippet search_code query_graph get_architecture list_projects index_status) plus index_repository; refuse anything else and list the allowed tools",
+        "inject project (cmm_project_name via project-root.sh) or repo_path for index_repository; always pass --quiet; validate JSON args itself",
+        "one-line errors: CLI not on PATH; project not indexed names the index_repository wrapper command; on index_repository success write the session-ready sentinel and clear the indexing marker",
+        "cmm-registered.sh: helper (cmm_query_cmd) that builds the exact wrapper command line for gates and guidance"
+      ]
+    },
+    {
+      "id": "P2.2",
+      "phase": "P2",
+      "title": "Install the wrapper with VBW 2 and route it through the enforcer",
+      "reqs": [
+        "R5"
+      ],
+      "files": [
+        "setup.sh",
+        "hooks/project/ctx-execute-enforcer.sh"
+      ],
+      "after": [
+        "P1.1",
+        "P1.2",
+        "P2.1"
+      ],
+      "status": "planned",
+      "role": "dev",
+      "tasks": [
+        "setup.sh: install .claude/hooks/cmm-query.sh and its libs when VBW 2 is detected; skip it otherwise",
+        "uninstall removes it (stack-owned basename); confirm the setup output names the index command",
+        "ctx-execute-enforcer: allow a plain wrapper call for the main thread and every agent; compound or redirected wrapper calls stay blocked; ctx-payload-guard lets the wrapper through"
+      ]
+    },
+    {
+      "id": "P2.3",
+      "phase": "P2",
+      "title": "Search gates name the wrapper for vbw:* agents",
+      "reqs": [
+        "R4"
+      ],
+      "files": [
+        "hooks/project/grep-cmm-gate.sh",
+        "hooks/global/cmm-grep-nudge.sh",
+        "hooks/global/cmm-nudge.sh"
+      ],
+      "after": [
+        "P2.1"
+      ],
+      "status": "planned",
+      "role": "dev",
+      "tasks": [
+        "grep-cmm-gate: block code Grep from vbw:* with the runnable wrapper command on its own line (keep the [grep-cmm-gate] BLOCKED fingerprint); allow non-code Grep including .vbw/; fail open when the CLI or wrapper is missing or the repo is unindexed",
+        "cmm-grep-nudge: same route and fail-open rules for vbw:*; main thread unchanged",
+        "cmm-nudge: Read stays advisory for vbw:* and names the wrapper, never mcp__ tools; main-thread nudge unchanged"
+      ]
+    },
+    {
+      "id": "P2.4",
+      "phase": "P2",
+      "title": "session-gate and agent-cmm-gate never strand vbw:* agents",
+      "reqs": [
+        "R4"
+      ],
+      "files": [
+        "hooks/project/session-gate.sh",
+        "hooks/project/agent-cmm-gate.sh",
+        "rules/cmm-rules.md"
+      ],
+      "after": [
+        "P2.1"
+      ],
+      "status": "planned",
+      "role": "dev",
+      "tasks": [
+        "session-gate: for vbw:* name the wrapper index_repository call that lifts the CMM block (allow when no wrapper is installed); skip the Context Mode sentinel for vbw:*",
+        "agent-cmm-gate: do not keyword-gate an Agent spawn whose subagent_type is vbw:*",
+        "rules/cmm-rules.md: document that workflow-spawned vbw:* agents never pass through agent-cmm-gate and use the wrapper (keep the phase-63 rule constraints)"
+      ]
+    },
+    {
+      "id": "P2.5",
+      "phase": "P2",
+      "title": "Refresh CHECKSUMS.sha256 after all hook and setup changes",
+      "reqs": [
+        "R5"
+      ],
+      "files": [
+        "CHECKSUMS.sha256"
+      ],
+      "after": [
+        "P2.2",
+        "P2.3",
+        "P2.4",
+        "P3.1",
+        "P3.2"
+      ],
+      "status": "planned",
+      "role": "dev",
+      "tasks": [
+        "regenerate CHECKSUMS.sha256 with scripts/generate-checksums.sh so the new wrapper and every changed hook, rule and setup file are covered",
+        "verify shasum -a 256 -c CHECKSUMS.sha256 passes and the phase-62/63 checksum tests pass",
+        "run make test: the whole suite passes"
+      ]
+    },
+    {
+      "id": "P3.1",
+      "phase": "P3",
+      "title": "SubagentStart guidance for all 7 vbw:* agents, scouts included",
+      "reqs": [
+        "R6",
+        "R11"
+      ],
+      "files": [
+        "hooks/project/subagent-cmm-startup.sh"
+      ],
+      "after": [
+        "P2.1"
+      ],
+      "status": "planned",
+      "role": "dev",
+      "tasks": [
+        "detect vbw:architect/lead/dev/qa/scout/debugger/docs and emit wrapper command lines (search_graph, trace_path, get_code_snippet, search_code) with this repo's project; no mcp__, ctx_* or Skill( lines",
+        "state when Grep/Read still fit (literals, non-code files, configs), consistent with grep-cmm-gate",
+        "CLI missing: no query lines; unindexed repo: give the index_repository wrapper command; non-VBW guidance unchanged",
+        "vbw:scout: take structure from get_architecture/search_graph via the wrapper before reading files, and record the CMM project and wrapper command in a map section mapping.js allows"
+      ]
+    },
+    {
+      "id": "P3.2",
+      "phase": "P3",
+      "title": "No VBW 1 agent overrides on a VBW 2-only install",
+      "reqs": [
+        "R6"
+      ],
+      "files": [
+        "hooks/project/agent-override-generate.sh",
+        "setup.sh"
+      ],
+      "after": [
+        "P1.2",
+        "P2.2"
+      ],
+      "status": "planned",
+      "role": "dev",
+      "tasks": [
+        "setup.sh: for a VBW 2-only install skip VBW 1 deltas and do not register agent-override-generate",
+        "agent-override-generate.sh: quiet exit 0 with no overrides when only VBW 2 is installed",
+        "keep the VBW 1 path unchanged (7 deltas, 7 overrides)"
+      ]
+    },
+    {
+      "id": "P4.1",
+      "phase": "P4",
+      "title": "analyze-enforcement.py: VBW 2 workflow agent section",
+      "reqs": [
+        "R1"
+      ],
+      "files": [
+        "scripts/analyze-enforcement.py"
+      ],
+      "after": [],
+      "status": "planned",
+      "role": "dev",
+      "tasks": [
+        "read projects/<slug>/<session>/subagents/workflows/<wf>/agent-*.jsonl with agentType from the sibling .meta.json; skip a missing dir, empty files and malformed lines; apply DAYS and MODEL",
+        "count a Bash call running cmm-query.sh or `codebase-memory-mcp cli <tool>` as a CMM call of that tool",
+        "print a VBW 2 WORKFLOW AGENTS section with one row per (project, run, agent type): CMM, Read, Grep, Glob, Bash and per-tool counts",
+        "keep vbw:* runs out of the bypass scoring (sections 5 and 7); main-thread and non-VBW scoring unchanged"
+      ]
+    },
+    {
+      "id": "P5.1",
+      "phase": "P5",
+      "title": "Document the VBW 2 + /qa-cycle PR sequence",
+      "reqs": [
+        "R9",
+        "R10"
+      ],
+      "files": [
+        "CONTRIBUTING.md",
+        "CLAUDE.md"
+      ],
+      "after": [],
+      "status": "planned",
+      "role": "docs",
+      "tasks": [
+        "CONTRIBUTING.md: VBW 2 + /qa-cycle subsection next to the manual cycle with the steps in order (feature/* off develop, issue as QA contract, push and PR from the main session, /qa-cycle rounds with their own fix commits, keep the changes, vbw prove, accept, ship); state how the docs-only skip applies",
+        "CLAUDE.md: Pull Request QA, Branch Model and VBW workflow sections point to the same sequence",
+        "take the /qa-cycle syntax from the installed qa-panel SKILL.md (no invented flags); check issue #102's acceptance criteria against R1-R6, R9-R11 with gh issue view and report any gap"
+      ]
+    }
+  ],
   "fixes": [],
   "todos": [
     {
@@ -199,8 +1047,28 @@
         "cost": {
           "usd": 2.010622
         }
+      },
+      {
+        "id": "plan-20261028T152107Z",
+        "kind": "plan",
+        "session": "f88e0faa-13ba-44f1-8b92-8c552f8578c6",
+        "milestone": "M1",
+        "started": "2026-10-28T15:21:07Z",
+        "ended": "2026-10-28T16:05:06Z",
+        "cost": {
+          "usd": 14.565671
+        }
       }
     ],
     "milestones": {}
+  },
+  "test_files": {
+    "run": [
+      "bash",
+      "{file}"
+    ],
+    "files": [
+      "tests/test-*.sh"
+    ]
   }
 }

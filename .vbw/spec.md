@@ -51,3 +51,8 @@ Field evidence (2026-10-27, worker-simulator): ../cmm-claude-code-setup/.vbw-pla
      the ignored environment is still copied in. Edit lines, then vbw spec sync.
 - data/
 -->
+
+## Test files
+
+- run: bash {file}
+- files: tests/test-*.sh
