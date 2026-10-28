@@ -46,7 +46,7 @@ OUT="$(codebase-memory-mcp cli --quiet "$TOOL" "$ARGS" 2>&1)"
 RC=$?
 printf '%s\n' "$OUT"
 
-if [ "$TOOL" != index_repository ] && printf '%s' "$OUT" | grep -qiE 'not indexed|not found'; then
+if [ "$TOOL" != index_repository ] && [ "$RC" != 0 ] && printf '%s' "$OUT" | grep -qiE '"error"[^}]*(not indexed|not found)'; then
     echo "cmm-query: project not indexed; run: $(cmm_query_cmd index_repository)" >&2
     exit 1
 fi
