@@ -311,10 +311,154 @@ else
     fi
 fi
 
+# --- Test 13: submodule worktree OUTSIDE its superproject, hooks installed in the worktree ---
+# PROJECT_ROOT maps the worktree back to the superproject (stable sentinel hash), but the
+# install lives in the worktree itself. The path-integrity check must accept the checkout's
+# own root. The sentinel is written for the SUPERPROJECT hash, so exit 0 also proves
+# PROJECT_HASH did not drift. A genuine move/clone (hooks installed elsewhere) must still fail.
+# If the environment refuses `protocol.file.allow=always` we SKIP (not FAIL).
+echo "--- Test 13: submodule worktree outside superproject -> no path mismatch ---"
+WT13_TMP=$(mktemp -d /tmp/cmm-test-wt13-XXXXXX)
+WT13_TMP="$(cd "$WT13_TMP" && pwd -P)"
+WT13_SENTINEL=""
+cleanup_test13() {
+    [ -n "$WT13_SENTINEL" ] && rm -f "$WT13_SENTINEL"
+    rm -rf "$WT13_TMP"
+}
+trap 'cleanup_test12; cleanup_test13' EXIT
+
+SKIP_REASON=""
+(
+    set -e
+    mkdir -p "$WT13_TMP/upstream" && cd "$WT13_TMP/upstream"
+    git init -q
+    echo hi > f && git add f && git -c user.email=t@t -c user.name=t commit -q -m init
+
+    mkdir -p "$WT13_TMP/super" && cd "$WT13_TMP/super"
+    git init -q
+    git -c user.email=t@t -c user.name=t commit --allow-empty -q -m init
+    git -c protocol.file.allow=always -c user.email=t@t -c user.name=t \
+        submodule add "$WT13_TMP/upstream" apps/rest-api >/dev/null 2>&1
+    git -c user.email=t@t -c user.name=t commit -q -m add-rest-api
+
+    cd apps/rest-api
+    git worktree add "$WT13_TMP/rest-api-wt" -b feature >/dev/null 2>&1
+) >/tmp/cmm-test13-setup.log 2>&1 || SKIP_REASON="submodule worktree fixture setup failed (check /tmp/cmm-test13-setup.log)"
+
+if [ -n "$SKIP_REASON" ]; then
+    echo "SKIP: Test 13: $SKIP_REASON"
+else
+    if command -v md5sum >/dev/null 2>&1; then
+        WT13_HASH=$(echo "$WT13_TMP/super" | md5sum | awk '{print $1}')
+    else
+        WT13_HASH=$(echo "$WT13_TMP/super" | md5 -q)
+    fi
+    WT13_SENTINEL="/tmp/cmm-session-ready-${WT13_HASH}"
+    echo "ready" > "$WT13_SENTINEL"
+
+    # 13a: install in the worktree itself (what `setup.sh --project` does there).
+    mkdir -p "$WT13_TMP/rest-api-wt/.claude/hooks"
+    cp "$SCRIPT_DIR/../hooks/project/session-gate.sh" "$WT13_TMP/rest-api-wt/.claude/hooks/session-gate.sh"
+    EXIT_CODE=0
+    STDERR=$(echo '{"tool_name": "Write"}' \
+        | (cd "$WT13_TMP/rest-api-wt" && bash "$WT13_TMP/rest-api-wt/.claude/hooks/session-gate.sh") 2>&1 >/dev/null) || EXIT_CODE=$?
+    if [ "$EXIT_CODE" -eq 0 ] && ! echo "$STDERR" | grep -q "path mismatch"; then
+        _pass "Test 13a: submodule worktree outside superproject exits 0 without path mismatch"
+    else
+        _fail "Test 13a: expected exit 0 and no path mismatch (got exit=$EXIT_CODE, stderr=$STDERR)"
+    fi
+
+    # 13b: install belongs to some other directory (moved/cloned) -> must still fail.
+    mkdir -p "$WT13_TMP/clone/.claude/hooks"
+    cp "$SCRIPT_DIR/../hooks/project/session-gate.sh" "$WT13_TMP/clone/.claude/hooks/session-gate.sh"
+    EXIT_CODE=0
+    STDERR=$(echo '{"tool_name": "Write"}' \
+        | (cd "$WT13_TMP/rest-api-wt" && bash "$WT13_TMP/clone/.claude/hooks/session-gate.sh") 2>&1 >/dev/null) || EXIT_CODE=$?
+    if [ "$EXIT_CODE" -eq 2 ] && echo "$STDERR" | grep -q "path mismatch"; then
+        _pass "Test 13b: hooks installed elsewhere (move/clone) still exit 2 with path mismatch"
+    else
+        _fail "Test 13b: expected exit 2 and path mismatch (got exit=$EXIT_CODE, stderr=$STDERR)"
+    fi
+fi
+
+# --- Test 14: plain linked worktree (claude --worktree / Agent isolation:"worktree") ---
+# No submodule: `git worktree add` on an ordinary repo, with the hooks present in the
+# worktree's own .claude/hooks (committed hooks are checked out there). PROJECT_ROOT maps
+# to the main checkout, so before the fix every Edit/Write in the worktree hit
+# `path mismatch`. Covers both the nested layout claude --worktree uses
+# (<main>/.claude/worktrees/<name>) and a worktree outside the main checkout.
+echo "--- Test 14: plain linked worktree -> no path mismatch ---"
+WT14_TMP=$(mktemp -d /tmp/cmm-test-wt14-XXXXXX)
+WT14_TMP="$(cd "$WT14_TMP" && pwd -P)"
+if command -v md5sum >/dev/null 2>&1; then
+    WT14_HASH=$(echo "$WT14_TMP/main" | md5sum | awk '{print $1}')
+else
+    WT14_HASH=$(echo "$WT14_TMP/main" | md5 -q)
+fi
+WT14_SENTINEL="/tmp/cmm-session-ready-${WT14_HASH}"
+cleanup_test14() { rm -f "$WT14_SENTINEL"; rm -rf "$WT14_TMP"; }
+trap 'cleanup_test12; cleanup_test13; cleanup_test14' EXIT
+
+SKIP_REASON=""
+(
+    set -e
+    mkdir -p "$WT14_TMP/main" && cd "$WT14_TMP/main"
+    git init -q
+    git -c user.email=t@t -c user.name=t commit --allow-empty -q -m init
+    git worktree add -q "$WT14_TMP/main/.claude/worktrees/nested" -b nested
+    git worktree add -q "$WT14_TMP/outside" -b outside
+) >/tmp/cmm-test14-setup.log 2>&1 || SKIP_REASON="worktree fixture setup failed (check /tmp/cmm-test14-setup.log)"
+
+if [ -n "$SKIP_REASON" ]; then
+    echo "SKIP: Test 14: $SKIP_REASON"
+else
+    echo "ready" > "$WT14_SENTINEL"   # main-checkout hash: a pass also proves no hash drift
+    for _wt in "$WT14_TMP/main/.claude/worktrees/nested" "$WT14_TMP/outside"; do
+        mkdir -p "$_wt/.claude/hooks"
+        cp "$SCRIPT_DIR/../hooks/project/session-gate.sh" "$_wt/.claude/hooks/session-gate.sh"
+        EXIT_CODE=0
+        STDERR=$(echo '{"tool_name": "Write"}' \
+            | (cd "$_wt" && bash "$_wt/.claude/hooks/session-gate.sh") 2>&1 >/dev/null) || EXIT_CODE=$?
+        if [ "$EXIT_CODE" -eq 0 ] && ! echo "$STDERR" | grep -q "path mismatch"; then
+            _pass "Test 14: plain worktree ${_wt#"$WT14_TMP"/} exits 0 without path mismatch"
+        else
+            _fail "Test 14: plain worktree ${_wt#"$WT14_TMP"/} (got exit=$EXIT_CODE, stderr=$STDERR)"
+        fi
+    done
+
+    # 14c/14d: the same check is inlined in five hooks; pin every copy, both ways, with a
+    # fixture that needs no submodule support (Test 13b SKIPs when that fixture can't build).
+    # Minimal PATH + empty HOME: no codebase-memory-mcp binary, so cmm-session-start
+    # cannot launch a background indexer from the fixture.
+    WT14_HOME="$WT14_TMP/home"; mkdir -p "$WT14_HOME" "$WT14_TMP/clone/.claude/hooks"
+    _WT="$WT14_TMP/outside"
+    for _h in session-gate cmm-session-start cmm-sentinel-writer context-mode-sentinel-writer ctx-execute-enforcer; do
+        cp "$SCRIPT_DIR/../hooks/project/$_h.sh" "$_WT/.claude/hooks/$_h.sh"
+        cp "$SCRIPT_DIR/../hooks/project/$_h.sh" "$WT14_TMP/clone/.claude/hooks/$_h.sh"
+        for _dir in "$_WT" "$WT14_TMP/clone"; do
+            OUT=$(echo '{"tool_name": "Write"}' | (cd "$_WT" && env PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$WT14_HOME" \
+                bash "$_dir/.claude/hooks/$_h.sh") 2>&1) || true   # exit code varies by hook; assert on the message
+            if [ "$_dir" = "$_WT" ]; then
+                if echo "$OUT" | grep -q "path mismatch"; then
+                    _fail "Test 14c: $_h reports path mismatch in its own worktree ($OUT)"
+                else
+                    _pass "Test 14c: $_h accepts the worktree's own install"
+                fi
+            elif echo "$OUT" | grep -q "path mismatch"; then
+                _pass "Test 14d: $_h still reports path mismatch for a moved/cloned install"
+            else
+                _fail "Test 14d: $_h missed the moved/cloned install ($OUT)"
+            fi
+        done
+    done
+fi
+
 # Cleanup
 rm -rf "$FAKE_ROOT"
 rm -f "$SENTINEL"
 cleanup_test12
+cleanup_test13
+cleanup_test14
 trap - EXIT
 
 echo ""

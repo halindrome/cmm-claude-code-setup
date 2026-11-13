@@ -51,7 +51,19 @@ fi
 # cloned without re-running setup.sh, BASH_SOURCE points to the old location while
 # git resolves the actual current root — catch this mismatch early.
 _SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P 2>/dev/null)"
-if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PROJECT_ROOT" ]; then
+# A worktree outside its main checkout maps PROJECT_ROOT to that checkout (stable sentinel
+# hash) but may carry its own install, so also accept the checkout's own root. Computed
+# only on mismatch; a real move/clone still differs from both.
+_SELF_ROOT=""
+if [ -n "$_SCRIPT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PROJECT_ROOT" ]; then
+    _SELF_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+    while [ -n "$_SELF_ROOT" ]; do
+        _PARENT="$(git -C "$_SELF_ROOT" rev-parse --show-superproject-working-tree 2>/dev/null)"
+        [ -z "$_PARENT" ] && break
+        _SELF_ROOT="$_PARENT"
+    done
+fi
+if [ -n "$_SCRIPT_ROOT" ] && [ -n "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$PROJECT_ROOT" ] && [ "$_SCRIPT_ROOT" != "$_SELF_ROOT" ]; then
     echo "cmm-hooks: path mismatch — hooks registered for '$_SCRIPT_ROOT' but git root is '$PROJECT_ROOT'."
     echo "Project was moved or cloned. Re-run: bash setup.sh --project --force"
     exit 2
