@@ -287,13 +287,18 @@ _assert_warn "advisory names unindexed-file escape" "$(_cj 'cd src && grep -rn M
 _assert_warn "compound search buried in a batch" \
     "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"git status\"},{\"label\":\"b\",\"command\":\"cd src && rg MyFunc\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}" 'MyFunc'
 
+_assert_warn "|| chained search warns like &&" "$(_cj 'test -d build || grep -rn MyFunc src')" 'MyFunc'
+
 _assert_silent "pipe filter grep is not a search"      "$(_cj 'git log --oneline | grep -r fix')"
+_assert_silent "|& pipe filter grep is not a search"   "$(_cj 'git log --oneline |& grep -r fix')"
 _assert_silent "non-recursive grep on one file"         "$(_cj 'cd src && grep MyFunc a.ts')"
 _assert_silent "compound into node_modules"             "$(_cj 'cd node_modules/lib && grep -rn MyFunc .')"
+_assert_silent "compound rooted at node_modules itself" "$(_cj 'cd node_modules && grep -rn MyFunc .')"
+_assert_exit "grep into node_modules root (no slash) exempt" 0 "$(_cj 'grep -rn MyFunc node_modules')"
 _assert_silent "compound outside the repo"              "$(_cj "cd $NONIDX && grep -rn MyFunc .")"
 _assert_silent "compound in non-indexed repo"           "$(_cj 'cd src && grep -rn MyFunc .' "$NONIDX")"
 _assert_silent "cmm-exempt silences compound"           "$(_cj 'cd src && grep -rn MyFunc .  # cmm-exempt')"
-_assert_silent "quoted grep inside ssh is remote"       "$(_cj "cd src && ssh host 'grep -rn MyFunc /srv'")"
+_assert_silent "quoted grep inside ssh is remote"       "$(_cj "cd src && ssh host 'cd /opt && grep -rn MyFunc .'")"
 _assert_silent "simple block still writes no stdout"    "$(_cj 'grep -rn MyFunc src/')"
 
 echo ""

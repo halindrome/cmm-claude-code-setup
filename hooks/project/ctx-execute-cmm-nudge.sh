@@ -291,7 +291,7 @@ def _compound_search(cmds):
             except Exception:
                 continue
             for seg, prev in segs:
-                if '|' in prev or '<' in prev or '>' in prev:
+                if prev in ('|', '|&') or '<' in prev or '>' in prev:
                     continue
                 while seg and seg[0] in _SEG_SKIP:
                     seg = seg[1:]
@@ -476,6 +476,8 @@ case "$_PROBE_DIR" in
 esac
 case "$TARGET_PATH" in
     */node_modules/*|*/dist/*|*/build/*|*/.git/*|*/vendor/*|*/target/*|node_modules/*|dist/*|build/*|.git/*|vendor/*|target/*) exit 0 ;;
+    # The excluded dir's own root, with no trailing component (compound targets are normpath'd).
+    */node_modules|*/dist|*/build|*/.git|*/vendor|*/target|node_modules|dist|build|.git|vendor|target) exit 0 ;;
 esac
 
 # REPO_ROOT is already the resolved session project root (from project-root.sh).
