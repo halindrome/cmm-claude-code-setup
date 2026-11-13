@@ -2,8 +2,9 @@
 """Measure whether the cmm-claude-code-setup enforcement stack reaches the
 conversation stream, and whether agents change behaviour when it does.
 
-Corpus: ~/.config/claude-code/projects/**/*.jsonl, records with timestamp
-within the last N days (default 30).
+Corpus: <config dir>/projects/**/*.jsonl, where <config dir> is resolved like
+setup.sh: $CLAUDE_CONFIG_DIR, else ~/.config/claude-code if it exists, else
+~/.claude. Records with timestamp within the last N days (default 30).
 
 Tiers:
   main      project/<sid>.jsonl
@@ -19,7 +20,17 @@ Everything below counts hooks that EMITTED.
 """
 import json, os, re, sys, time, collections
 
-ROOT = os.path.expanduser("~/.config/claude-code/projects")
+
+def _config_dir():
+    """Mirror of setup.sh detect_config_dir()."""
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    if env:
+        return env
+    xdg = os.path.expanduser("~/.config/claude-code")
+    return xdg if os.path.isdir(xdg) else os.path.expanduser("~/.claude")
+
+
+ROOT = os.path.join(_config_dir(), "projects")
 _args = sys.argv[1:]
 MODEL = None   # --model <id>: only count tool calls from assistant turns with this exact model id
 if "--model" in _args:
@@ -139,6 +150,8 @@ for dirpath, dirnames, fnames in os.walk(ROOT):
             continue
         files.append(p)
 
+if not files:
+    print(f"note: no transcripts found under {ROOT}", file=sys.stderr)
 print(f"corpus: {len(files)} transcripts touched in last {DAYS}d"
       + (f", tool calls from model {MODEL} only" if MODEL else "") + "\n")
 
