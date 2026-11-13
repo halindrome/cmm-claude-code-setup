@@ -57,7 +57,8 @@ if [ -n "$SUBAGENT_TYPE" ]; then
       _pat="${_line%%#*}"                                   # strip trailing comment
       _pat="$(printf '%s' "$_pat" | tr -d '[:space:]')"     # drop surrounding whitespace
       [ -z "$_pat" ] && continue
-      # shellcheck disable=SC2254 — glob match against the pattern is intentional
+      # Glob match against the pattern is intentional.
+      # shellcheck disable=SC2254
       case "$SUBAGENT_TYPE" in
         $_pat)
           echo "CMM note: agent type '$SUBAGENT_TYPE' exempted via .claude/cmm-agent-passthrough.txt."
