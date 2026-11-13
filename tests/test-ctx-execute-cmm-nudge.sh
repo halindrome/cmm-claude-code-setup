@@ -49,10 +49,23 @@ FIX_RAW="$(mktemp -d)"
 FIX="$(cd "$FIX_RAW" && pwd -P)"
 mkdir -p "$FIX/src"
 mkdir -p "$FIX/node_modules/lib"
+touch "$FIX/src/a.ts"
 cat > "$FIX/.mcp.json" <<EOF
 {"mcpServers":{"codebase-memory-mcp":{"command":"x"}}}
 EOF
 git -C "$FIX" init -q >/dev/null 2>&1 || true
+
+# Indexed repo whose own checkout directory is named like an excluded dir.
+BUILD_RAW="$(mktemp -d)"
+BUILDREPO="$(cd "$BUILD_RAW" && pwd -P)/build"
+mkdir -p "$BUILDREPO/src"
+cp "$FIX/.mcp.json" "$BUILDREPO/.mcp.json"
+git -C "$BUILDREPO" init -q >/dev/null 2>&1 || true
+# ...and one that lives UNDER an excluded dir (e.g. a CI workspace at /build/<project>).
+UNDERREPO="$(cd "$BUILD_RAW" && pwd -P)/target/app"
+mkdir -p "$UNDERREPO/src"
+cp "$FIX/.mcp.json" "$UNDERREPO/.mcp.json"
+git -C "$UNDERREPO" init -q >/dev/null 2>&1 || true
 
 # Non-indexed sibling fixture (no .mcp.json, no sentinel)
 NONIDX_RAW="$(mktemp -d)"
@@ -67,9 +80,23 @@ else
 fi
 CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
 touch "$CMM_SENTINEL"
+if command -v md5 >/dev/null 2>&1; then
+    BUILD_HASH="$(echo "$BUILDREPO" | md5 -q)"
+else
+    BUILD_HASH="$(echo "$BUILDREPO" | md5sum | awk '{print $1}')"
+fi
+BUILD_SENTINEL="/tmp/cmm-session-ready-${BUILD_HASH}"
+touch "$BUILD_SENTINEL"
+if command -v md5 >/dev/null 2>&1; then
+    UNDER_HASH="$(echo "$UNDERREPO" | md5 -q)"
+else
+    UNDER_HASH="$(echo "$UNDERREPO" | md5sum | awk '{print $1}')"
+fi
+UNDER_SENTINEL="/tmp/cmm-session-ready-${UNDER_HASH}"
+touch "$UNDER_SENTINEL"
 
 cleanup() {
-    rm -rf "$FIX_RAW" "$NONIDX_RAW" "$CMM_SENTINEL" 2>/dev/null || true
+    rm -rf "$FIX_RAW" "$NONIDX_RAW" "$BUILD_RAW" "$CMM_SENTINEL" "$BUILD_SENTINEL" "$UNDER_SENTINEL" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -288,10 +315,18 @@ _assert_warn "compound search buried in a batch" \
     "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"git status\"},{\"label\":\"b\",\"command\":\"cd src && rg MyFunc\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}" 'MyFunc'
 
 _assert_warn "|| chained search warns like &&" "$(_cj 'test -d build || grep -rn MyFunc src')" 'MyFunc'
+_assert_warn "repo checkout named build still warns" "$(_cj 'cd src && grep -rn MyFunc .' "$BUILDREPO")" 'MyFunc'
+_assert_warn "repo checkout named build, root search" "$(_cj "cd $BUILDREPO && grep -rn MyFunc ." "$BUILDREPO")" 'MyFunc'
+_assert_warn "repo checkout under target/ still warns" "$(_cj 'cd src && grep -rn MyFunc .' "$UNDERREPO")" 'MyFunc'
+_assert_exit "repo checkout under target/ still blocks" 2 "$(_cj 'grep -rn MyFunc src/' "$UNDERREPO")"
 
 _assert_silent "pipe filter grep is not a search"      "$(_cj 'git log --oneline | grep -r fix')"
 _assert_silent "|& pipe filter grep is not a search"   "$(_cj 'git log --oneline |& grep -r fix')"
 _assert_silent "non-recursive grep on one file"         "$(_cj 'cd src && grep MyFunc a.ts')"
+_assert_silent "recursive rg on one file"               "$(_cj 'cd src && rg MyFunc a.ts')"
+_assert_silent "grep -rn on one file"                   "$(_cj 'cd src && grep -rn MyFunc a.ts')"
+_assert_silent "cmm-exempt on a non-first batch command" \
+    "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"git status\"},{\"label\":\"b\",\"command\":\"cd src && rg MyFunc  # cmm-exempt\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
 _assert_silent "compound into node_modules"             "$(_cj 'cd node_modules/lib && grep -rn MyFunc .')"
 _assert_silent "compound rooted at node_modules itself" "$(_cj 'cd node_modules && grep -rn MyFunc .')"
 _assert_exit "grep into node_modules root (no slash) exempt" 0 "$(_cj 'grep -rn MyFunc node_modules')"

@@ -317,7 +317,10 @@ def _compound_search(cmds):
                 else:
                     continue
                 if pat:
-                    return pat, os.path.normpath(os.path.join(cwd, cd, tgt or '.'))
+                    full = os.path.normpath(os.path.join(cwd, cd, tgt or '.'))
+                    if os.path.isfile(full):
+                        continue   # one named file is not a codebase search
+                    return pat, full
     return None
 
 def _other():
@@ -468,13 +471,14 @@ if [ -n "$TARGET_PATH" ]; then
         esac
     fi
 fi
-_PROBE_DIR="$REPO_ROOT"
-
-# Exempt non-code dirs anywhere in the probe path
-case "$_PROBE_DIR" in
-    */node_modules/*|*/dist/*|*/build/*|*/.git/*|*/vendor/*|*/target/*) exit 0 ;;
+# Exempt non-code dirs. Match against the path RELATIVE to the project root, so a checkout that itself lives
+# under (or is named) build/, target/, … is not exempted wholesale.
+_EXPATH="${_RESOLVED:-$TARGET_PATH}"
+case "$_EXPATH" in
+    "$REPO_ROOT")   _EXPATH="." ;;
+    "$REPO_ROOT"/*) _EXPATH="${_EXPATH#"$REPO_ROOT"/}" ;;
 esac
-case "$TARGET_PATH" in
+case "$_EXPATH" in
     */node_modules/*|*/dist/*|*/build/*|*/.git/*|*/vendor/*|*/target/*|node_modules/*|dist/*|build/*|.git/*|vendor/*|target/*) exit 0 ;;
     # The excluded dir's own root, with no trailing component (compound targets are normpath'd).
     */node_modules|*/dist|*/build|*/.git|*/vendor|*/target|node_modules|dist|build|.git|vendor|target) exit 0 ;;
