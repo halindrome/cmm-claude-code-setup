@@ -246,13 +246,11 @@ chmod +x .claude/hooks/*.sh
 | Hook Script | Event | Purpose |
 |-------------|-------|---------|
 | `cmm-session-start.sh` | SessionStart | Injects prompt to check index status and run `index_repository` if needed |
-| `cmm-session-gate.sh` | PreToolUse:* | Blocks ALL tools until the index has been refreshed for this session |
+| `session-gate.sh` | PreToolUse:* | Blocks write/network tools (Edit, Write, WebFetch, …) until the index is refreshed for this session; CMM tools, Bash, Read, Grep and Glob always pass |
 | `cmm-sentinel-writer.sh` | PostToolUse | Writes a sentinel file after `index_repository` completes, unblocking the session gate |
 | `agent-cmm-gate.sh` | PreToolUse:Agent | Blocks subagent spawning unless the prompt includes CMM tool instructions |
 | `track-cmm-calls.sh` | PostToolUse | Tracks call counts per CMM tool to `~/.cache/codebase-memory-mcp/_call-counts.json` |
 | `reindex-after-commit.sh` | PostToolUse:Bash | Marks CMM sentinel stale after a `git commit` and calls `touch_project` to nudge the watcher for faster reindexing (5–60s) |
-
-> **Note:** These hooks will be created in Phases 2 and 3 of this project. The names and purposes are documented here for reference.
 
 ### Register project hooks in `.claude/settings.json`
 
@@ -277,7 +275,7 @@ Merge the following into your project's `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/cmm-session-gate.sh"
+            "command": "bash .claude/hooks/session-gate.sh"
           }
         ]
       },
@@ -324,10 +322,10 @@ The session lifecycle hooks (Steps 5-6) work together to ensure the code graph i
 ```
 Session starts
   -> cmm-session-start.sh injects "check index and refresh" prompt
-  -> cmm-session-gate.sh blocks ALL tools until index is ready
+  -> session-gate.sh blocks write/network tools (Edit, Write, WebFetch, …) until index is ready
   -> Claude runs index_repository (incremental — fast when already indexed)
   -> cmm-sentinel-writer.sh detects index_repository completion, writes sentinel file
-  -> cmm-session-gate.sh reads sentinel, unblocks all tools
+  -> session-gate.sh reads sentinel, unblocks all tools
   -> Session is ready — all tools available
 ```
 
@@ -347,7 +345,7 @@ Session starts
          │
          ▼
 ┌─────────────────────────────────────┐
-│  cmm-session-gate.sh (PreToolUse)  │
+│  session-gate.sh (PreToolUse)      │
 │  Checks for sentinel file           │
 │  Missing? -> BLOCK tool + message   │
 │  Present? -> ALLOW (exit 0)         │
@@ -575,7 +573,7 @@ Here's the full picture of all hooks, where they live, and what they do:
 | Event | Matcher | Script | Type | Effect |
 |-------|---------|--------|------|--------|
 | SessionStart | — | `cmm-session-start.sh` | command | Injects index refresh prompt |
-| PreToolUse | * | `cmm-session-gate.sh` | command | Blocks ALL tools until index refreshed |
+| PreToolUse | * | `session-gate.sh` | command | Blocks write/network tools until index refreshed |
 | PreToolUse | Agent | `agent-cmm-gate.sh` | command | Blocks agents without CMM instructions |
 | PostToolUse | — | `cmm-sentinel-writer.sh` | command | Marks session as ready after index completes |
 | PostToolUse | — | `track-cmm-calls.sh` | command | Tracks call counts per CMM tool |
