@@ -34,9 +34,9 @@ _assert_stderr_grep() {
     local label="$1" json="$2" run_dir="$3" regex="$4" extra_env="${5:-}"
     local err
     if [ -n "$extra_env" ]; then
-        err=$((cd "$run_dir" && echo "$json" | env $extra_env bash "$HOOK" 2>&1 >/dev/null) || true)
+        err=$( (cd "$run_dir" && echo "$json" | env $extra_env bash "$HOOK" 2>&1 >/dev/null) || true)
     else
-        err=$((cd "$run_dir" && echo "$json" | bash "$HOOK" 2>&1 >/dev/null) || true)
+        err=$( (cd "$run_dir" && echo "$json" | bash "$HOOK" 2>&1 >/dev/null) || true)
     fi
     if echo "$err" | grep -Eq "$regex"; then
         echo "PASS: $label"

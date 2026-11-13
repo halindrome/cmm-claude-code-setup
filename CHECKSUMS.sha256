@@ -17,7 +17,7 @@ a89c3312c33874ef4969016e19afe42313324d14495fee100521dcf06b792a8d  hooks/lib/cmm-
 7f1b7311360dee3a239beeef477d4f5371494f360e006c2f36eac0789f10d9b1  hooks/lib/is-cmm-ext.sh
 3f0fb04a5dc067a03499c6410147fa03989c72aef494b90b871a6742dbcb473f  hooks/lib/project-root.sh
 d6b0fb691daaa6ff2c9cb7d68490b3dad4624285b4e70dddf06afdcff6c27b33  hooks/lib/vbw-source.sh
-506807a5b16212dc22427ff12d7c091c6460b489c1573549cf888f098438b22a  hooks/project/agent-cmm-gate.sh
+e7295cda205797938cdb51f45c543a472ac52d0237056b9ac16f85f612459ee8  hooks/project/agent-cmm-gate.sh
 f0f6b06f0acf6a0a07aa99d46cc016f8f0878e7a3a7ef2367706937dab659539  hooks/project/agent-override-generate.sh
 3d8b9dc923016e69eb608037a5be8a69552744dc51d9f0347c44a106b93479a2  hooks/project/cmm-query-stale-advisory.sh
 ee881e5539767ef5fc951c80938e1729eed30084c0bd26342fc20e57019aa222  hooks/project/cmm-sentinel-writer.sh
@@ -71,7 +71,7 @@ bc8d41ed30d4dcbd1c187d628f512abb10b723eff2525b34faaea34c8470f9bf  tests/test-cwd
 8941fad0ba216f75558ff476ce1084fb4aaa5b3b972776ecbe2b7c26998c8e41  tests/test-hook-block-counter.sh
 97fc4651432dda82e234206e5ad92eb79a22d44d215610ea20b3bbe38b5072c8  tests/test-hook-driven-indexing.sh
 f129967a5c92938cf04eb3d44bdb7d49f44414fbaef7fc3ccb1f24192ae55445  tests/test-hooks-use-shared-lib.sh
-8c9cf297c78eb9ecd7cd0484e694ec75a10b3724b8b42aa90ae2c6f7cb649fa8  tests/test-index-root-gate.sh
+2288e7e88faa2e893350719296b24d963a0ddac57bdde68bb5dd7f3173ee77dc  tests/test-index-root-gate.sh
 bec3d6647446f7e337e0f4b27de8778af19ce8be10c07f432f2301a8b094de95  tests/test-measure-scripts.sh
 3cb4a78464bcab3c22d2943dc8723c1b8ca8ade7ee34251708c4ee7140a3f102  tests/test-per-project-call-count.sh
 7a2d5b07939620f420f6dba4c8a3bd7bcc9b0a3a79f54176fc4b99b68268ced8  tests/test-phase-45-bundle-install.sh
