@@ -99,9 +99,9 @@ bash setup.sh --help
 ```
 
 `--project` is global-scope-aware: if `codebase-memory-mcp` is already registered in
-`${CLAUDE_CONFIG_DIR:-~/.config/claude-code}/settings.json`, the project `.mcp.json`
-entry is skipped to avoid redundancy. Use `--force-local-cmm` for an explicit
-per-project pin (e.g., version isolation or CI environment).
+your global Claude Code config (`settings.json` or `.claude.json` in the config dir,
+or `~/.claude.json`), the project `.mcp.json` entry is skipped to avoid redundancy.
+Use `--force-local-cmm` for an explicit per-project pin (e.g., version isolation or CI environment).
 
 See [docs/setup-guide.md](docs/setup-guide.md) for the full step-by-step walkthrough.
 
@@ -122,7 +122,7 @@ hooks/
     reindex-after-edit.sh               # PostToolUse:Write|Edit — prompts re-index after edits
   project/                              # Install to .claude/hooks/ (per project)
     cmm-session-start.sh                # SessionStart — injects index refresh prompt (agent-aware)
-    cmm-session-gate.sh                 # PreToolUse:* — blocks all tools until CMM index ready
+    session-gate.sh                     # PreToolUse:* — blocks write/network tools until CMM (+ Context Mode) is ready
     cmm-sentinel-writer.sh              # PostToolUse — marks index as refreshed
     reindex-after-commit.sh             # PostToolUse:Bash — marks sentinel stale after git commit; calls touch_project to nudge watcher (5–60s reindex)
     agent-cmm-gate.sh                   # PreToolUse:Agent — blocks agents without MCP instructions
@@ -153,10 +153,11 @@ docs/
 ```
 Session starts
   -> cmm-session-start.sh injects "run index NOW" prompt (or richer agent init if spawned agent)
-  -> cmm-session-gate.sh blocks ALL tools until CMM index done
+  -> session-gate.sh blocks write/network tools (Edit, Write, WebFetch, …) until CMM index done
+     (CMM tools, Bash, Read, Grep and Glob always pass; fails open while the first index builds)
   -> Claude runs index_repository / index_status
   -> cmm-sentinel-writer.sh marks session as ready
-  -> context-mode-session-gate.sh checks Context Mode sentinel (no-op if not installed)
+  -> session-gate.sh then checks the Context Mode sentinel (no-op if not installed)
   -> All tools unblocked
 
 Claude explores code
@@ -300,7 +301,7 @@ claude mcp add context-mode -- npx -y context-mode@latest
 #    If you installed manually, they're in hooks/project/context-mode-*.sh
 
 # 4. The settings example already includes Context Mode hook entries
-#    IMPORTANT: cmm-session-gate must appear before context-mode-session-gate in PreToolUse
+#    session-gate.sh runs both the CMM and the Context Mode gate (one PreToolUse:* entry)
 #    See rules/project-settings-example.json
 
 # 5. Context Mode rules are enforced by hooks — no manual CLAUDE.md edits needed
