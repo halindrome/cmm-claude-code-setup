@@ -262,7 +262,7 @@ def extract_find_name(toks):
 # codebase search.
 _RECURSIVE_BY_DEFAULT = {'rg', 'ripgrep', 'ag', 'ack', 'ugrep'}
 _OPS = set('();<>|&')
-_SEG_SKIP = {'do', 'then', 'else', '{', '!', 'time', 'command', 'exec'}
+_SEG_SKIP = {'if', 'elif', 'while', 'until', 'do', 'then', 'else', '{', '!', 'time', 'command', 'exec'}
 
 def _segments(line):
     # Yield (tokens, operator-before-them) for each simple command in a line.

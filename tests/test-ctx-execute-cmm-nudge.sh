@@ -319,11 +319,14 @@ _assert_warn "repo checkout named build still warns" "$(_cj 'cd src && grep -rn 
 _assert_warn "repo checkout named build, root search" "$(_cj "cd $BUILDREPO && grep -rn MyFunc ." "$BUILDREPO")" 'MyFunc'
 _assert_warn "repo checkout under target/ still warns" "$(_cj 'cd src && grep -rn MyFunc .' "$UNDERREPO")" 'MyFunc'
 _assert_exit "repo checkout under target/ still blocks" 2 "$(_cj 'grep -rn MyFunc src/' "$UNDERREPO")"
+_assert_warn "if-guarded search warns"                  "$(_cj 'if grep -rqn MyFunc src; then echo y; fi')" 'MyFunc'
+_assert_warn "while-guarded search warns"               "$(_cj 'while rg -q MyFunc src; do sleep 1; done')" 'MyFunc'
 
 _assert_silent "pipe filter grep is not a search"      "$(_cj 'git log --oneline | grep -r fix')"
 _assert_silent "|& pipe filter grep is not a search"   "$(_cj 'git log --oneline |& grep -r fix')"
 _assert_silent "non-recursive grep on one file"         "$(_cj 'cd src && grep MyFunc a.ts')"
-_assert_silent "recursive rg on one file"               "$(_cj 'cd src && rg MyFunc a.ts')"
+_assert_silent "non-recursive grep on a directory"      "$(_cj 'cd src && grep MyFunc .')"
+_assert_silent "recursive rg on one file"              "$(_cj 'cd src && rg MyFunc a.ts')"
 _assert_silent "grep -rn on one file"                   "$(_cj 'cd src && grep -rn MyFunc a.ts')"
 _assert_silent "cmm-exempt on a non-first batch command" \
     "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_batch_execute\",\"tool_input\":{\"commands\":[{\"label\":\"a\",\"command\":\"git status\"},{\"label\":\"b\",\"command\":\"cd src && rg MyFunc  # cmm-exempt\"}],\"queries\":[\"q\"]},\"cwd\":\"$FIX\"}"
