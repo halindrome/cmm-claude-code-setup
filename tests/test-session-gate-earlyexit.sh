@@ -425,6 +425,32 @@ else
             _fail "Test 14: plain worktree ${_wt#"$WT14_TMP"/} (got exit=$EXIT_CODE, stderr=$STDERR)"
         fi
     done
+
+    # 14c/14d: the same check is inlined in five hooks; pin every copy, both ways, with a
+    # fixture that needs no submodule support (Test 13b SKIPs when that fixture can't build).
+    # Minimal PATH + empty HOME: no codebase-memory-mcp binary, so cmm-session-start
+    # cannot launch a background indexer from the fixture.
+    WT14_HOME="$WT14_TMP/home"; mkdir -p "$WT14_HOME" "$WT14_TMP/clone/.claude/hooks"
+    _WT="$WT14_TMP/outside"
+    for _h in session-gate cmm-session-start cmm-sentinel-writer context-mode-sentinel-writer ctx-execute-enforcer; do
+        cp "$SCRIPT_DIR/../hooks/project/$_h.sh" "$_WT/.claude/hooks/$_h.sh"
+        cp "$SCRIPT_DIR/../hooks/project/$_h.sh" "$WT14_TMP/clone/.claude/hooks/$_h.sh"
+        for _dir in "$_WT" "$WT14_TMP/clone"; do
+            OUT=$(echo '{"tool_name": "Write"}' | (cd "$_WT" && env PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$WT14_HOME" \
+                bash "$_dir/.claude/hooks/$_h.sh") 2>&1) || true   # exit code varies by hook; assert on the message
+            if [ "$_dir" = "$_WT" ]; then
+                if echo "$OUT" | grep -q "path mismatch"; then
+                    _fail "Test 14c: $_h reports path mismatch in its own worktree ($OUT)"
+                else
+                    _pass "Test 14c: $_h accepts the worktree's own install"
+                fi
+            elif echo "$OUT" | grep -q "path mismatch"; then
+                _pass "Test 14d: $_h still reports path mismatch for a moved/cloned install"
+            else
+                _fail "Test 14d: $_h missed the moved/cloned install ($OUT)"
+            fi
+        done
+    done
 fi
 
 # Cleanup
