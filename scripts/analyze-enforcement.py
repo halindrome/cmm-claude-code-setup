@@ -34,6 +34,7 @@ STACK_FP = [
     ("cmm-grep-nudge",         "gate",   "BLOCKED: Use CMM tools"),
     ("grep-cmm-gate",          "gate",   "[grep-cmm-gate] BLOCKED"),
     ("ctx-execute-cmm-nudge",  "gate",   "[ctx-execute-cmm-nudge] BLOCKED"),
+    ("ctx-execute-cmm-nudge",  "nudge",  "[ctx-execute-cmm-nudge] This payload searches source"),
     ("ctx-execute-enforcer",   "gate",   "BLOCKED: Route this command through ctx_execute"),
     ("ctx-execute-enforcer",   "gate",   "BLOCKED: Compound shell command cannot be exempted"),
     ("agent-cmm-gate",         "gate",   "BLOCKED: Agent prompt does not reference codebase-memory-mcp"),
