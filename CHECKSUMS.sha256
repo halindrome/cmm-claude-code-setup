@@ -73,7 +73,7 @@ bc8d41ed30d4dcbd1c187d628f512abb10b723eff2525b34faaea34c8470f9bf  tests/test-cwd
 97fc4651432dda82e234206e5ad92eb79a22d44d215610ea20b3bbe38b5072c8  tests/test-hook-driven-indexing.sh
 f129967a5c92938cf04eb3d44bdb7d49f44414fbaef7fc3ccb1f24192ae55445  tests/test-hooks-use-shared-lib.sh
 2288e7e88faa2e893350719296b24d963a0ddac57bdde68bb5dd7f3173ee77dc  tests/test-index-root-gate.sh
-bec3d6647446f7e337e0f4b27de8778af19ce8be10c07f432f2301a8b094de95  tests/test-measure-scripts.sh
+5c132a32b389f861cdc66ca3a5ee585289c7745351cc71a8a610a14e76da6644  tests/test-measure-scripts.sh
 3cb4a78464bcab3c22d2943dc8723c1b8ca8ade7ee34251708c4ee7140a3f102  tests/test-per-project-call-count.sh
 7a2d5b07939620f420f6dba4c8a3bd7bcc9b0a3a79f54176fc4b99b68268ced8  tests/test-phase-45-bundle-install.sh
 b544490233e1a603edb59b80aa9d7744a02a9102ec57df19e17785b90492e998  tests/test-phase-46-bundle-install.sh

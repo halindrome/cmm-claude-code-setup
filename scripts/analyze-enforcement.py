@@ -127,10 +127,11 @@ def bucket_of(name):
 
 
 # Zero-hit shapes, taken from real CMM/ctx results: the tree format's
-# `results: 0` / `total_results: 0` header, trace_path's `callers: 0` /
-# `callees: 0`, and ctx_search's `No results found.`
+# `results: 0` / `total_results: 0` header, the JSON format's top-level
+# `"total_results": 0`, trace_path's `callers: 0` / `callees: 0`, and
+# ctx_search's `No results found.`
 _ZERO_HEAD = re.compile(r"^(?:results|results_refs|files|cols|rows): 0\b")
-_ZERO_TOTAL = re.compile(r'^(?:total|total_results): 0\b|"(?:total|total_results)":\s*0\b', re.M)
+_ZERO_TOTAL = re.compile(r"^(?:total|total_results): 0\b", re.M)
 _EDGE_COUNT = re.compile(r"^(?:callers|callees): (\d+)\b", re.M)
 SEARCH_TOOLS = {"search_graph", "search_code", "trace_path", "ctx_search"}
 
@@ -143,8 +144,21 @@ def outcome_of(short, text, is_error, gated):
     empty   = a search tool ran and found nothing (search tools only)."""
     if gated or (is_error and "hook error" in text[:300]):
         return "blocked"
-    if is_error or text.lstrip().startswith('{"error"'):
+    top = None   # top-level JSON object, if the result is one
+    if text.lstrip().startswith("{"):
+        try:
+            top = json.loads(text)
+        except ValueError:
+            pass
+        if not isinstance(top, dict):
+            top = None
+    if is_error or (top is not None and "error" in top):
         return "error"
+    if top is not None:
+        # keys of the top-level object only: a hit's own text may contain the string
+        if short in SEARCH_TOOLS and (top.get("total_results") == 0 or top.get("total") == 0):
+            return "empty"
+        return "ok"
     if short in SEARCH_TOOLS:
         if short == "trace_path":
             counts = _EDGE_COUNT.findall(text)
