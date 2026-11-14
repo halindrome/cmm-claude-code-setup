@@ -109,7 +109,8 @@ cmm_is_registered "$REPO_ROOT" && CMM_FOUND=true
 # indexed" and grepped a whole task. See cmm_other_checkout().
 _OC=""
 if [ -n "$PATH_FIELD" ] && [ -n "$CWD_FIELD" ]; then
-    _OC="$(cmm_other_checkout "$PATH_FIELD" "$(cmm_checkout_root "$CWD_FIELD")")"
+    # The raw cwd too: a non-git session root (a multi-repo /work) has no checkout root.
+    _OC="$(cmm_other_checkout "$PATH_FIELD" "$(cmm_checkout_root "$CWD_FIELD")" "$CWD_FIELD")"
 fi
 _OCN=""; _OCR=""; _OCI=""
 [ -n "$_OC" ] && IFS=$'\t' read -r _OCN _OCR _OCI <<< "$_OC"

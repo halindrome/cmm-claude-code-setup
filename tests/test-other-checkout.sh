@@ -150,6 +150,28 @@ rm -f "$WT_SENT"
 has "gate block: replacement call names worktree project" "$ERR" "name_pattern=\"running\", project=\"$WT_NAME\""
 has "gate block: other-checkout note" "$ERR" "different checkout"
 
+# Sibling submodules: a session in one, a target in the other -- only the superproject walk
+# in cmm_checkout_root makes these the same checkout.
+SUB_SRC2="$TMP/subsrc2"; mkdir -p "$SUB_SRC2"; echo y > "$SUB_SRC2/b.pm"
+git -C "$SUB_SRC2" init -q; git -C "$SUB_SRC2" -c user.email=t@t -c user.name=t add -A
+git -C "$SUB_SRC2" -c user.email=t@t -c user.name=t commit -qm s
+git -C "$MAIN" -c protocol.file.allow=always submodule -q add "$SUB_SRC2" apps/sub2 2>/dev/null
+if [ -f "$MAIN/apps/sub2/b.pm" ] && [ -d "$MAIN/apps/sub" ]; then
+  [ -z "$(cmm_other_checkout "$MAIN/apps/sub2/b.pm" "$(cmm_checkout_root "$MAIN/apps/sub")")" ] && pass "sibling submodule -> same checkout (superproject walk)" || fail "sibling submodule reported as other checkout"
+else
+  fail "sibling submodule fixture failed"
+fi
+# Non-git session root (a multi-repo workspace): a repo nested under it is NOT another checkout.
+WS="$TMP/ws"; mkdir -p "$WS"; git clone -q "$MAIN" "$WS/repoA" 2>/dev/null
+if [ -f "$WS/repoA/lib/Helper.pm" ]; then
+  ERR="$(cd "$WS" && echo "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"running\",\"path\":\"$WS/repoA/lib/Helper.pm\"},\"cwd\":\"$WS\"}" | bash "$GREPNUDGE" 2>&1 >/dev/null)"
+  hasnt "grep-nudge: repo nested in a non-git session root -> no other-checkout note" "$ERR" "different checkout"
+  OUT="$(cd "$WS" && echo "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"running\",\"path\":\"$WS/repoA/lib/Helper.pm\"},\"cwd\":\"$WS\"}" | bash "$GATE" 2>&1)"
+  hasnt "gate: repo nested in a non-git session root -> no other-checkout note" "$OUT" "different checkout"
+else
+  fail "workspace clone fixture failed"
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

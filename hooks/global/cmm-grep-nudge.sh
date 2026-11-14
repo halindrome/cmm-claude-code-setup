@@ -168,7 +168,8 @@ _OCN=""; _OCR=""; _OCI=""
 _other_checkout() {
   local target="$1" cwd="$2" oc
   [ -n "$target" ] && [ -n "$cwd" ] && declare -F cmm_other_checkout >/dev/null || return 0
-  oc="$(cmm_other_checkout "$target" "$(cmm_checkout_root "$cwd")")"
+  # The raw cwd too: a non-git session root (a multi-repo /work) has no checkout root.
+  oc="$(cmm_other_checkout "$target" "$(cmm_checkout_root "$cwd")" "$cwd")"
   [ -n "$oc" ] && IFS=$'\t' read -r _OCN _OCR _OCI <<< "$oc"
   return 0
 }
