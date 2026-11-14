@@ -2,7 +2,7 @@
 # test-context-mode-hook-dispatch.sh — behaviour of hooks/project/context-mode-hook-dispatch.sh
 #
 # Runs the dispatcher against a stub `context-mode` binary on PATH that records each call
-# and echoes its stdin, so the test needs no real context-mode install.
+# and the EXACT bytes it received on stdin, so the test needs no real context-mode install.
 #
 # Covers the Agent re-injection guard: upstream context-mode (routing.mjs, v1.0.169) appends
 # its <context_window_protection> block to every Agent prompt unconditionally. A prompt that
@@ -19,35 +19,41 @@ _fail() { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
 
 TMP=$(mktemp -d /tmp/cmhd-test-XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin"
+mkdir -p "$TMP/bin" "$TMP/bare"
 cat > "$TMP/bin/context-mode" <<'EOF'
 #!/bin/bash
-# stub: record argv, echo stdin back
+# stub: record argv, capture stdin byte-for-byte
 echo "$*" >> "$CMHD_CALLS"
-cat
+cat > "$CMHD_STDIN"
 EOF
 chmod +x "$TMP/bin/context-mode"
-export CMHD_CALLS="$TMP/calls"
+# A PATH with neither context-mode nor npx, but the coreutils the dispatcher needs.
+for t in cat date id touch; do ln -s "$(command -v "$t")" "$TMP/bare/$t"; done
+export CMHD_CALLS="$TMP/calls" CMHD_STDIN="$TMP/stdin"
 
-# run <event> <json>: sets OUT, RC, CALLED (number of stub invocations for this run)
+# run <event> <json> [path]: sets RC, CALLED, ERR; the stub's stdin lands in $CMHD_STDIN
 run() {
-    : > "$CMHD_CALLS"
-    OUT=$(printf '%s' "$2" | PATH="$TMP/bin:/usr/bin:/bin" bash "$HOOK" "$1" 2>/dev/null); RC=$?
+    : > "$CMHD_CALLS"; rm -f "$CMHD_STDIN"
+    ERR=$(printf '%s' "$2" | PATH="${3:-$TMP/bin:/usr/bin:/bin}" "$BASH" "$HOOK" "$1" 2>&1 >/dev/null); RC=$?
     CALLED=$(wc -l < "$CMHD_CALLS" | tr -d ' ')
 }
+# received_is <expected-bytes>: exact byte comparison of what the stub got
+received_is() { [ -f "$CMHD_STDIN" ] && cmp -s "$CMHD_STDIN" <(printf '%s' "$1"); }
 
 BLOCK='<context_window_protection> route through ctx_execute </context_window_protection>'
 AGENT_PLAIN='{"tool_name":"Agent","tool_input":{"description":"x","prompt":"do the thing"}}'
 AGENT_MARKED="{\"tool_name\": \"Agent\", \"tool_input\": {\"description\": \"x\", \"prompt\": \"do the thing\\n$BLOCK\"}}"
+AGENT_MENTION='{"tool_name":"Agent","tool_input":{"prompt":"explain what the <context_window_protection> tag does"}}'
 TASK_MARKED="{\"tool_name\":\"Task\",\"tool_input\":{\"prompt\":\"y $BLOCK\"}}"
 BASH_MARKED="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo '$BLOCK'\"}}"
+NL=$'\n'
 
 # 1. Agent prompt that already carries the block -> passed through, upstream NOT called
 run pretooluse "$AGENT_MARKED"
-if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ] && [ -z "$OUT" ]; then
+if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ] && [ ! -f "$CMHD_STDIN" ]; then
     _pass "Agent prompt already carrying the block is not re-injected"
 else
-    _fail "Agent prompt already carrying the block (rc=$RC called=$CALLED out=$OUT)"
+    _fail "Agent prompt already carrying the block (rc=$RC called=$CALLED)"
 fi
 
 # 2. Same for the legacy Task tool name
@@ -58,37 +64,78 @@ else
     _fail "Task prompt already carrying the block (rc=$RC called=$CALLED)"
 fi
 
-# 3. Agent prompt WITHOUT the block -> upstream called once, payload intact
+# 2b. Pretty-printed, multi-line payload (line breaks between keys and around the colon,
+#     block content spanning real newlines) -> still recognised
+AGENT_PRETTY=$'{\n  "tool_name"\n    :\n  "Agent",\n  "tool_input": {\n    "prompt": "do it <context_window_protection>\n  a\n  b\n</context_window_protection>"\n  }\n}'
+run pretooluse "$AGENT_PRETTY"
+if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ]; then
+    _pass "multi-line pretty-printed Agent payload carrying the block is recognised"
+else
+    _fail "multi-line pretty-printed Agent payload (rc=$RC called=$CALLED)"
+fi
+
+# 2c. A prompt that QUOTES "tool_name": "Agent" inside a non-Agent call is not mistaken
+#     for an Agent call: inside a JSON string the quotes are escaped (\")
+BASH_QUOTING='{"tool_name":"Bash","tool_input":{"command":"echo \"tool_name\": \"Agent\" <context_window_protection>x</context_window_protection>"}}'
+run pretooluse "$BASH_QUOTING"
+if [ "$CALLED" -eq 1 ]; then
+    _pass "escaped \"tool_name\": \"Agent\" inside a string does not trigger the guard"
+else
+    _fail "escaped tool_name inside a string triggered the guard (called=$CALLED)"
+fi
+
+# 3. Agent prompt WITHOUT the block -> upstream called once; pretooluse re-feeds the
+#    payload with exactly one trailing newline (the only byte it may add)
 run pretooluse "$AGENT_PLAIN"
-if [ "$CALLED" -eq 1 ] && grep -q 'hook claude-code pretooluse' "$CMHD_CALLS" && [ "$OUT" = "$AGENT_PLAIN" ]; then
-    _pass "Agent prompt without the block still reaches context-mode, stdin intact"
+if [ "$CALLED" -eq 1 ] && grep -q 'hook claude-code pretooluse' "$CMHD_CALLS" && received_is "$AGENT_PLAIN$NL"; then
+    _pass "Agent prompt without the block reaches context-mode, payload + one newline"
 else
-    _fail "Agent prompt without the block (called=$CALLED out=$OUT)"
+    _fail "Agent prompt without the block (called=$CALLED got=$(cat "$CMHD_STDIN" 2>/dev/null))"
 fi
 
-# 4. Non-Agent tool mentioning the block -> still dispatched (guard is Agent-only)
+# 4. A prompt that merely MENTIONS the tag (no closing tag) is still routed
+run pretooluse "$AGENT_MENTION"
+if [ "$CALLED" -eq 1 ] && received_is "$AGENT_MENTION$NL"; then
+    _pass "Agent prompt that only mentions the tag is still routed"
+else
+    _fail "Agent prompt that only mentions the tag (called=$CALLED)"
+fi
+
+# 5. Non-Agent tool mentioning the block -> still dispatched (guard is Agent-only)
 run pretooluse "$BASH_MARKED"
-if [ "$CALLED" -eq 1 ] && [ "$OUT" = "$BASH_MARKED" ]; then
-    _pass "non-Agent pretooluse is dispatched even when it mentions the block"
+if [ "$CALLED" -eq 1 ] && received_is "$BASH_MARKED$NL"; then
+    _pass "non-Agent pretooluse is dispatched even when it carries the block"
 else
-    _fail "non-Agent pretooluse (called=$CALLED out=$OUT)"
+    _fail "non-Agent pretooluse (called=$CALLED)"
 fi
 
-# 5. Other events are untouched, even for an Agent payload carrying the block
-run posttooluse "$AGENT_MARKED"
-if [ "$CALLED" -eq 1 ] && grep -q 'hook claude-code posttooluse' "$CMHD_CALLS" && [ "$OUT" = "$AGENT_MARKED" ]; then
-    _pass "posttooluse dispatches unchanged"
-else
-    _fail "posttooluse (called=$CALLED out=$OUT)"
-fi
+# 6/7. Other events exec straight through: stdin byte-for-byte, even for an Agent payload
+for ev in posttooluse sessionstart; do
+    run "$ev" "$AGENT_MARKED"
+    if [ "$CALLED" -eq 1 ] && grep -q "hook claude-code $ev" "$CMHD_CALLS" && received_is "$AGENT_MARKED"; then
+        _pass "$ev dispatches with stdin byte-for-byte"
+    else
+        _fail "$ev (called=$CALLED got=$(cat "$CMHD_STDIN" 2>/dev/null))"
+    fi
+done
 
-# 6. Missing event arg -> fail open
+# 8. Missing event arg -> fail open
 run "" "$AGENT_PLAIN"
 if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ]; then
     _pass "missing event arg fails open"
 else
     _fail "missing event arg (rc=$RC called=$CALLED)"
 fi
+
+# 9. No context-mode and no npx on PATH -> fail open (exit 0), for pretooluse and others
+for ev in pretooluse posttooluse; do
+    run "$ev" "$AGENT_PLAIN" "$TMP/bare"
+    if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ]; then
+        _pass "no runtime on PATH fails open ($ev)"
+    else
+        _fail "no runtime on PATH ($ev): rc=$RC called=$CALLED err=$ERR"
+    fi
+done
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

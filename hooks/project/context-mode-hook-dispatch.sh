@@ -25,8 +25,13 @@
 #   - No global install, no npx      → exit 0 with one-shot stderr notice (fail-open)
 #   - No event arg                   → exit 0 (fail-open; hook is non-blocking anyway)
 #
+#   - pretooluse, Agent/Task prompt already carrying the routing block
+#                                    → exit 0, context-mode not called (see guard below)
+#
 # Input: Claude Code passes the hook payload JSON on stdin. `exec` replaces
-# this shell with the target binary, so stdin passes through unmodified.
+# this shell with the target binary, so for every event except pretooluse
+# stdin passes through byte-for-byte. pretooluse buffers it for the guard and
+# re-feeds it with exactly one trailing newline (harmless to a JSON reader).
 
 set -euo pipefail
 
@@ -42,11 +47,12 @@ fi
 # after agent-cmm-gate blocked it), the prompt gained a SECOND copy, and auto mode could
 # no longer classify the launch, so subagent spawns stalled. If the block is already
 # present, pass the call through untouched. Only pretooluse pays for buffering stdin;
-# every other event still execs straight through.
+# every other event still execs straight through. Both the opening AND closing tag must
+# be present, so a prompt that merely mentions the tag name still gets routed.
 if [ "$event" = "pretooluse" ]; then
   payload="$(cat)"
   if [[ "$payload" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"(Agent|Task)\" ]] \
-     && [[ "$payload" == *'<context_window_protection>'* ]]; then
+     && [[ "$payload" == *'<context_window_protection>'*'</context_window_protection>'* ]]; then
     exit 0
   fi
   exec 0<<<"$payload"
