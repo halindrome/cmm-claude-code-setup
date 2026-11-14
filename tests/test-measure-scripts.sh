@@ -209,6 +209,94 @@ else
 fi
 
 echo ""
+echo "--- outcome_of classifies real CMM / ctx result shapes (section 10) ---"
+# Rows are result shapes copied from real transcripts. A miss here means the
+# OUTCOME table silently reports empty searches as successes.
+_OCMISS=$(python3 - "$ENF" <<'PY' 2>&1
+import sys
+src = open(sys.argv[1]).read().split("# ---------------------------------------------------------------- accumulators")[0]
+sys.argv[1:] = []; ns = {}; exec(src, ns); oc = ns["outcome_of"]
+#  (tool, result text, is_error, gated, expected)
+rows = [
+  ("search_code", "results: 0  (cols: qn label file lines matches in out)\ntotal_results: 0", False, False, "empty"),
+  ("search_code", '{"cols":["qn"],"rows":[],"total_grep_matches":0,"total_results":0}', False, False, "empty"),
+  # a real hit whose matched source line itself contains `"total_results":0`,
+  # in both output formats (tree output carries the source text unescaped)
+  ("search_code", 'results: 1  (cols: qn label file lines matches)\n  a.f Function x.py 1-2 r = {"total_results":0}\ntotal_results: 1', False, False, "ok"),
+  ("search_code", '{"rows":[["a.f","Function","x.py","1-2","r = {\\"total_results\\":0}"]],"total_results":1}', False, False, "ok"),
+  ("search_code", "results: 4  (cols: qn label file lines)\n  a.b Function x.py 1-2", False, False, "ok"),
+  ("search_graph", "results: 0  (cols: qn label file lines in out)\ntotal: 0", False, False, "empty"),
+  ("trace_path", "function: f\ndirection: both\ncallers: 0\ncallees: 0", False, False, "empty"),
+  ("trace_path", "function: f\ndirection: both\ncallers: 0\ncallees: 3", False, False, "ok"),
+  ("ctx_search", "## q1\nNo results found.", False, False, "empty"),
+  ("ctx_search", "## q1\nNo results found.\n## q2\n--- [current-session | x] ---\nhit", False, False, "ok"),
+  ("search_graph", "search_graph: row scan aborted: invalid regex", True, False, "error"),
+  ("search_code", '{"error":"project not found or not indexed"}', False, False, "error"),
+  ("search_code", '{"available_projects":[],"count":0,"error":"project not found","hint":"x"}', False, False, "error"),
+  ("ctx_execute", "PreToolUse:mcp__x__ctx_execute hook error: [command hook 12]: BLOCKED", True, False, "blocked"),
+  # a stack gate fingerprinted on the tool_use_id, without the harness's "hook error" text
+  ("ctx_execute", "[ctx-payload-guard] BLOCKED -- pipe to head", False, True, "blocked"),
+  ("get_code_snippet", "callers: 0\ncallees: 0\nname: f", False, False, "ok"),
+]
+for tool, text, err, gated, want in rows:
+    got = oc(tool, text, err, gated)
+    if got != want:
+        print(f"{tool}: want {want}, got {got}: {text[:50]!r}")
+PY
+)
+if [ -z "$_OCMISS" ]; then
+  pass "outcome_of: every row classified as expected"
+else
+  fail "outcome_of misclassified: $_OCMISS"
+fi
+for _flag in --help -h; do
+  _rc=0; _out=$(python3 "$ENF" "$_flag" 2>&1) || _rc=$?
+  if [ "$_rc" -eq 0 ] && printf '%s' "$_out" | grep -q '^usage:'; then
+    pass "enforcement $_flag prints usage, exit 0"
+  else
+    fail "enforcement $_flag: exit $_rc, output: ${_out:0:80}"
+  fi
+done
+_rc=0; _out=$(python3 "$ENF" notanumber 2>&1) || _rc=$?
+if [ "$_rc" -ne 0 ] && printf '%s' "$_out" | grep -q '^usage:' \
+   && ! printf '%s' "$_out" | grep -q 'Traceback'; then
+  pass "enforcement bad DAYS: usage, non-zero exit, no traceback"
+else
+  fail "enforcement bad DAYS: exit $_rc, output: ${_out:0:80}"
+fi
+
+echo ""
+echo "--- section 10/10b: a transcript with CMM/ctx calls runs end to end ---"
+mkdir -p "$_FAKEHOME/.config/claude-code/projects/q"
+python3 - "$_FAKEHOME/.config/claude-code/projects/q/s.jsonl" <<'PY'
+import json, sys, time
+ts = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+def tu(tid, name, inp):
+    return {"type": "assistant", "timestamp": ts, "message": {"model": "m",
+            "content": [{"type": "tool_use", "id": tid, "name": name, "input": inp}]}}
+def tr(tid, text, err=False):
+    return {"type": "user", "timestamp": ts, "message": {"content": [{"type": "tool_result",
+            "tool_use_id": tid, "is_error": err, "content": text}]}}
+C = "mcp__codebase-memory-mcp__"; X = "mcp__plugin_context-mode_context-mode__"
+recs = [tu("u1", C + "search_graph", {}), tr("u1", "results: 0  (cols: qn)\ntotal: 0"),
+        tu("u2", "Read", {"file_path": "x.py"}), tr("u2", "src"),
+        tu("u3", C + "search_code", {}), tr("u3", "results: 2  (cols: qn)\n  a.f Function x.py 1-2"),
+        tu("u4", X + "ctx_execute", {}), tr("u4", "[ctx-payload-guard] BLOCKED -- x", True)]
+open(sys.argv[1], "w").write("\n".join(json.dumps(r) for r in recs) + "\n")
+PY
+_Q=$(HOME="$_FAKEHOME" python3 "$ENF" 1 --model m 2>&1 || true)
+for _want in '^CMM +search_graph +1 +0\.0% +100\.0% +0\.0% +0\.0%' \
+             '^CMM +search_code +1 +100\.0% +0\.0% +0\.0% +0\.0%' \
+             '^ctx +ctx_execute +1 +0\.0% +0\.0% +0\.0% +100\.0%' \
+             '^main +empty +1 +0\.0% +0\.0% +100\.0%'; do
+  if printf '%s\n' "$_Q" | grep -qE -- "$_want"; then
+    pass "section 10 row: $_want"
+  else
+    fail "section 10 row missing: $_want"
+  fi
+done
+
+echo ""
 echo "--- make measure target exists ---"
 if grep -q '^measure:' "$ROOT/Makefile"; then
   pass "Makefile defines a measure target"
