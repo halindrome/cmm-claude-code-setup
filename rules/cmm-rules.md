@@ -53,6 +53,8 @@ The two failure modes look alike in a transcript and mean opposite things. Getti
 
 In neither case is the correct conclusion "CMM does not work in this repo". Say what failed and which of the two it was.
 
+- **An empty result is not a missing index.** A project CMM has no index for fails loudly with `project not found or not indexed`. `results: 0` means the query ran and matched nothing, and the usual reason is the query: a regex pattern (`^sub foo`, `a|b`) without `regex=true` is searched as literal text, or `project=` named a different checkout than the file lives in. Fix the query before concluding anything. Observed 2026-11-14: `search_code(pattern="^sub running")` against the session's project returned nothing for a file in a sibling worktree, and the session decided "the worktree isn't indexed" and grepped for the rest of the task.
+
 ### Behavior notes (upstream v0.10.8)
 
 - `search_graph` returns at most **200 rows** by default (upstream cap as of v0.10.8); pass `offset` to page or use `query_graph` with Cypher for full scans.
@@ -67,7 +69,7 @@ In neither case is the correct conclusion "CMM does not work in this repo". Say 
 - **Never infer that a language is unsupported from its absence in a list here.** CMM ships 158 vendored tree-sitter grammars; everything it parses is graph-queryable. When unsure whether a language is covered, ask the graph (`get_architecture`, or `search_graph` for a known symbol) — do not fall back to grep on a pessimistic assumption.
 - As of v0.10.8, `query_graph` exposes per-function complexity metrics queryable via Cypher: `cyclomatic`, `cognitive`, `param_count`, `loop_depth`, `transitive_loop_depth` (interprocedural worst-case nesting), `linear_scan_in_loop` (O(n²) detection), `alloc_in_loop`, `unguarded_recursion`, and the `recursive` flag. Use these for refactor-candidate and hot-path queries — e.g. `MATCH (f:Function) WHERE f.transitive_loop_depth >= 3 OR f.linear_scan_in_loop >= 1 RETURN f.qualified_name ORDER BY f.transitive_loop_depth DESC`.
 
-`Read` is correct for: non-code files (JSON, YAML, config, Markdown), full-file context (imports, globals), files under 50 lines, and files not yet indexed.
+`Read` is correct for: non-code files (JSON, YAML, config, Markdown), full-file context (imports, globals), files under 50 lines, and files CMM excludes by design (`check_index_coverage` says which). A checkout that is merely not indexed *yet* is not in that list — index it (see "Worktrees and other checkouts").
 
 ### Monorepo indexing
 
@@ -76,6 +78,16 @@ Always index/query the repository root — pass the monorepo root to `index_repo
 Before calling `index_repository`, call `list_projects` and check whether any existing entry has a path that is an **ancestor** of (or equal to) the target path. If such an entry exists, use that index rather than creating a new one.
 
 CMM project names are path-derived (`…myrepo-apps-api` vs `…myrepo`), so a subtree entry will **not** match a root-level lookup. Look for ancestor paths, not substring matches — the monorepo root index already covers every file in any subdirectory.
+
+### Worktrees and other checkouts
+
+A git checkout **outside** the session root — a linked worktree (`../repo-wt/feature-x`), a worktree of a submodule placed outside its superproject, a sibling clone — is **its own CMM project**, named from its own path. The session's project does not contain it, and querying the session's project for its files returns nothing.
+
+- `list_projects` and look for the checkout's root path. If it is there, pass that `name` as `project=`.
+- If it is not, call `index_repository(repo_path="<the checkout's root>")` **once**, then query it under the `project` the call returns. This is allowed: the index-root gate blocks only *subdirectories* of the session root, and a sibling checkout is not one.
+- Never fall back to grep because a checkout "isn't indexed". Indexing it is one call; grepping it costs every structural question for the rest of the task. `# cmm-exempt` is for non-code targets, not for source in an unindexed checkout.
+
+The grep gates name the right project — and say when it has no index yet — when the search target is in another checkout.
 
 ### CMM vs. context-mode
 

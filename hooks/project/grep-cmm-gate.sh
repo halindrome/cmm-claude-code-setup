@@ -103,12 +103,30 @@ cmm_is_registered "$REPO_ROOT" && CMM_FOUND=true
 # If CMM not registered anywhere, fail open
 [ "$CMM_FOUND" = false ] && exit 0
 
+# --- Target in a different checkout than the session (sibling worktree, clone) ---
+# It is its own CMM project. Name it in the redirect, and when we would otherwise
+# fail open silently, say so instead: silence is how an agent concluded "not
+# indexed" and grepped a whole task. See cmm_other_checkout().
+_OC=""
+if [ -n "$PATH_FIELD" ] && [ -n "$CWD_FIELD" ]; then
+    _OC="$(cmm_other_checkout "$PATH_FIELD" "$(cmm_checkout_root "$CWD_FIELD")")"
+fi
+_OCN=""; _OCR=""; _OCI=""
+[ -n "$_OC" ] && IFS=$'\t' read -r _OCN _OCR _OCI <<< "$_OC"
+
 # --- Indexed-repo sentinel probe (parity with ctx-execute-enforcer.sh md5 pattern) ---
 PROJECT_HASH=$(echo "$REPO_ROOT" | md5 -q 2>/dev/null || echo "$REPO_ROOT" | md5sum 2>/dev/null | awk '{print $1}')
 [ -z "$PROJECT_HASH" ] && exit 0
 CMM_SENTINEL="/tmp/cmm-session-ready-${PROJECT_HASH}"
 # If project not yet indexed for this session, fail open (same deadlock-prevention posture as ctx-execute-enforcer)
-[ ! -f "$CMM_SENTINEL" ] && exit 0
+if [ ! -f "$CMM_SENTINEL" ]; then
+    if [ -n "$_OCN" ]; then
+        _MSG="[grep-cmm-gate] This Grep searches outside this session's project. Allowed.
+$(cmm_other_checkout_note "$_OCN" "$_OCR" "$_OCI")"
+        python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$_MSG" 2>/dev/null
+    fi
+    exit 0
+fi
 
 # --- Block-trigger decision tree ---
 SHOULD_BLOCK=false
@@ -173,6 +191,8 @@ fi
 # `query` -- see cmm_project_name() in hooks/lib/cmm-registered.sh. Omit the
 # argument when the root is unknown rather than emitting project="".
 _PROJ="$(cmm_project_name 2>/dev/null)"
+# A target in another checkout is queried under THAT checkout's project.
+[ -n "$_OCN" ] && _PROJ="$_OCN"
 _P=""
 [ -n "$_PROJ" ] && _P=", project=\"${_PROJ}\""
 
@@ -190,7 +210,8 @@ cat >&2 <<EOF
 [grep-cmm-gate] BLOCKED -- source-code search in indexed repo.
 ${FIRST_LINE}
 ${SECOND_LINE}
-(Non-code target? Use an explicit non-code type/glob, or add '# cmm-exempt' to
+${_OCN:+$(cmm_other_checkout_note "$_OCN" "$_OCR" "$_OCI")
+}(Non-code target? Use an explicit non-code type/glob, or add '# cmm-exempt' to
 your pattern. Not for searching source.)
 EOF
 

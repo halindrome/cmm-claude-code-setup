@@ -157,3 +157,67 @@ print(out, end="")' 2>/dev/null)" || name="${root//\//-}"
     while [[ "$name" == *- ]]; do name="${name%-}"; done
     printf '%s' "${name:-root}"
 }
+
+# cmm_checkout_root <path> -> canonical root of the git checkout holding <path>,
+# walked out of submodules (CMM indexes the superproject root, so a submodule
+# inside it is NOT a separate project). Prints nothing when <path> is not in git.
+#
+# A linked worktree -- including a worktree of a submodule placed outside its
+# superproject -- reports no superproject, so it resolves to its own root: CMM
+# indexes it as its own project, named from its own path.
+cmm_checkout_root() {
+    local p="$1" d top parent
+    [ -n "$p" ] || return 0
+    if [ -d "$p" ]; then d="$p"; else d="$(dirname "$p")"; fi
+    top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)"
+    [ -n "$top" ] || return 0
+    while parent="$(git -C "$top" rev-parse --show-superproject-working-tree 2>/dev/null)" && [ -n "$parent" ]; do
+        top="$parent"
+    done
+    (cd "$top" 2>/dev/null && pwd -P) || printf '%s' "$top"
+}
+
+# cmm_project_indexed <name> -> 0 when CMM holds an index for project <name>.
+# CMM stores one <name>.db per project under $CBM_CACHE_DIR, default
+# ~/.cache/codebase-memory-mcp (cbm_resolve_cache_dir, src/foundation/platform.c).
+cmm_project_indexed() {
+    [ -n "$1" ] && [ -f "${CBM_CACHE_DIR:-$HOME/.cache/codebase-memory-mcp}/$1.db" ]
+}
+
+# cmm_other_checkout <target-path> <session-root>
+#   -> "<project-name><TAB><checkout-root><TAB><indexed 1|0>" when <target-path>
+#      lives in a git checkout OTHER than <session-root> (a linked worktree, a
+#      sibling clone); nothing otherwise.
+#
+# WHY: every gate names project=<session project>. A search aimed at a sibling
+# worktree then gets a call against the wrong project -- which comes back empty,
+# and an empty result reads as "not indexed". Observed 2026-11-14: a session in
+# ../cache-freshness editing ../cache-freshness-wt/rest-api-6932 (a submodule
+# worktree outside the superproject) concluded "the worktree isn't in the CMM
+# index" and grepped for the rest of the task, never calling index_repository.
+cmm_other_checkout() {
+    local target="$1" session="$2" top name idx=0
+    top="$(cmm_checkout_root "$target")"
+    [ -n "$top" ] || return 0
+    if [ -n "$session" ]; then
+        session="$(cd "$session" 2>/dev/null && pwd -P || printf '%s' "$session")"
+        [ "$top" = "$session" ] && return 0
+    fi
+    name="$(PROJECT_ROOT="$top" cmm_project_name)"
+    [ -n "$name" ] || return 0
+    cmm_project_indexed "$name" && idx=1
+    printf '%s\t%s\t%s' "$name" "$top" "$idx"
+}
+
+# cmm_other_checkout_note <name> <root> <indexed> -> the guidance lines a gate
+# appends for a target in another checkout. One wording, shared by every gate.
+cmm_other_checkout_note() {
+    local name="$1" root="$2" idx="$3"
+    printf '%s\n' "Note: this target is in a different checkout ($root),"
+    printf '%s\n' "which is its own CMM project \"$name\" -- not this session's project."
+    if [ "$idx" != 1 ]; then
+        printf '%s\n' "It has no CMM index yet. Index it once (allowed: it is not a subtree), then query it:"
+        printf '%s\n' "  mcp__codebase-memory-mcp__index_repository(repo_path=\"$root\")"
+    fi
+    printf '%s' "Pass project=\"$name\" to search_graph / search_code / get_code_snippet there."
+}

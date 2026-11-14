@@ -333,7 +333,8 @@ _assert_silent "cmm-exempt on a non-first batch command" \
 _assert_silent "compound into node_modules"             "$(_cj 'cd node_modules/lib && grep -rn MyFunc .')"
 _assert_silent "compound rooted at node_modules itself" "$(_cj 'cd node_modules && grep -rn MyFunc .')"
 _assert_exit "grep into node_modules root (no slash) exempt" 0 "$(_cj 'grep -rn MyFunc node_modules')"
-_assert_silent "compound outside the repo"              "$(_cj "cd $NONIDX && grep -rn MyFunc .")"
+# Another git checkout: allowed, but named as its own CMM project (see test-other-checkout.sh).
+_assert_warn "compound into another checkout names it"   "$(_cj "cd $NONIDX && grep -rn MyFunc .")" 'different checkout'
 _assert_silent "compound in non-indexed repo"           "$(_cj 'cd src && grep -rn MyFunc .' "$NONIDX")"
 _assert_silent "cmm-exempt silences compound"           "$(_cj 'cd src && grep -rn MyFunc .  # cmm-exempt')"
 _assert_silent "quoted grep inside ssh is remote"       "$(_cj "cd src && ssh host 'cd /opt && grep -rn MyFunc .'")"

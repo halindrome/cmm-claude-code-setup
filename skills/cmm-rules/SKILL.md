@@ -33,7 +33,12 @@ Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Do n
 - **The caveat: Perl does not run the dedicated cross-file LSP pass** (`cbm_pxc_has_cross_lsp()` omits it). Its cross-file edges come from the shared symbol registry plus Exporter/`@ISA` import maps — a different mechanism that resolves qualified and inherited calls well. Confirm an exhaustive `trace_path` **caller** set with `search_code` before relying on it being complete.
 - **Never infer that a language is unsupported from its absence in a list here.** CMM ships 158 vendored tree-sitter grammars; everything it parses is graph-queryable. When unsure, ask the graph (`get_architecture`, or `search_graph` for a known symbol) — do not fall back to grep on a pessimistic assumption.
 
-`Read` is correct for: non-code files (JSON, YAML, config, Markdown), full-file context (imports, globals), files under 50 lines, and files not yet indexed.
+`Read` is correct for: non-code files (JSON, YAML, config, Markdown), full-file context (imports, globals), files under 50 lines, and files CMM excludes by design (`check_index_coverage` says which).
+
+### Worktrees and other checkouts — index them, never grep them
+
+- **An empty result is not a missing index.** An unindexed project fails with `project not found or not indexed`; `results: 0` means the query matched nothing — usually a regex without `regex=true`, or `project=` naming a different checkout than the file lives in.
+- A checkout **outside** the session root (a linked worktree, a submodule worktree outside its superproject, a sibling clone) is **its own project**, named from its own path. `list_projects`; if it is missing, `index_repository(repo_path="<its root>")` once (allowed — it is not a subtree), then pass that `project=`. `# cmm-exempt` is not for source in an unindexed checkout.
 
 ### CMM vs. context-mode
 

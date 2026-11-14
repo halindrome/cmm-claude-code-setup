@@ -467,7 +467,32 @@ if [ -n "$TARGET_PATH" ]; then
         _RESOLVED="$(cd "$(dirname "$_ABS")" 2>/dev/null && pwd -P)/$(basename "$_ABS")"
         case "$_RESOLVED" in
             "$REPO_ROOT"|"$REPO_ROOT"/*) ;;   # inside this project — gate it
-            *) exit 0 ;;                      # another repo entirely — fail open
+            *)
+                # Another repo: our sentinel says nothing about its index, so never
+                # block. But if it is a git checkout (a sibling worktree is the
+                # common case), SAY which CMM project it is and whether it needs
+                # indexing -- staying silent here is how an agent grepped a whole
+                # task in an unindexed worktree. See cmm_other_checkout().
+                for _d in "$(dirname "${BASH_SOURCE[0]}")/lib" "$(dirname "${BASH_SOURCE[0]}")/../lib"; do
+                    # shellcheck disable=SC1091
+                    [ -f "$_d/cmm-registered.sh" ] && { source "$_d/cmm-registered.sh"; break; }
+                done
+                if declare -F cmm_other_checkout >/dev/null && cmm_is_registered "$REPO_ROOT"; then
+                    _OC="$(cmm_other_checkout "$_RESOLVED" "$REPO_ROOT")"
+                    if [ -n "$_OC" ]; then
+                        IFS=$'\t' read -r _OCN _OCR _OCI <<< "$_OC"
+                        _EG=""
+                        # A find -name glob is a filename, not a text pattern -- no example for it.
+                        if [ "$KIND" != "find-name" ] && [ -n "$PATTERN_FIELD" ]; then
+                            _EG="
+  e.g. mcp__codebase-memory-mcp__search_code(pattern=\"${PATTERN_FIELD}\", project=\"${_OCN}\")"
+                        fi
+                        _MSG="[ctx-execute-cmm-nudge] This payload searches source outside this session's project. Allowed.
+$(cmm_other_checkout_note "$_OCN" "$_OCR" "$_OCI")${_EG}"
+                        python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$_MSG" 2>/dev/null
+                    fi
+                fi
+                exit 0 ;;
         esac
     fi
 fi
