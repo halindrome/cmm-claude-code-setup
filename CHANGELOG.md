@@ -8,6 +8,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Version
 
 ## [Unreleased]
 
+### Fixed
+- **Subagent launches no longer stall because the context-mode routing block is duplicated.**
+  - Upstream context-mode (`hooks/core/routing.mjs`, v1.0.169) appends its `<context_window_protection>` block to every Agent prompt without checking whether the prompt already has one.
+  - When the model re-sent a prompt that an earlier pass had already rewritten, the prompt ended up with two copies. A typical case is a retry after `agent-cmm-gate.sh` blocks a launch.
+  - Auto mode could then no longer classify the launch, so subagent spawns stalled.
+  - `context-mode-hook-dispatch.sh` now passes an Agent/Task `pretooluse` payload that already carries the block through untouched, without calling context-mode. Every other event and tool is dispatched exactly as before.
+  - New `tests/test-context-mode-hook-dispatch.sh` runs the dispatcher against a stub binary. Both guard cases failed against the previous dispatcher.
+
 ## [1.12.0] — 2026-10-21
 
 ### Added

@@ -36,6 +36,22 @@ if [ -z "$event" ]; then
   exit 0
 fi
 
+# Agent re-injection guard. Upstream context-mode (hooks/core/routing.mjs, v1.0.169)
+# appends its <context_window_protection> block to every Agent prompt unconditionally.
+# When the model re-sends a prompt that a previous pass already rewrote (e.g. retrying
+# after agent-cmm-gate blocked it), the prompt gained a SECOND copy, and auto mode could
+# no longer classify the launch, so subagent spawns stalled. If the block is already
+# present, pass the call through untouched. Only pretooluse pays for buffering stdin;
+# every other event still execs straight through.
+if [ "$event" = "pretooluse" ]; then
+  payload="$(cat)"
+  if [[ "$payload" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"(Agent|Task)\" ]] \
+     && [[ "$payload" == *'<context_window_protection>'* ]]; then
+    exit 0
+  fi
+  exec 0<<<"$payload"
+fi
+
 if command -v context-mode >/dev/null 2>&1; then
   exec context-mode hook claude-code "$event"
 elif command -v npx >/dev/null 2>&1; then
