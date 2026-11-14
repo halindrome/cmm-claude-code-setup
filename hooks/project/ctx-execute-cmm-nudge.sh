@@ -478,7 +478,9 @@ if [ -n "$TARGET_PATH" ]; then
                     [ -f "$_d/cmm-registered.sh" ] && { source "$_d/cmm-registered.sh"; break; }
                 done
                 if declare -F cmm_other_checkout >/dev/null && cmm_is_registered "$REPO_ROOT"; then
-                    _OC="$(cmm_other_checkout "$_RESOLVED" "$REPO_ROOT")"
+                    # A worktree session's own checkout is outside REPO_ROOT (project-root.sh
+                    # maps a linked worktree to its main repo) -- pass the cwd's checkout too.
+                    _OC="$(cmm_other_checkout "$_RESOLVED" "$REPO_ROOT" "$(cmm_checkout_root "${CWD_FIELD:-$PWD}")")"
                     if [ -n "$_OC" ]; then
                         IFS=$'\t' read -r _OCN _OCR _OCI <<< "$_OC"
                         _EG=""

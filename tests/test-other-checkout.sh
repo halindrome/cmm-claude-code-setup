@@ -28,8 +28,8 @@ TMP_RAW="$(mktemp -d)"; TMP="$(cd "$TMP_RAW" && pwd -P)"
 CACHE="$TMP/cbm-cache"; mkdir -p "$CACHE"
 export CBM_CACHE_DIR="$CACHE"
 MAIN="$TMP/repo"; WT="$TMP/repo-wt/feature"
-SENT=""
-cleanup() { rm -rf "$TMP"; [ -n "$SENT" ] && rm -f "$SENT"; }
+SENT=""; WT_SENT=""
+cleanup() { rm -rf "$TMP"; [ -n "$SENT" ] && rm -f "$SENT"; [ -n "$WT_SENT" ] && rm -f "$WT_SENT"; }
 trap cleanup EXIT
 
 # --- fixture: a registered, indexed session repo + a linked worktree beside it ---
@@ -115,6 +115,40 @@ has   "grep-nudge Bash: index line" "$ERR" "index_repository(repo_path=\"$WT\")"
 rc=0; ERR="$(cd "$MAIN" && echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -n 'running' lib/Helper.pm\"},\"cwd\":\"$MAIN\"}" | bash "$GREPNUDGE" 2>&1 >/dev/null)" || rc=$?
 has   "grep-nudge Bash in session checkout: session project" "$ERR" "project=\"$MAIN_NAME\""
 hasnt "grep-nudge Bash in session checkout: no note" "$ERR" "different checkout"
+
+echo "--- boundaries: nested, ignored, worktree session, submodule worktree ---"
+# A worktree nested INSIDE the session root: index-root-gate blocks indexing it, so never suggest it.
+git -C "$MAIN" worktree add -q "$MAIN/.worktrees/nest" -b nest 2>/dev/null
+if [ -f "$MAIN/.worktrees/nest/lib/Helper.pm" ]; then
+  [ -z "$(cmm_other_checkout "$MAIN/.worktrees/nest/lib/Helper.pm" "$MAIN")" ] && pass "nested worktree inside root -> not other" || fail "nested worktree reported as other checkout"
+else
+  fail "nested worktree fixture failed"
+fi
+# A target git ignores in its checkout (the /opt/homebrew stdlib case) is not a project to index.
+mkdir -p "$WT/ignored"; echo 'ignored/' > "$WT/.gitignore"; echo x > "$WT/ignored/lib.py"
+[ -z "$(cmm_other_checkout "$WT/ignored/lib.py" "$MAIN")" ] && pass "git-ignored target -> not other" || fail "ignored target reported as other checkout"
+# A session running INSIDE the worktree: its own files are not "a different checkout".
+OUT="$(echo "{\"tool_name\":\"mcp__plugin_context-mode_context-mode__ctx_execute\",\"tool_input\":{\"language\":\"shell\",\"code\":\"grep -n running $WT/lib/Helper.pm\"},\"cwd\":\"$WT\"}" | bash "$NUDGE" 2>/dev/null)"
+hasnt "nudge: worktree session's own file -> no other-checkout note" "$OUT" "different checkout"
+# The incident shape: a worktree of a submodule placed outside its superproject.
+if [ -d "$MAIN/apps/sub" ] && git -C "$MAIN/apps/sub" worktree add -q "$TMP/sub-wt" -b subwt 2>/dev/null; then
+  SUBWT_NAME="$(PROJECT_ROOT="$TMP/sub-wt" cmm_project_name)"
+  [ "$(cmm_other_checkout "$TMP/sub-wt/a.pm" "$MAIN" | cut -f1,2)" = "${SUBWT_NAME}"$'\t'"$TMP/sub-wt" ] && pass "submodule worktree outside superproject -> its own project" || fail "submodule worktree: [$(cmm_other_checkout "$TMP/sub-wt/a.pm" "$MAIN")]"
+else
+  fail "submodule worktree fixture failed"
+fi
+# cmm-grep-nudge: `cd <other checkout> && grep ... rel/` names that checkout.
+ERR="$(cd "$MAIN" && echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $WT && grep -rn running lib/\"},\"cwd\":\"$MAIN\"}" | bash "$GREPNUDGE" 2>&1 >/dev/null)"
+has "grep-nudge cd-then-grep: worktree project" "$ERR" "project=\"$WT_NAME\""
+# grep-cmm-gate BLOCK path: the gate keys its sentinel on the target's checkout, so
+# arm the worktree. The REPLACE WITH call itself -- not just the note -- must name it.
+WT_SENT="/tmp/cmm-session-ready-$(echo "$WT" | md5 -q 2>/dev/null || echo "$WT" | md5sum | awk '{print $1}')"
+touch "$WT_SENT"
+rc=0; ERR="$(cd "$MAIN" && echo "$P" | bash "$GATE" 2>&1 >/dev/null)" || rc=$?
+rm -f "$WT_SENT"
+[ "$rc" -eq 2 ] && pass "gate blocks a Grep into another checkout" || fail "gate armed-other exit $rc"
+has "gate block: replacement call names worktree project" "$ERR" "name_pattern=\"running\", project=\"$WT_NAME\""
+has "gate block: other-checkout note" "$ERR" "different checkout"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

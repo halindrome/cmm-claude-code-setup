@@ -174,8 +174,8 @@ _other_checkout() {
 }
 
 # _first_abs_path <command> -> the first absolute path argument of the search
-# segment that exists on disk, or nothing. Relative paths resolve inside the
-# session's own checkout, which is never "another checkout".
+# segment that exists on disk; else the directory of a leading `cd /abs`; else
+# nothing (relative paths then resolve inside the session's own checkout).
 _first_abs_path() {
   local seg tok toks
   seg="$(_narrow_to_search_segment "$1")"
@@ -187,6 +187,10 @@ _first_abs_path() {
       /*) [ -e "$tok" ] && { printf '%s' "$tok"; return 0; } ;;
     esac
   done
+  # `cd /other/checkout && grep ... src/`: relative paths resolve in the cd target.
+  local re='^[[:space:]]*cd[[:space:]]+["'\'']?(/[^"'\''[:space:];&|]+)'
+  [[ "$1" =~ $re ]] && [ -d "${BASH_REMATCH[1]}" ] && printf '%s' "${BASH_REMATCH[1]}"
+  return 0
 }
 
 # _perl_note <text> -> a Perl reassurance line when the blocked target is Perl.

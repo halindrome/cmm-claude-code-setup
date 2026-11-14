@@ -184,9 +184,9 @@ cmm_project_indexed() {
     [ -n "$1" ] && [ -f "${CBM_CACHE_DIR:-$HOME/.cache/codebase-memory-mcp}/$1.db" ]
 }
 
-# cmm_other_checkout <target-path> <session-root>
+# cmm_other_checkout <target-path> <session-root> [<session-root>...]
 #   -> "<project-name><TAB><checkout-root><TAB><indexed 1|0>" when <target-path>
-#      lives in a git checkout OTHER than <session-root> (a linked worktree, a
+#      lives in a git checkout OUTSIDE every <session-root> (a linked worktree, a
 #      sibling clone); nothing otherwise.
 #
 # WHY: every gate names project=<session project>. A search aimed at a sibling
@@ -195,14 +195,26 @@ cmm_project_indexed() {
 # ../cache-freshness editing ../cache-freshness-wt/rest-api-6932 (a submodule
 # worktree outside the superproject) concluded "the worktree isn't in the CMM
 # index" and grepped for the rest of the task, never calling index_repository.
+#
+# Extra arguments are further session roots (a worktree session has two: the
+# project root project-root.sh resolves, and the checkout the cwd is in). Nothing
+# is reported when the checkout is inside a session root (index-root-gate blocks
+# indexing a subtree; the root index covers it) or contains one, or when git
+# ignores the target there (/opt/homebrew holds the Homebrew stdlib as ignored
+# files: it is a toolchain tree, not a project to index).
 cmm_other_checkout() {
-    local target="$1" session="$2" top name idx=0
+    local target="$1" top name idx=0 s d
+    shift
     top="$(cmm_checkout_root "$target")"
     [ -n "$top" ] || return 0
-    if [ -n "$session" ]; then
-        session="$(cd "$session" 2>/dev/null && pwd -P || printf '%s' "$session")"
-        [ "$top" = "$session" ] && return 0
-    fi
+    for s in "$@"; do
+        [ -n "$s" ] || continue
+        s="$(cd "$s" 2>/dev/null && pwd -P || printf '%s' "$s")"
+        case "$top/" in "$s"/*) return 0 ;; esac
+        case "$s/" in "$top"/*) return 0 ;; esac
+    done
+    if [ -d "$target" ]; then d="$target"; else d="$(dirname "$target")"; fi
+    git -C "$d" check-ignore -q -- "$target" 2>/dev/null && return 0
     name="$(PROJECT_ROOT="$top" cmm_project_name)"
     [ -n "$name" ] || return 0
     cmm_project_indexed "$name" && idx=1
