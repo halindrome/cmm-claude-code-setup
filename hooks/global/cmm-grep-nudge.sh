@@ -131,7 +131,9 @@ _extract_term() {
 # than printing no call at all.
 _cmm_recovery_lines() {
   local term="$1"
-  local proj; proj="$(cmm_project_name 2>/dev/null)"
+  # $2: the target's own project when it lives in another checkout (see _other_checkout).
+  local proj="${2:-}"
+  [ -n "$proj" ] || proj="$(cmm_project_name 2>/dev/null)"
   # Omit the argument entirely when the root is unknown; project="" fails the
   # same way a missing project does, and a visibly-empty argument reads as a
   # tool defect rather than a prompt to supply the value.
@@ -155,6 +157,41 @@ _cmm_recovery_lines() {
       "  - Text search:    mcp__codebase-memory-mcp__search_code(pattern=\"${term}\"${p})" \
       "  - Symbol search:  mcp__codebase-memory-mcp__search_graph(name_pattern=\"${term}\"${p})"
   fi
+}
+
+# _other_checkout <target-path> <cwd> -> sets _OCN/_OCR/_OCI when the target is in a
+# git checkout other than the session's (a sibling worktree, a clone). That
+# checkout is its own CMM project: the redirect must name IT, and say when it has
+# no index yet. Naming the session's project there returns nothing, which reads as
+# "not indexed" -- observed 2026-11-14, see cmm_other_checkout().
+_OCN=""; _OCR=""; _OCI=""
+_other_checkout() {
+  local target="$1" cwd="$2" oc
+  [ -n "$target" ] && [ -n "$cwd" ] && declare -F cmm_other_checkout >/dev/null || return 0
+  # The raw cwd too: a non-git session root (a multi-repo /work) has no checkout root.
+  oc="$(cmm_other_checkout "$target" "$(cmm_checkout_root "$cwd")" "$cwd")"
+  [ -n "$oc" ] && IFS=$'\t' read -r _OCN _OCR _OCI <<< "$oc"
+  return 0
+}
+
+# _first_abs_path <command> -> the first absolute path argument of the search
+# segment that exists on disk; else the directory of a leading `cd /abs`; else
+# nothing (relative paths then resolve inside the session's own checkout).
+_first_abs_path() {
+  local seg tok toks
+  seg="$(_narrow_to_search_segment "$1")"
+  # read -a, not `for tok in $seg`: an unquoted expansion would glob `*.pm` against the cwd.
+  read -ra toks <<< "$seg"
+  for tok in "${toks[@]}"; do
+    tok="${tok#[\"\']}"; tok="${tok%[\"\']}"
+    case "$tok" in
+      /*) [ -e "$tok" ] && { printf '%s' "$tok"; return 0; } ;;
+    esac
+  done
+  # `cd /other/checkout && grep ... src/`: relative paths resolve in the cd target.
+  local re='^[[:space:]]*cd[[:space:]]+["'\'']?(/[^"'\''[:space:];&|]+)'
+  [[ "$1" =~ $re ]] && [ -d "${BASH_REMATCH[1]}" ] && printf '%s' "${BASH_REMATCH[1]}"
+  return 0
 }
 
 # _perl_note <text> -> a Perl reassurance line when the blocked target is Perl.
@@ -245,6 +282,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
       # "..." placeholder convert 13-25%, and gates naming no alternative ~0%,
       # sending 90-95% of blocks straight back to Read/Bash.
       _TERM=$(_extract_term "$BASH_CMD")
+      _other_checkout "$(_first_abs_path "$BASH_CMD")" "$BASH_REPO_ROOT"
       # The bypass is deliberately NOT the closing line. Observed 2026-09-04: a
       # session read "Add # cmm-exempt to bypass" as the recommended next action,
       # appended it to its next four commands -- including a source-code grep
@@ -254,8 +292,9 @@ if [ "$TOOL_NAME" = "Bash" ]; then
       # what stops it becoming the default.
       cat >&2 <<EOF
 BLOCKED: Use CMM tools instead of Bash navigation for code search.
-$(_cmm_recovery_lines "$_TERM")$(_perl_note "$BASH_CMD")
-See skill \`cmm-rules\` for the full protocol.
+$(_cmm_recovery_lines "$_TERM" "$_OCN")$(_perl_note "$BASH_CMD")
+${_OCN:+$(cmm_other_checkout_note "$_OCN" "$_OCR" "$_OCI")
+}See skill \`cmm-rules\` for the full protocol.
 (If this target is NOT source code -- generated output, a build artifact, a
 data file -- add '# cmm-exempt' to the command. Do not use it to grep source.)
 EOF
@@ -417,12 +456,15 @@ fi
 # PATTERN_FIELD is the term the agent was actually looking for; substituting it
 # turns a form to fill in into a call to run. Perl targets get an extra line --
 # see _perl_note.
+_GCWD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
+[ -n "$PATH_FIELD" ] && [ -e "$PATH_FIELD" ] && _other_checkout "$PATH_FIELD" "${_GCWD:-$PWD}"
 cat >&2 <<EOF
 BLOCKED: Use CMM tools instead of Grep for code search on $BLOCK_TARGET.
-$(_cmm_recovery_lines "$PATTERN_FIELD")
+$(_cmm_recovery_lines "$PATTERN_FIELD" "$_OCN")
   - Trace callers:  mcp__codebase-memory-mcp__trace_path$(_perl_note "$GLOB_FIELD $TYPE_FIELD $PATH_FIELD")
   Grep is allowed for: non-code files (JSON, YAML, Markdown, config, env)
-See skill \`cmm-rules\` for the full protocol.
+${_OCN:+$(cmm_other_checkout_note "$_OCN" "$_OCR" "$_OCI")
+}See skill \`cmm-rules\` for the full protocol.
 EOF
 
 # --- Block Counter ---

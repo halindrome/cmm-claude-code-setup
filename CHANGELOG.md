@@ -12,6 +12,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Version
 - **`make measure` now reports whether CMM and context-mode calls actually worked.** Section 10 classifies every call as ok, empty (a search found nothing), error, or blocked by a hook, per tool. Section 10b shows what the agent did next after a CMM call came back empty or errored: retried in the graph, or fell back to Read/Grep/Bash. `analyze-enforcement.py --help` now prints usage instead of crashing.
 
 ### Fixed
+- **A search in another checkout now names that checkout's own CMM project, and says when it has no index yet.**
+  - A linked worktree, a submodule worktree outside its superproject, or a sibling clone outside the session root is its own CMM project. The gates only knew about the session's project.
+  - Observed 2026-11-14: a session edited a worktree, queried the session's project, got `results: 0`, decided "the worktree isn't indexed", and grepped from then on. `ctx-execute-cmm-nudge` and `grep-cmm-gate` stayed silent for the other repo; `cmm-grep-nudge` named the wrong project.
+  - All three now name the other checkout's project and, when there is no `<name>.db` for it, give the `index_repository(repo_path=…)` call. New helpers `cmm_checkout_root`, `cmm_other_checkout` and `cmm_other_checkout_note` live in `hooks/lib/cmm-registered.sh`.
+  - The rules, the `cmm-rules` skill and the agent preamble now say that an empty result is not a missing index, and that another checkout should be indexed, not grepped.
 - **Subagent launches no longer stall because the context-mode routing block is duplicated.**
   - Upstream context-mode (`hooks/core/routing.mjs`, v1.0.169) appends its `<context_window_protection>` block to every Agent prompt without checking whether the prompt already has one.
   - When the model re-sent a prompt that an earlier pass had already rewritten, the prompt ended up with two copies. A typical case is a retry after `agent-cmm-gate.sh` blocks a launch.

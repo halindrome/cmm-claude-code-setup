@@ -55,9 +55,16 @@ and `list_projects` lists them. Also: `search_code` takes **`pattern`**, not `qu
 no `query` parameter on it, and `search_code(query=…)` fails with `pattern is required`. Two
 failed calls in a row is the point where agents abandon CMM for `Read`; get the call right first.
 
+**A worktree or clone OUTSIDE the session root is its own project**, named from its own path —
+the session's project does not contain it. `list_projects`; if it is missing,
+`index_repository(repo_path="<its root>")` once (allowed: it is not a subtree), then pass that
+`project=`. Never grep it because it "isn't indexed". And an empty result is NOT a missing
+index — an unindexed project fails with `project not found`; `results: 0` means the query
+matched nothing (often a regex without `regex=true`, or the wrong `project=`).
+
 Orient first: `get_architecture` → `search_graph` → `get_code_snippet`. Any symbol-existence
 claim MUST cite the definition site from `get_code_snippet` / `search_graph`, not a grep hit.
-Full `Read` only for: non-code files, files under ~50 lines, or files not yet indexed.
+Full `Read` only for: non-code files, files under ~50 lines, or files CMM excludes by design.
 
 **Large output / long commands (when Context Mode is available): keep bytes out of your window.**
 - `ctx_execute` / `ctx_execute_file` — run analysis in a sandbox; only what you print returns
