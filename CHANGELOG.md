@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Version
 
 ## [Unreleased]
 
+### Added
+- **`make measure` now reports whether CMM and context-mode calls actually worked.** Section 10 classifies every call as ok, empty (a search found nothing), error, or blocked by a hook, per tool. Section 10b shows what the agent did next after a CMM call came back empty or errored: retried in the graph, or fell back to Read/Grep/Bash. `analyze-enforcement.py --help` now prints usage instead of crashing.
+
 ### Fixed
 - **Subagent launches no longer stall because the context-mode routing block is duplicated.**
   - Upstream context-mode (`hooks/core/routing.mjs`, v1.0.169) appends its `<context_window_protection>` block to every Agent prompt without checking whether the prompt already has one.

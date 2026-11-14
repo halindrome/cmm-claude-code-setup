@@ -21,10 +21,16 @@ import json, os, re, sys, time, collections
 
 ROOT = os.path.expanduser("~/.config/claude-code/projects")
 _args = sys.argv[1:]
+USAGE = "usage: analyze-enforcement.py [DAYS] [--model <message.model id>]   (DAYS default 30)"
+if "-h" in _args or "--help" in _args:
+    print(USAGE); sys.exit(0)
 MODEL = None   # --model <id>: only count tool calls from assistant turns with this exact model id
 if "--model" in _args:
     _i = _args.index("--model"); MODEL = _args[_i + 1]; del _args[_i:_i + 2]
-DAYS = int(_args[0]) if _args else 30
+try:
+    DAYS = int(_args[0]) if _args else 30
+except ValueError:
+    sys.exit(USAGE)
 CUTOFF = time.time() - DAYS * 86400
 
 # ---------------------------------------------------------------- fingerprints
@@ -109,6 +115,50 @@ def flatten(content):
     return "\n".join(out)
 
 
+def bucket_of(name):
+    """Tool name -> CMM / ctx / raw / other."""
+    if name.startswith(CMM_PREFIX):
+        return "CMM"
+    if name.startswith(CTX_PREFIXES):
+        return "ctx"
+    if name in RAW_TOOLS or name == "Bash":
+        return "raw (Read/Grep/Glob/Bash)"
+    return "other"
+
+
+# Zero-hit shapes, taken from real CMM/ctx results: the tree format's
+# `results: 0` / `total_results: 0` header, trace_path's `callers: 0` /
+# `callees: 0`, and ctx_search's `No results found.`
+_ZERO_HEAD = re.compile(r"^(?:results|results_refs|files|cols|rows): 0\b")
+_ZERO_TOTAL = re.compile(r'^(?:total|total_results): 0\b|"(?:total|total_results)":\s*0\b', re.M)
+_EDGE_COUNT = re.compile(r"^(?:callers|callees): (\d+)\b", re.M)
+SEARCH_TOOLS = {"search_graph", "search_code", "trace_path", "ctx_search"}
+
+
+def outcome_of(short, text, is_error, gated):
+    """-> blocked / error / empty / ok for one CMM or ctx tool_result.
+
+    blocked = a PreToolUse hook refused it (the call never ran);
+    error   = it ran and failed (bad regex, unknown project, symbol not found);
+    empty   = a search tool ran and found nothing (search tools only)."""
+    if gated or (is_error and "hook error" in text[:300]):
+        return "blocked"
+    if is_error or text.lstrip().startswith('{"error"'):
+        return "error"
+    if short in SEARCH_TOOLS:
+        if short == "trace_path":
+            counts = _EDGE_COUNT.findall(text)
+            if counts and all(c == "0" for c in counts):
+                return "empty"
+        elif short == "ctx_search":
+            # multi-query: empty only if no query produced a hit block
+            if "No results found." in text and "--- [" not in text:
+                return "empty"
+        elif _ZERO_HEAD.match(text) or _ZERO_TOTAL.search(text):
+            return "empty"
+    return "ok"
+
+
 # ---------------------------------------------------------------- accumulators
 S = lambda: collections.defaultdict(int)
 tier_stats = collections.defaultdict(S)
@@ -124,6 +174,8 @@ eligible = collections.defaultdict(S)   # eligible calls / covered calls
 proj_stack = collections.Counter()
 versions_seen = collections.defaultdict(collections.Counter)
 models_seen = collections.Counter()   # assistant turns per model id, before --model filtering
+outcome_by_tool = collections.defaultdict(collections.Counter)   # (family, tool) -> outcome
+after_miss = collections.defaultdict(collections.Counter)        # (tier, outcome) -> next-bucket
 # per-session behaviour rows for the adoption table
 sess_rows = []
 
@@ -153,6 +205,7 @@ for path in files:
     tool_seq = []          # (tool_name, tool_use_id, is_explore_eligible)
     blocked_ids = collections.defaultdict(set)   # tool_use_id -> {gate hook ids}
     hookrecs = []
+    results = {}           # tool_use_id -> (is_error, text)
     kept_ids = set()       # tool_use ids that passed the --model filter
     dropped_ids = set()    # tool_use ids from other models' turns
     version = None
@@ -239,6 +292,7 @@ for path in files:
                         if MODEL and b.get("tool_use_id") not in kept_ids:
                             continue
                         txt = flatten(b.get("content"))
+                        results[b.get("tool_use_id")] = (bool(b.get("is_error")), txt or "")
                         hits = classify_hook(txt or "")
                         if any(k == "gate" for _, k in hits):
                             for hid, kind in hits:
@@ -276,18 +330,22 @@ for path in files:
     # what happened right after a hard block -- split per gate
     for i, (name, tid, _e) in enumerate(tool_seq):
         if tid in blocked_ids and i + 1 < len(tool_seq):
-            nxt = tool_seq[i + 1][0]
-            if nxt.startswith(CMM_PREFIX):
-                bucket = "CMM"
-            elif nxt.startswith(CTX_PREFIXES):
-                bucket = "ctx"
-            elif nxt in RAW_TOOLS or nxt == "Bash":
-                bucket = "raw (Read/Grep/Glob/Bash)"
-            else:
-                bucket = "other"
+            bucket = bucket_of(tool_seq[i + 1][0])
             after_block[tier][bucket] += 1
             for hid in blocked_ids[tid]:
                 after_block_gate[(tier, hid)][bucket] += 1
+
+    # did the CMM / ctx calls that actually got made work?
+    for i, (name, tid, _e) in enumerate(tool_seq):
+        fam = bucket_of(name)
+        if fam not in ("CMM", "ctx") or tid not in results:
+            continue
+        is_err, txt = results[tid]
+        oc = outcome_of(name.rsplit("__", 1)[-1], txt, is_err, tid in blocked_ids)
+        outcome_by_tool[(fam, name.rsplit("__", 1)[-1])][oc] += 1
+        if fam == "CMM" and oc in ("error", "empty"):
+            nxt = bucket_of(tool_seq[i + 1][0]) if i + 1 < len(tool_seq) else "end"
+            after_miss[(tier, oc)][nxt] += 1
 
     # spawn gating: did agent-cmm-gate ever attach to an Agent vs a Workflow tool_use?
     for name, tid, _e in tool_seq:
@@ -440,3 +498,33 @@ print("9. MODELS -- assistant turns per model id (pass one to --model to split)"
 print("=" * 78)
 for m, c in models_seen.most_common():
     print(f"   {c:7d}  {m}")
+
+print()
+print("=" * 78)
+print("10. OUTCOME -- did the CMM / ctx calls that were made actually work?")
+print("    blocked = a hook refused it; error = it ran and failed;")
+print("    empty = a search tool found nothing (search tools only)")
+print("=" * 78)
+print(f"{'family':6} {'tool':22} {'n':>6} {'ok':>7} {'empty':>7} {'error':>7} {'blocked':>8}")
+for fam in ("CMM", "ctx"):
+    rows = [(t, c) for (f, t), c in outcome_by_tool.items() if f == fam]
+    tot = collections.Counter()
+    for t, c in sorted(rows, key=lambda r: -sum(r[1].values())):
+        tot.update(c)
+        n = sum(c.values())
+        print(f"{fam:6} {t:22} {n:6d} {pct(c['ok'],n):>7} {pct(c['empty'],n):>7} "
+              f"{pct(c['error'],n):>7} {pct(c['blocked'],n):>8}")
+    n = sum(tot.values())
+    if n:
+        print(f"{fam:6} {'(all)':22} {n:6d} {pct(tot['ok'],n):>7} {pct(tot['empty'],n):>7} "
+              f"{pct(tot['error'],n):>7} {pct(tot['blocked'],n):>8}")
+
+print()
+print("10b. NEXT CALL after a CMM call that errored or came back empty")
+print("     (->CMM = retried / refined in the graph; ->raw = fell back to Read/Grep/Bash)")
+print(f"{'tier':9} {'after':7} {'n':>6} {'->CMM':>7} {'->ctx':>7} {'->raw':>7} {'->other':>8} {'end':>6}")
+for (tier, oc), ctr in sorted(after_miss.items()):
+    tot = sum(ctr.values())
+    print(f"{tier:9} {oc:7} {tot:6d} {pct(ctr['CMM'],tot):>7} {pct(ctr['ctx'],tot):>7} "
+          f"{pct(ctr['raw (Read/Grep/Glob/Bash)'],tot):>7} {pct(ctr['other'],tot):>8} "
+          f"{pct(ctr['end'],tot):>6}")

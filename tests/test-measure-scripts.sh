@@ -209,6 +209,45 @@ else
 fi
 
 echo ""
+echo "--- outcome_of classifies real CMM / ctx result shapes (section 10) ---"
+# Rows are result shapes copied from real transcripts. A miss here means the
+# OUTCOME table silently reports empty searches as successes.
+_OCMISS=$(python3 - "$ENF" <<'PY' 2>&1
+import sys
+src = open(sys.argv[1]).read().split("# ---------------------------------------------------------------- accumulators")[0]
+sys.argv[1:] = []; ns = {}; exec(src, ns); oc = ns["outcome_of"]
+rows = [
+  ("search_code", "results: 0  (cols: qn label file lines matches in out)\ntotal_results: 0", False, "empty"),
+  ("search_code", '{"cols":["qn"],"rows":[],"total_grep_matches":0,"total_results":0}', False, "empty"),
+  ("search_code", "results: 4  (cols: qn label file lines)\n  a.b Function x.py 1-2", False, "ok"),
+  ("search_graph", "results: 0  (cols: qn label file lines in out)\ntotal: 0", False, "empty"),
+  ("trace_path", "function: f\ndirection: both\ncallers: 0\ncallees: 0", False, "empty"),
+  ("trace_path", "function: f\ndirection: both\ncallers: 0\ncallees: 3", False, "ok"),
+  ("ctx_search", "## q1\nNo results found.", False, "empty"),
+  ("ctx_search", "## q1\nNo results found.\n## q2\n--- [current-session | x] ---\nhit", False, "ok"),
+  ("search_graph", "search_graph: row scan aborted: invalid regex", True, "error"),
+  ("search_code", '{"error":"project not found or not indexed"}', False, "error"),
+  ("ctx_execute", "PreToolUse:mcp__x__ctx_execute hook error: [command hook 12]: BLOCKED", True, "blocked"),
+  ("get_code_snippet", "callers: 0\ncallees: 0\nname: f", False, "ok"),
+]
+for tool, text, err, want in rows:
+    got = oc(tool, text, err, False)
+    if got != want:
+        print(f"{tool}: want {want}, got {got}: {text[:50]!r}")
+PY
+)
+if [ -z "$_OCMISS" ]; then
+  pass "outcome_of: every row classified as expected"
+else
+  fail "outcome_of misclassified: $_OCMISS"
+fi
+if python3 "$ENF" --help 2>&1 | grep -q '^usage:'; then
+  pass "enforcement --help prints usage"
+else
+  fail "enforcement --help does not print usage"
+fi
+
+echo ""
 echo "--- make measure target exists ---"
 if grep -q '^measure:' "$ROOT/Makefile"; then
   pass "Makefile defines a measure target"
