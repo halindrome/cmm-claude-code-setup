@@ -28,7 +28,14 @@ cat > "$CMHD_STDIN"
 EOF
 chmod +x "$TMP/bin/context-mode"
 # A PATH with neither context-mode nor npx, but the coreutils the dispatcher needs.
-for t in cat date id touch; do ln -s "$(command -v "$t")" "$TMP/bare/$t"; done
+# `id` is a stub: the dispatcher keys its notice stamp on `id -u`, so a fake uid gives the
+# test its own stamp file and never touches the developer's real
+# /tmp/cmhd-no-runtime-notice-<uid> (which would mute a genuine notice for 5 minutes).
+for t in cat date touch; do ln -s "$(command -v "$t")" "$TMP/bare/$t"; done
+FAKE_UID="cmhdtest$$"
+printf '#!/bin/sh\necho %s\n' "$FAKE_UID" > "$TMP/bare/id"; chmod +x "$TMP/bare/id"
+STAMP="/tmp/cmhd-no-runtime-notice-$FAKE_UID"
+trap 'rm -rf "$TMP"; rm -f "$STAMP"' EXIT
 export CMHD_CALLS="$TMP/calls" CMHD_STDIN="$TMP/stdin"
 
 # run <event> <json> [path]: sets RC, CALLED, ERR; the stub's stdin lands in $CMHD_STDIN
@@ -127,15 +134,22 @@ else
     _fail "missing event arg (rc=$RC called=$CALLED)"
 fi
 
-# 9. No context-mode and no npx on PATH -> fail open (exit 0), for pretooluse and others
-for ev in pretooluse posttooluse; do
-    run "$ev" "$AGENT_PLAIN" "$TMP/bare"
-    if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ]; then
-        _pass "no runtime on PATH fails open ($ev)"
-    else
-        _fail "no runtime on PATH ($ev): rc=$RC called=$CALLED err=$ERR"
-    fi
-done
+# 9. No context-mode and no npx on PATH -> fail open (exit 0), for pretooluse and others.
+#    The first call prints the notice and writes the (test-private) stamp; the second,
+#    inside the 5-minute window, stays silent.
+rm -f "$STAMP"
+run pretooluse "$AGENT_PLAIN" "$TMP/bare"
+if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ] && [[ "$ERR" == *"neither 'context-mode' nor 'npx' found"* ]] && [ -f "$STAMP" ]; then
+    _pass "no runtime on PATH fails open with the notice (pretooluse)"
+else
+    _fail "no runtime on PATH (pretooluse): rc=$RC called=$CALLED err=$ERR stamp=$([ -f "$STAMP" ] && echo yes || echo no)"
+fi
+run posttooluse "$AGENT_PLAIN" "$TMP/bare"
+if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ] && [ -z "$ERR" ]; then
+    _pass "no runtime on PATH fails open, notice rate-limited (posttooluse)"
+else
+    _fail "no runtime on PATH (posttooluse): rc=$RC called=$CALLED err=$ERR"
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
