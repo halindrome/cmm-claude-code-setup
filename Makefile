@@ -30,7 +30,8 @@ test:
 
 # Measure whether the enforcement stack reaches the conversation stream and
 # whether agents change behaviour when it does. Read-only: walks the local
-# Claude Code transcripts under ~/.config/claude-code/projects/.
+# Claude Code transcripts under <config dir>/projects/, where <config dir> is
+# $CLAUDE_CONFIG_DIR, else ~/.config/claude-code if it exists, else ~/.claude.
 #
 # Use it as a BEFORE/AFTER check around any hook change. The number that matters
 # is the STRONG anti-pattern rate falling *without* the WEAK rate rising to

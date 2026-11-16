@@ -10,7 +10,9 @@ Usage:
     python3 scripts/analyze-antipatterns.py [days]      # default 30
     python3 scripts/analyze-antipatterns.py --selftest  # verify the detectors
 
-Read-only. Walks ~/.config/claude-code/projects/**/*.jsonl.
+Read-only. Walks <config dir>/projects/**/*.jsonl, where <config dir> is
+resolved like setup.sh: $CLAUDE_CONFIG_DIR, else ~/.config/claude-code if it
+exists, else ~/.claude.
 
 STRONG vs WEAK
 --------------
@@ -40,7 +42,17 @@ import re
 import sys
 import time
 
-ROOT = os.path.expanduser("~/.config/claude-code/projects")
+
+def _config_dir():
+    """Mirror of setup.sh detect_config_dir()."""
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    if env:
+        return env
+    xdg = os.path.expanduser("~/.config/claude-code")
+    return xdg if os.path.isdir(xdg) else os.path.expanduser("~/.claude")
+
+
+ROOT = os.path.join(_config_dir(), "projects")
 
 # Shell payloads only. `>` is a comparison operator in JS and Python, which
 # false-positived an earlier draft of this script.
@@ -428,6 +440,8 @@ def main(days, model=None):
     intent_x = collections.Counter()
     langs = collections.Counter()
 
+    if not files:
+        print(f"note: no transcripts found under {ROOT}", file=sys.stderr)
     print(f"corpus: {len(files)} transcripts touched in last {days}d"
           + (f", tool calls from model {model} only" if model else "") + "\n")
 
