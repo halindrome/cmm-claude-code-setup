@@ -1643,11 +1643,22 @@ if "hooks" not in existing:
 # Global entries earlier releases registered for scripts that are never
 # installed globally (track-*-calls.sh live in hooks/project/). Each fired
 # exit 127 on every CMM / context-mode call; drop them so a re-run heals.
+# Prune the hook, not its matcher group: a user may have added their own hook
+# to the same group, and it must survive (same rule as purge_deprecated_hooks).
 RETIRED = {"bash \"${CLAUDE_CONFIG_DIR}/hooks/track-cmm-calls.sh\"",
            "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-ctx-calls.sh\""}
 for hook_type in list(existing["hooks"]):
-    existing["hooks"][hook_type] = [g for g in existing["hooks"][hook_type]
-        if not any(h.get("command") in RETIRED for h in g.get("hooks", []))]
+    kept_groups = []
+    for g in existing["hooks"][hook_type]:
+        inner = g.get("hooks") if isinstance(g, dict) else None
+        if not isinstance(inner, list):
+            kept_groups.append(g)
+            continue
+        kept = [h for h in inner if h.get("command") not in RETIRED]
+        if kept:
+            g["hooks"] = kept
+            kept_groups.append(g)
+    existing["hooks"][hook_type] = kept_groups
 for hook_type, entries in new_data.get("hooks", {}).items():
     if hook_type not in existing["hooks"]:
         existing["hooks"][hook_type] = []

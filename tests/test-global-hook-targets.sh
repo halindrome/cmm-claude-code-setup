@@ -35,7 +35,10 @@ cat > "$CFG/settings.json" <<'JSON'
    "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-cmm-calls.sh\""}]},
   {"matcher": "mcp__plugin_context-mode_context-mode__*|mcp__context-mode__*",
    "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-ctx-calls.sh\""}]},
-  {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo user-hook"}]}
+  {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo user-hook"}]},
+  {"matcher": "mcp__codebase-memory-mcp__*",
+   "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-cmm-calls.sh\""},
+             {"type": "command", "command": "echo user-hook-same-group"}]}
 ]}}
 JSON
 
@@ -52,7 +55,9 @@ done < <(_targets "$GF")
 
 grep -q 'track-cmm-calls.sh' "$GF" && _fail "retired track-cmm-calls.sh entry survived" || _pass "retired track-cmm-calls.sh entry removed"
 grep -q 'track-ctx-calls.sh' "$GF" && _fail "retired track-ctx-calls.sh entry survived" || _pass "retired track-ctx-calls.sh entry removed"
-grep -q 'echo user-hook' "$GF" && _pass "unrelated user hook kept" || _fail "unrelated user hook was dropped"
+grep -q 'echo user-hook"' "$GF" && _pass "unrelated user hook kept" || _fail "unrelated user hook was dropped"
+grep -q 'echo user-hook-same-group' "$GF" && _pass "user hook sharing a group with a retired entry kept" \
+    || _fail "user hook sharing a group with a retired entry was dropped"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
