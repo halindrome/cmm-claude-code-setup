@@ -1604,14 +1604,6 @@ merge_settings_json() {
       {
         "matcher": "Write|Edit",
         "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/reindex-after-edit.sh\""}]
-      },
-      {
-        "matcher": "mcp__codebase-memory-mcp__*",
-        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-cmm-calls.sh\""}]
-      },
-      {
-        "matcher": "mcp__plugin_context-mode_context-mode__*|mcp__context-mode__*",
-        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-ctx-calls.sh\""}]
       }
     ],
     "UserPromptSubmit": [
@@ -1648,6 +1640,25 @@ except (FileNotFoundError, json.JSONDecodeError):
 new_data = json.loads(new_json_str)
 if "hooks" not in existing:
     existing["hooks"] = {}
+# Global entries earlier releases registered for scripts that are never
+# installed globally (track-*-calls.sh live in hooks/project/). Each fired
+# exit 127 on every CMM / context-mode call; drop them so a re-run heals.
+# Prune the hook, not its matcher group: a user may have added their own hook
+# to the same group, and it must survive (same rule as purge_deprecated_hooks).
+RETIRED = {"bash \"${CLAUDE_CONFIG_DIR}/hooks/track-cmm-calls.sh\"",
+           "bash \"${CLAUDE_CONFIG_DIR}/hooks/track-ctx-calls.sh\""}
+for hook_type in list(existing["hooks"]):
+    kept_groups = []
+    for g in existing["hooks"][hook_type]:
+        inner = g.get("hooks") if isinstance(g, dict) else None
+        if not isinstance(inner, list):
+            kept_groups.append(g)
+            continue
+        kept = [h for h in inner if h.get("command") not in RETIRED]
+        if kept:
+            g["hooks"] = kept
+            kept_groups.append(g)
+    existing["hooks"][hook_type] = kept_groups
 for hook_type, entries in new_data.get("hooks", {}).items():
     if hook_type not in existing["hooks"]:
         existing["hooks"][hook_type] = []
