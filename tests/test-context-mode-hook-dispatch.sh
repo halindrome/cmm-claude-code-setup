@@ -100,6 +100,13 @@ if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ]; then
 else
     _fail "Agent in auto mode (rc=$RC called=$CALLED)"
 fi
+TASK_AUTO='{"tool_name":"Task","permission_mode":"auto","tool_input":{"prompt":"do the thing"}}'
+run pretooluse "$TASK_AUTO"
+if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ]; then
+    _pass "Task in auto mode is not rewritten"
+else
+    _fail "Task in auto mode (rc=$RC called=$CALLED)"
+fi
 BASH_AUTO='{"tool_name":"Bash","permission_mode":"auto","tool_input":{"command":"ls"}}'
 run pretooluse "$BASH_AUTO"
 if [ "$CALLED" -eq 1 ]; then

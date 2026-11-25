@@ -71,6 +71,8 @@ _run_json 0 "run_in_background Bash with cd allowed" \
     '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test","run_in_background":true}}'
 _run_json 2 "run_in_background=\"true\" (string) still blocked" \
     '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test","run_in_background":"true"}}'
+_run_json 2 "run_in_background=1 (number) still blocked" \
+    '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test","run_in_background":1}}'
 _run 0 "backgrounded cd is non-persistent, allowed"   'cd apps/rest-api &'
 _run 0 "backgrounded pushd is non-persistent, allowed" 'pushd apps/rest-api &'
 

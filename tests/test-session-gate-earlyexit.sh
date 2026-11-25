@@ -118,11 +118,22 @@ done
 # Edit still gated: the allow-list must not have become a catch-all.
 rm -f "$SENTINEL"
 EXIT_CODE=0
-echo '{"tool_name": "Edit"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
+_ERR=$(echo '{"tool_name": "Edit"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>&1 >/dev/null) || EXIT_CODE=$?
 if [ "$EXIT_CODE" -eq 2 ]; then
     _pass "Test 5c: Edit still blocked without sentinel"
 else
     _fail "Test 5c: Edit should still exit 2 (got $EXIT_CODE)"
+fi
+# The BLOCKED text tells the model what it may still use -- it must list the new tools.
+_missing=""
+for _t in TaskStop TaskOutput StructuredOutput Monitor ListAgents ReadNotifications \
+          FetchInboxMessage AskUserQuestion EnterPlanMode ExitPlanMode PushNotification; do
+    case "$_ERR" in *"$_t"*) : ;; *) _missing="$_missing $_t" ;; esac
+done
+if [ -z "$_missing" ]; then
+    _pass "Test 5c: BLOCKED message lists every newly allowed tool"
+else
+    _fail "Test 5c: BLOCKED message is missing:$_missing"
 fi
 
 # --- Test 6: Context Mode tool (MCP-server form) -> exit 0 (Phase 2 bypass) ---

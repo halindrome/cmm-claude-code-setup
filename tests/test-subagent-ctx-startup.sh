@@ -103,6 +103,16 @@ _assert "a1) context-mode present -> stdout contains $MARKER" \
 _assert "a2) context-mode present -> stdout references ctx_search protocol" \
     0 "$CTX_SEARCH_REF" 0 \
     "{\"cwd\":\"$PROJ_YES\"}"
+# ctx_* tools are deferred in Claude Code: the text must say to load them via ToolSearch,
+# and must not name plugin-form ids (they match nothing on an MCP-server-form install).
+_assert "a3) context-mode present -> stdout tells subagent to load ctx tools via ToolSearch" \
+    0 "ToolSearch" 0 \
+    "{\"cwd\":\"$PROJ_YES\"}"
+_a4_out=$(echo "{\"cwd\":\"$PROJ_YES\"}" | bash "$HOOK" 2>/dev/null || true)
+case "$_a4_out" in
+    *mcp__plugin_*|*mcp__context-mode__*) echo "FAIL: a4) ToolSearch hint names a form-specific tool id"; FAIL=$((FAIL+1)) ;;
+    *) echo "PASS: a4) ToolSearch hint is install-form agnostic"; PASS=$((PASS+1)) ;;
+esac
 
 echo "--- Test b: context-mode absent -> stdout empty, exit 0 ---"
 # Ensure no cached avail=1 from a previous run
