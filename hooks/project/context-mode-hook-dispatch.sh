@@ -51,9 +51,14 @@ fi
 # be present, so a prompt that merely mentions the tag name still gets routed.
 if [ "$event" = "pretooluse" ]; then
   payload="$(cat)"
-  if [[ "$payload" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"(Agent|Task)\" ]] \
-     && [[ "$payload" == *'<context_window_protection>'*'</context_window_protection>'* ]]; then
-    exit 0
+  if [[ "$payload" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"(Agent|Task)\" ]]; then
+    [[ "$payload" == *'<context_window_protection>'*'</context_window_protection>'* ]] && exit 0
+    # Auto mode refuses ANY Agent launch whose input a hook rewrote after review
+    # ("a hook changed this call's input after auto mode reviewed it") -- 34 of 44
+    # such failures over 21 days were FIRST-pass rewrites, so the guard above was
+    # not enough. In auto mode skip the rewrite; subagent-ctx-startup.sh still
+    # delivers the guidance via SubagentStart, which changes no input.
+    [[ "$payload" =~ \"permission_mode\"[[:space:]]*:[[:space:]]*\"auto\" ]] && exit 0
   fi
   exec 0<<<"$payload"
 fi

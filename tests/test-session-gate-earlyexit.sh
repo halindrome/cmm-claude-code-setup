@@ -100,6 +100,31 @@ else
     _fail "Test 5b: Skill should exit 0 (got $EXIT_CODE)"
 fi
 
+# --- Test 5c: orchestration tools -> exit 0 (Phase 1 bypass) ---
+# TaskStop/StructuredOutput gated pre-index = a runaway job cannot be killed and a
+# schema-bound worker cannot return. None of these edits code or fetches anything.
+echo "--- Test 5c: orchestration tools -> exit 0 (Phase 1 bypass) ---"
+for _t in TaskStop TaskOutput StructuredOutput Monitor ListAgents ReadNotifications \
+          FetchInboxMessage AskUserQuestion EnterPlanMode ExitPlanMode PushNotification; do
+    rm -f "$SENTINEL"
+    EXIT_CODE=0
+    echo "{\"tool_name\": \"$_t\"}" | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
+    if [ "$EXIT_CODE" -eq 0 ]; then
+        _pass "Test 5c: $_t exits 0 without sentinel"
+    else
+        _fail "Test 5c: $_t should exit 0 (got $EXIT_CODE)"
+    fi
+done
+# Edit still gated: the allow-list must not have become a catch-all.
+rm -f "$SENTINEL"
+EXIT_CODE=0
+echo '{"tool_name": "Edit"}' | (cd "$FAKE_ROOT" && bash "$HOOK") 2>/dev/null || EXIT_CODE=$?
+if [ "$EXIT_CODE" -eq 2 ]; then
+    _pass "Test 5c: Edit still blocked without sentinel"
+else
+    _fail "Test 5c: Edit should still exit 2 (got $EXIT_CODE)"
+fi
+
 # --- Test 6: Context Mode tool (MCP-server form) -> exit 0 (Phase 2 bypass) ---
 echo "--- Test 6: Context Mode tool (MCP-server form) -> exit 0 (Phase 2 bypass) ---"
 rm -f "$SENTINEL"

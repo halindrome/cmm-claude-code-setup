@@ -160,11 +160,19 @@ fi
 # was unreachable for them: replaying 45 days of transcripts, 502 of 1,254
 # background calls were blocked as compound. A blocked full test suite was then
 # re-run through ctx_execute with timeout=600000 and died at the 10-minute cap.
-if [ "$(printf '%s' "$INPUT" | python3 -c 'import sys,json
+#
+# Monitor (2026-11-25): Claude Code fires Bash-matcher hooks on Monitor calls too.
+# A Monitor's stdout is an event stream that wakes the model per line -- ctx_execute
+# cannot substitute for it, and its canonical shapes (`while true; ...; sleep`,
+# `until ...`) are compound by design. Over 21 days 754 of 809 Monitor calls were
+# blocked here with advice that could not be followed.
+_BG=$(printf '%s' "$INPUT" | python3 -c 'import sys,json
 try: d=json.load(sys.stdin)
-except Exception: print("false"); raise SystemExit
-print("true" if d.get("tool_input",{}).get("run_in_background") is True else "false")' 2>/dev/null)" = "true" ]; then
-    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-exempt" "background" 2>/dev/null || true
+except Exception: print(""); raise SystemExit
+if d.get("tool_name") == "Monitor": print("monitor")
+elif d.get("tool_input",{}).get("run_in_background") is True: print("background")' 2>/dev/null)
+if [ -n "$_BG" ]; then
+    bash "$(dirname "${BASH_SOURCE[0]}")/track-hook-blocks.sh" "bash-exempt" "$_BG" 2>/dev/null || true
     exit 0
 fi
 

@@ -58,6 +58,19 @@ _run 0 "command with no cd allowed"                   'npm test'
 _run 0 "cwd-exempt bypass allowed"                    'cd apps/rest-api  # cwd-exempt'
 _run 0 "command substitution cd is local, allowed"    'echo "$(cd apps && pwd)"'
 _run 0 "cd -P to absolute root allowed (flag skipped)" "cd -P $FAKE_ROOT"
+
+# --- ALLOW: own-process commands cannot drift the persistent shell ---
+_run_json() {
+    local expected="$1" label="$2" json="$3" exit_code=0
+    printf '%s' "$json" | (cd "$FAKE_ROOT" && bash "$HOOK") >/dev/null 2>&1 || exit_code=$?
+    if [ "$exit_code" -eq "$expected" ]; then _pass "$label"; else _fail "$label (expected exit $expected, got $exit_code)"; fi
+}
+_run_json 0 "Monitor with cd allowed (own process)" \
+    '{"tool_name":"Monitor","tool_input":{"command":"cd /tmp/q; while true; do ls; sleep 5; done"}}'
+_run_json 0 "run_in_background Bash with cd allowed" \
+    '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test","run_in_background":true}}'
+_run_json 2 "run_in_background=\"true\" (string) still blocked" \
+    '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test","run_in_background":"true"}}'
 _run 0 "backgrounded cd is non-persistent, allowed"   'cd apps/rest-api &'
 _run 0 "backgrounded pushd is non-persistent, allowed" 'pushd apps/rest-api &'
 

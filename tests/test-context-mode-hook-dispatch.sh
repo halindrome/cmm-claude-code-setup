@@ -91,6 +91,30 @@ else
     _fail "escaped tool_name inside a string triggered the guard (called=$CALLED)"
 fi
 
+# 2c. Auto mode: ANY hook rewrite of an Agent input makes auto mode refuse the launch,
+#     so the dispatcher must not call upstream (which always rewrites) for Agent/Task.
+AGENT_AUTO='{"tool_name":"Agent","permission_mode":"auto","tool_input":{"prompt":"do the thing"}}'
+run pretooluse "$AGENT_AUTO"
+if [ "$RC" -eq 0 ] && [ "$CALLED" -eq 0 ]; then
+    _pass "Agent in auto mode is not rewritten"
+else
+    _fail "Agent in auto mode (rc=$RC called=$CALLED)"
+fi
+BASH_AUTO='{"tool_name":"Bash","permission_mode":"auto","tool_input":{"command":"ls"}}'
+run pretooluse "$BASH_AUTO"
+if [ "$CALLED" -eq 1 ]; then
+    _pass "Bash in auto mode still reaches context-mode"
+else
+    _fail "Bash in auto mode (called=$CALLED)"
+fi
+AGENT_DEFAULT='{"tool_name":"Agent","permission_mode":"default","tool_input":{"prompt":"do the thing"}}'
+run pretooluse "$AGENT_DEFAULT"
+if [ "$CALLED" -eq 1 ]; then
+    _pass "Agent in default mode still reaches context-mode"
+else
+    _fail "Agent in default mode (called=$CALLED)"
+fi
+
 # 3. Agent prompt WITHOUT the block -> upstream called once; pretooluse re-feeds the
 #    payload with exactly one trailing newline (the only byte it may add)
 run pretooluse "$AGENT_PLAIN"
