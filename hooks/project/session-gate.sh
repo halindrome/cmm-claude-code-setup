@@ -172,7 +172,7 @@ Run this to open the gate:
 You can still use these tools without opening the gate:
   mcp__codebase-memory-mcp__*  Bash, Read, Grep, Glob, ToolSearch, Agent, SendMessage, Skill,
   TaskStop, TaskOutput, StructuredOutput, Monitor, ListAgents, ReadNotifications,
-  AskUserQuestion, EnterPlanMode, ExitPlanMode, PushNotification
+  FetchInboxMessage, AskUserQuestion, EnterPlanMode, ExitPlanMode, PushNotification
 
 If the CMM server is unavailable, create the bypass sentinel in your terminal:
   touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
