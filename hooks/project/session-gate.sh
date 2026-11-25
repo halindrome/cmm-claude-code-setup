@@ -34,6 +34,12 @@ case "$TOOL" in
   ToolSearch)   exit 0 ;;  # schema fetch needed to escape the catch-22
   SendMessage)  exit 0 ;;  # inter-agent coordination; must never be gated
   Skill)        exit 0 ;;  # loads instructions only (our hooks nudge Skill('cmm-rules') pre-index); tools it then calls are still gated
+  # Orchestration / user-interaction tools: they edit no code and fetch nothing, so
+  # indexing first buys nothing. TaskStop and StructuredOutput are critical -- gating
+  # them means a runaway job cannot be killed and a schema-bound worker cannot return.
+  TaskStop|TaskOutput|StructuredOutput|Monitor) exit 0 ;;
+  ListAgents|ReadNotifications|FetchInboxMessage) exit 0 ;;
+  AskUserQuestion|EnterPlanMode|ExitPlanMode|PushNotification) exit 0 ;;
 esac
 
 # --- Phase 2: CMM/CTX/Read-only Bypass (before any git traversal) ---
@@ -164,7 +170,9 @@ Run this to open the gate:
   mcp__codebase-memory-mcp__index_repository   (incremental — fast when already indexed)
 
 You can still use these tools without opening the gate:
-  mcp__codebase-memory-mcp__*  Bash, Read, Grep, Glob, ToolSearch, Agent, SendMessage, Skill
+  mcp__codebase-memory-mcp__*  Bash, Read, Grep, Glob, ToolSearch, Agent, SendMessage, Skill,
+  TaskStop, TaskOutput, StructuredOutput, Monitor, ListAgents, ReadNotifications,
+  AskUserQuestion, EnterPlanMode, ExitPlanMode, PushNotification
 
 If the CMM server is unavailable, create the bypass sentinel in your terminal:
   touch "/tmp/cmm-session-ready-${PROJECT_HASH}"
