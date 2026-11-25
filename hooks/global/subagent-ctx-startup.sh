@@ -72,7 +72,7 @@ fi
 # Marker [ctx-startup] preserved for test assertions. ctx-rules Skill directive is now
 # emitted by subagent-cmm-startup.sh (single-block pattern). This hook preserves the
 # [ctx-startup] sentinel for test compatibility and availability signalling only.
-NUDGE_TEXT="[ctx-startup] Context Mode is active. Use ctx_search before re-running commands this session."
+NUDGE_TEXT="[ctx-startup] Context Mode is active. Use ctx_search before re-running commands this session. The ctx_* tools may be deferred: load them first with one ToolSearch call, e.g. \"select:mcp__plugin_context-mode_context-mode__ctx_execute,mcp__plugin_context-mode_context-mode__ctx_search,mcp__plugin_context-mode_context-mode__ctx_batch_execute\"."
 python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":sys.argv[1]}}))' \
     "$NUDGE_TEXT"
 
