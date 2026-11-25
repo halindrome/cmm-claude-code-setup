@@ -377,6 +377,15 @@ _assert_exit "run_in_background=\"true\" (string) still blocked" 2 \
 _assert_exit "run_in_background=1 (number) still blocked" 2 \
     '{"tool_name":"Bash","tool_input":{"command":"cd apps/rest-api && make test 2>&1 | tee run.log","run_in_background":1}}'
 
+# --- Monitor exempt: Bash-matcher hooks fire on Monitor, whose stdout is an event
+# stream ctx_execute cannot replace. Real blocked shapes from transcripts. ---
+_assert_exit "Monitor: while-true poll loop exempt" 0 \
+    '{"tool_name":"Monitor","tool_input":{"command":"prev=\"\"; while true; do s=$(cat /tmp/x/status); [ \"$s\" != \"$prev\" ] && echo \"$s\"; prev=$s; sleep 5; done","description":"d","timeout_ms":1800000}}'
+_assert_exit "Monitor: plain script exempt" 0 \
+    '{"tool_name":"Monitor","tool_input":{"command":"bash /tmp/watch-panel.sh","description":"d","timeout_ms":300000}}'
+_assert_exit "same loop as foreground Bash still blocked" 2 \
+    '{"tool_name":"Bash","tool_input":{"command":"prev=\"\"; while true; do s=$(cat /tmp/x/status); [ \"$s\" != \"$prev\" ] && echo \"$s\"; prev=$s; sleep 5; done"}}'
+
 # --- Quoted here-doc bodies are blanked before the compound scan ---
 # `git commit -F - <<'EOF' … EOF` is a git-write (already exempt) that prints two
 # lines, but the heredoc's newlines tripped the compound check, so committing

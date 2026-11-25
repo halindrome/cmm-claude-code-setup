@@ -68,6 +68,11 @@ except Exception:
     print("ALLOW"); sys.exit(0)
 
 ti = data.get("tool_input", {}) or {}
+# A Monitor or a run_in_background Bash runs in its own process: its `cd` cannot
+# park the persistent shell (verified 2026-11-25: background `cd /tmp`, then `pwd`
+# still printed the project root). Bash-matcher hooks fire on Monitor too.
+if data.get("tool_name") == "Monitor" or ti.get("run_in_background") is True:
+    print("ALLOW"); sys.exit(0)
 cmd = ti.get("command", "") or data.get("command", "")
 if not cmd:
     print("ALLOW"); sys.exit(0)
